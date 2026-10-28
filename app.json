@@ -1,13 +1,16 @@
 {
   "expo": {
-    "name": "local-chat",
+    "name": "地端聊天",
     "slug": "local-chat",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "在區網裡尋找 Ollama 主機"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,8 +25,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-sqlite",
-      "expo-sharing"
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "拍照後傳給模型看",
+          "photosPermission": "從相簿選照片傳給模型看"
+        }
+      ]
     ]
   }
 }

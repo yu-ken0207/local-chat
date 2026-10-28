@@ -1,0 +1,487 @@
+import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/discovery';
+import { contextLevel, type ContextLevel } from '../lib/format';
+import { DEFAULT_IMAGE_QUESTION, buildChatMessages } from '../lib/history';
+import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
+
+// 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
+
+export type HostStatus = { state: 'checking' | 'online' | 'offline'; latencyMs: number | null; version: string };
+
+export type ModelsEntry = { list: ModelInfo[]; loading: boolean; error: string };
+
+export type Streaming = {
+  messageId: string;
+  content: string;
+  thinking: string;
+  startedAt: number;
+  /** waiting：等模型開始回、thinking：正在思考、answering：正在回答 */
+  phase: 'waiting' | 'thinking' | 'answering';
+};
+
+export type ContextInfo = { used: number; limit: number | null; level: ContextLevel };
+
+export type ScanState = { running: boolean; done: number; total: number; found: number; error: string };
+
+export type ChatState = {
+  ready: boolean;
+  hosts: Host[];
+  hostStatus: Record<string, HostStatus>;
+  scan: ScanState | null;
+  models: Record<string, ModelsEntry>;
+  loaded: Record<string, LoadedModel[]>;
+  session: Session | null;
+  messages: Message[];
+  streaming: Streaming | null;
+  context: ContextInfo | null;
+  /** 一次性的提示，例如「這個模型看不懂圖片，前面的照片不會送出」 */
+  notice: string;
+};
+
+export type ChatEvent = 'answered' | 'failed' | 'stopped';
+
+export type ChatDeps = {
+  repo: Repo;
+  client: (url: string) => OllamaClient;
+  /** 手機目前的 Wi-Fi 位址；沒連 Wi-Fi 回 null（不掃描） */
+  wifiIp: () => Promise<string | null>;
+  now?: () => number;
+  /** 串流更新畫面的最短間隔（毫秒），太頻繁會讓 Markdown 一直重排 */
+  throttleMs?: number;
+  onEvent?: (event: ChatEvent) => void;
+};
+
+export class HostOfflineError extends Error {
+  constructor(
+    readonly url: string,
+    readonly label: string,
+    reason: string
+  ) {
+    super(reason);
+    this.name = 'HostOfflineError';
+  }
+}
+
+const SETTING_LAST_HOST = 'lastHost';
+const SETTING_LAST_MODEL = 'lastModel';
+const PROBE_TIMEOUT_MS = 2500;
+const SCAN_TIMEOUT_MS = 800;
+
+/** 錯誤翻成看得懂的話 */
+export function describeError(e: unknown): string {
+  if (e instanceof OllamaError) {
+    if (e.kind === 'network') return `連不到主機。請確認手機和主機在同一個網路（Wi-Fi 或 Tailscale）。\n${e.message}`;
+    if (e.kind === 'timeout') return `主機太久沒回應：${e.message}`;
+    return e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** 選了某個模型之後，思考設定的預設值：開關型預設關（比較快），分段型用模型預設等級 */
+export function defaultThink(model: ModelInfo | undefined): ThinkSetting | null {
+  if (!model?.think) return null;
+  return model.think.kind === 'toggle' ? false : model.think.defaultLevel;
+}
+
+export class ChatStore {
+  private state: ChatState = {
+    ready: false,
+    hosts: [],
+    hostStatus: {},
+    scan: null,
+    models: {},
+    loaded: {},
+    session: null,
+    messages: [],
+    streaming: null,
+    context: null,
+    notice: '',
+  };
+  private listeners = new Set<() => void>();
+  private abort: AbortController | null = null;
+  private scanAbort: AbortController | null = null;
+  private readonly now: () => number;
+  private readonly throttleMs: number;
+
+  constructor(private readonly deps: ChatDeps) {
+    this.now = deps.now ?? Date.now;
+    this.throttleMs = deps.throttleMs ?? 50;
+  }
+
+  // ---- 訂閱 ----
+
+  getState = (): ChatState => this.state;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  private set(patch: Partial<ChatState>) {
+    this.state = { ...this.state, ...patch };
+    this.listeners.forEach((l) => l());
+  }
+
+  // ---- 查詢 ----
+
+  /** 目前對話用的模型資訊（主機的模型清單還沒載入時是 undefined） */
+  currentModel(): ModelInfo | undefined {
+    const s = this.state.session;
+    if (!s?.hostUrl || !s.model) return undefined;
+    return this.state.models[s.hostUrl]?.list.find((m) => m.name === s.model);
+  }
+
+  hostLabel(url: string | null | undefined): string {
+    if (!url) return '';
+    return this.state.hosts.find((h) => h.url === url)?.label ?? url.replace(/^https?:\/\//, '');
+  }
+
+  // ---- 啟動 ----
+
+  async init(): Promise<void> {
+    const { repo } = this.deps;
+    await repo.migrate();
+    const hosts = await repo.listHosts();
+    const latest = (await repo.listSessions())[0];
+    const session = latest ?? (await this.createSessionFromLast());
+    this.set({ hosts, session, messages: await repo.listMessages(session.id), ready: true });
+    void this.refreshHosts();
+    if (session.hostUrl) void this.loadModels(session.hostUrl);
+  }
+
+  private async createSessionFromLast(): Promise<Session> {
+    const { repo } = this.deps;
+    const hostUrl = await repo.getSetting(SETTING_LAST_HOST);
+    const model = await repo.getSetting(SETTING_LAST_MODEL);
+    const info = hostUrl ? this.state.models[hostUrl]?.list.find((m) => m.name === model) : undefined;
+    return repo.createSession({ hostUrl, model, think: info ? defaultThink(info) : null });
+  }
+
+  // ---- 主機 ----
+
+  /** 問每台主機在不在線、回應多快 */
+  async refreshHosts(): Promise<void> {
+    const { repo, client } = this.deps;
+    const hosts = this.state.hosts;
+    this.set({
+      hostStatus: Object.fromEntries(hosts.map((h) => [h.url, { state: 'checking', latencyMs: null, version: h.version } as HostStatus])),
+    });
+    await Promise.all(
+      hosts.map(async (h) => {
+        let status: HostStatus;
+        try {
+          const v = await client(h.url).version(PROBE_TIMEOUT_MS);
+          status = { state: 'online', latencyMs: v.latencyMs, version: v.version };
+          await repo.markHostSeen(h.url, v.version);
+        } catch {
+          status = { state: 'offline', latencyMs: null, version: h.version };
+        }
+        this.set({ hostStatus: { ...this.state.hostStatus, [h.url]: status } });
+      })
+    );
+    this.set({ hosts: await repo.listHosts() });
+  }
+
+  /** 掃描手機所在的 Wi-Fi 網段，找到的主機記起來。回傳找到幾台 */
+  async scanLan(): Promise<number> {
+    const { repo, client, wifiIp } = this.deps;
+    if (this.state.scan?.running) return 0;
+    const ip = await wifiIp();
+    const candidates = ip ? subnetCandidates(ip) : [];
+    if (candidates.length === 0) {
+      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: '手機沒有連 Wi-Fi（或不是一般區網），沒辦法掃描。可以手動新增主機。' } });
+      return 0;
+    }
+    this.scanAbort = new AbortController();
+    this.set({ scan: { running: true, done: 0, total: candidates.length, found: 0, error: '' } });
+    const found = await scanHosts(
+      candidates.map((c) => hostUrl(c)),
+      async (url) => (await client(url).version(SCAN_TIMEOUT_MS)).version,
+      {
+        signal: this.scanAbort.signal,
+        onProgress: (done) => this.set({ scan: { ...this.state.scan!, done } }),
+        onFound: () => this.set({ scan: { ...this.state.scan!, found: this.state.scan!.found + 1 } }),
+      }
+    );
+    for (const f of found) {
+      await repo.saveHost({ url: f.url, label: f.url.replace(/^http:\/\//, '').replace(/:11434$/, ''), source: 'scan', version: f.version });
+    }
+    const hostStatus = { ...this.state.hostStatus };
+    for (const f of found) hostStatus[f.url] = { state: 'online', latencyMs: null, version: f.version };
+    this.set({ hosts: await repo.listHosts(), hostStatus, scan: { ...this.state.scan!, running: false } });
+    this.scanAbort = null;
+    return found.length;
+  }
+
+  stopScan(): void {
+    this.scanAbort?.abort();
+  }
+
+  /**
+   * 手動新增主機。先確認連得到；連不到時丟 HostOfflineError，畫面可以問使用者要不要照樣加入（force）。
+   * 格式錯誤丟一般 Error。
+   */
+  async addHost(input: string, options: { force?: boolean; label?: string } = {}): Promise<Host> {
+    const { repo, client } = this.deps;
+    const parsed = parseHostInput(input);
+    if ('error' in parsed) throw new Error(parsed.error);
+    const label = options.label?.trim() || parsed.label;
+    let version = '';
+    let status: HostStatus = { state: 'offline', latencyMs: null, version: '' };
+    try {
+      const v = await client(parsed.url).version(PROBE_TIMEOUT_MS);
+      version = v.version;
+      status = { state: 'online', latencyMs: v.latencyMs, version };
+    } catch (e) {
+      if (!options.force) throw new HostOfflineError(parsed.url, label, describeError(e));
+    }
+    await repo.saveHost({ url: parsed.url, label, source: 'manual', version });
+    const hosts = await repo.listHosts();
+    this.set({ hosts, hostStatus: { ...this.state.hostStatus, [parsed.url]: status } });
+    return hosts.find((h) => h.url === parsed.url)!;
+  }
+
+  async renameHost(url: string, label: string): Promise<void> {
+    await this.deps.repo.renameHost(url, label.trim() || this.hostLabel(url));
+    this.set({ hosts: await this.deps.repo.listHosts() });
+  }
+
+  async removeHost(url: string): Promise<void> {
+    await this.deps.repo.removeHost(url);
+    const { [url]: _s, ...hostStatus } = this.state.hostStatus;
+    const { [url]: _m, ...models } = this.state.models;
+    this.set({ hosts: await this.deps.repo.listHosts(), hostStatus, models });
+  }
+
+  // ---- 模型 ----
+
+  /** 抓主機的模型清單與已載入的模型 */
+  async loadModels(url: string): Promise<void> {
+    const c = this.deps.client(url);
+    this.set({ models: { ...this.state.models, [url]: { list: this.state.models[url]?.list ?? [], loading: true, error: '' } } });
+    try {
+      const [list, loaded] = await Promise.all([c.listModels(), c.loaded().catch(() => [] as LoadedModel[])]);
+      this.set({
+        models: { ...this.state.models, [url]: { list, loading: false, error: '' } },
+        loaded: { ...this.state.loaded, [url]: loaded },
+      });
+      // 對話記得的模型如果原本沒有思考設定，補上預設值
+      const s = this.state.session;
+      if (s && s.hostUrl === url && s.model && s.think === null) {
+        const info = list.find((m) => m.name === s.model);
+        if (info?.think) await this.setThink(defaultThink(info));
+      }
+    } catch (e) {
+      this.set({ models: { ...this.state.models, [url]: { list: [], loading: false, error: describeError(e) } } });
+    }
+  }
+
+  async refreshLoaded(url: string): Promise<void> {
+    try {
+      const loaded = await this.deps.client(url).loaded();
+      this.set({ loaded: { ...this.state.loaded, [url]: loaded } });
+    } catch {
+      // 查不到就維持原狀
+    }
+  }
+
+  /** 這段對話改用某台主機的某個模型；也記成之後新對話的預設 */
+  async selectModel(url: string, model: string): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    if (!s) return;
+    const info = this.state.models[url]?.list.find((m) => m.name === model);
+    const think = s.hostUrl === url && s.model === model ? s.think : defaultThink(info);
+    await repo.updateSession(s.id, { hostUrl: url, model, think });
+    await repo.setSetting(SETTING_LAST_HOST, url);
+    await repo.setSetting(SETTING_LAST_MODEL, model);
+    this.set({ session: { ...s, hostUrl: url, model, think }, context: null });
+  }
+
+  async setThink(think: ThinkSetting | null): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.deps.repo.updateSession(s.id, { think });
+    this.set({ session: { ...this.state.session!, think } });
+  }
+
+  async preload(url: string, model: string): Promise<void> {
+    await this.deps.client(url).preload(model);
+    await this.refreshLoaded(url);
+  }
+
+  async unload(url: string, model: string): Promise<void> {
+    await this.deps.client(url).unload(model);
+    await this.refreshLoaded(url);
+  }
+
+  // ---- 對話 ----
+
+  /** 開新對話；目前這段還沒講話就不另開。沿用目前的模型與思考設定 */
+  async newSession(): Promise<void> {
+    const { repo } = this.deps;
+    this.stop();
+    const s = this.state.session;
+    if (s && this.state.messages.length === 0) return;
+    const next = await repo.createSession({
+      hostUrl: s?.hostUrl ?? null,
+      model: s?.model ?? null,
+      think: s?.think ?? null,
+      systemPrompt: '',
+    });
+    await repo.deleteEmptySessions(next.id);
+    this.set({ session: next, messages: [], context: null, notice: '' });
+  }
+
+  async openSession(id: string): Promise<void> {
+    const { repo } = this.deps;
+    this.stop();
+    const session = await repo.getSession(id);
+    if (!session) return;
+    const current = this.state.session;
+    this.set({ session, messages: await repo.listMessages(id), context: null, notice: '' });
+    if (current && current.id !== id) await repo.deleteEmptySessions(id);
+    if (session.hostUrl && !this.state.models[session.hostUrl]) void this.loadModels(session.hostUrl);
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    const { repo } = this.deps;
+    if (this.state.session?.id === id) this.stop();
+    await repo.deleteSession(id);
+    if (this.state.session?.id === id) {
+      const latest = (await repo.listSessions())[0];
+      if (latest) {
+        this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '' });
+      } else {
+        this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+      }
+    }
+  }
+
+  listSessions(search = '') {
+    return this.deps.repo.listSessions(search);
+  }
+
+  async setSystemPrompt(text: string): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.deps.repo.updateSession(s.id, { systemPrompt: text });
+    this.set({ session: { ...s, systemPrompt: text } });
+  }
+
+  async renameSession(id: string, title: string): Promise<void> {
+    await this.deps.repo.updateSession(id, { title: title.trim() });
+    if (this.state.session?.id === id) this.set({ session: { ...this.state.session, title: title.trim() } });
+  }
+
+  dismissNotice(): void {
+    this.set({ notice: '' });
+  }
+
+  // ---- 傳送與回答 ----
+
+  canAttachImages(): boolean {
+    return !!this.currentModel()?.vision;
+  }
+
+  /** 送出一則訊息並開始串流回答。照片只有模型看得懂圖時才能附 */
+  async send(text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
+    const s = this.state.session;
+    if (!s || this.state.streaming) return;
+    if (!s.hostUrl || !s.model) throw new Error('請先選一個模型');
+    if (images.length > 0 && !this.canAttachImages()) throw new Error('這個模型看不懂圖片，不能附照片');
+    const content = text.trim() || (images.length > 0 ? DEFAULT_IMAGE_QUESTION : '');
+    if (!content) return;
+    await this.deps.repo.addMessage(s.id, { role: 'user', content, attachments: images });
+    this.set({ messages: await this.deps.repo.listMessages(s.id), notice: '' });
+    await this.answer();
+  }
+
+  /** 中途停止回答 */
+  stop(): void {
+    this.abort?.abort();
+  }
+
+  /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
+  private async answer(): Promise<void> {
+    const { repo, client } = this.deps;
+    const s = this.state.session!;
+    const url = s.hostUrl!;
+    const model = s.model!;
+    const info = this.currentModel();
+    const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
+      systemPrompt: s.systemPrompt,
+      vision: info ? info.vision : true,
+    });
+    if (droppedImages > 0) this.set({ notice: `目前的模型看不懂圖片，前面的 ${droppedImages} 張照片這次不會送出。` });
+
+    const hostLabel = this.hostLabel(url);
+    const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel });
+    const streaming: Streaming = { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' };
+    this.set({ streaming, messages: [...this.state.messages, placeholder] });
+
+    // 串流的字先累積，固定間隔才更新畫面
+    let content = '';
+    let thinking = '';
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      if (!this.state.streaming) return;
+      this.set({
+        streaming: { ...this.state.streaming, content, thinking, phase: content ? 'answering' : thinking ? 'thinking' : 'waiting' },
+      });
+    };
+
+    this.abort = new AbortController();
+    const signal = this.abort.signal;
+    try {
+      const result = await client(url).chat(
+        { model, messages: history, think: info?.think ? (s.think ?? defaultThink(info) ?? undefined) : undefined },
+        (d) => {
+          if (d.thinking) thinking += d.thinking;
+          if (d.content) content += d.content;
+          if (!timer) timer = setTimeout(flush, this.throttleMs);
+        },
+        signal
+      );
+      const stats = {
+        evalCount: result.evalCount,
+        evalDurationNs: result.evalDurationNs,
+        promptEvalCount: result.promptEvalCount,
+        totalDurationNs: result.totalDurationNs,
+      };
+      await repo.updateMessage(placeholder.id, { content, thinking, stats });
+      const limit = await this.contextLimit(url, model);
+      const used = result.promptEvalCount + result.evalCount;
+      this.set({ context: { used, limit, level: contextLevel(used, limit) } });
+      this.deps.onEvent?.('answered');
+    } catch (e) {
+      const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
+      if (content || thinking) {
+        await repo.updateMessage(placeholder.id, { content, thinking });
+      } else {
+        await repo.deleteMessage(placeholder.id);
+      }
+      await repo.addMessage(s.id, cancelled ? { role: 'note', content: '已停止' } : { role: 'error', content: `沒有得到回答：${describeError(e)}` });
+      this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
+    } finally {
+      if (timer) clearTimeout(timer);
+      this.abort = null;
+      this.set({ streaming: null, messages: await repo.listMessages(s.id) });
+      void this.refreshLoaded(url);
+    }
+  }
+
+  /** 模型實際執行時的上下文上限：優先看已載入模型的設定，查不到才用模型本身的最大值 */
+  private async contextLimit(url: string, model: string): Promise<number | null> {
+    try {
+      const loaded = await this.deps.client(url).loaded();
+      this.set({ loaded: { ...this.state.loaded, [url]: loaded } });
+      const hit = loaded.find((m) => m.name === model);
+      if (hit?.contextLength) return hit.contextLength;
+    } catch {
+      // 查不到就用模型資訊
+    }
+    return this.state.models[url]?.list.find((m) => m.name === model)?.contextLength ?? null;
+  }
+}

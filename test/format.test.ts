@@ -1,4 +1,5 @@
 import { contextLevel, fmtBytes, fmtElapsed, fmtTokPerSec } from '../src/lib/format';
+import { fitSize } from '../src/lib/photos';
 
 test('秒數格式跟 Codex 一樣', () => {
   expect(fmtElapsed(0)).toBe('0s');
@@ -26,4 +27,11 @@ test('上下文用量：80% 提醒、滿了警告、不知道上限就不提醒'
   expect(contextLevel(6600, 8192)).toBe('near');
   expect(contextLevel(8192, 8192)).toBe('full');
   expect(contextLevel(99999, null)).toBe('ok');
+});
+
+test('照片縮放：長邊縮到 1024，比例不變；小照片不動', () => {
+  expect(fitSize(4032, 3024)).toEqual({ width: 1024, height: 768 });
+  expect(fitSize(3024, 4032)).toEqual({ width: 768, height: 1024 });
+  expect(fitSize(800, 600)).toEqual({ width: 800, height: 600 });
+  expect(fitSize(0, 0)).toEqual({ width: 0, height: 0 });
 });
