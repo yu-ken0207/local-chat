@@ -88,15 +88,43 @@ test('長按：匯出成 Markdown 分享', async () => {
   expect(arg.message).toContain('**你**：明天會下雨嗎');
 });
 
-test('長按：確認後刪除', async () => {
+test('長按刪除：不用先確認，可以馬上復原', async () => {
   const { store } = await setup();
   await fireEvent.press(screen.getByLabelText('對話清單'));
   pickAction(2);
-  const alert = confirm();
+  const alert = jest.spyOn(Alert, 'alert');
   await fireEvent(await screen.findByLabelText('對話 天氣'), 'longPress');
-  expect(alert.mock.calls[0][0]).toBe('刪除「天氣」？');
+  expect(alert).not.toHaveBeenCalled();
   await waitFor(() => expect(screen.queryByLabelText('對話 天氣')).toBeNull());
   expect((await store.listSessions()).map((s) => s.title)).toEqual(['午餐']);
+  await fireEvent.press(await screen.findByText('復原'));
+  expect(await screen.findByLabelText('對話 天氣')).toBeTruthy();
+});
+
+test('最近刪除：可以救回、永久刪除（先確認）、全部清空（先確認）', async () => {
+  const { store } = await setup();
+  const ids = (await store.listSessions()).map((s) => s.id);
+  await store.deleteSession(ids[0]);
+  await store.deleteSession(ids[1]);
+  await store.dismissUndo();
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  await fireEvent.press(await screen.findByLabelText('最近刪除，2 段'));
+  expect(await screen.findByLabelText('已刪除的對話 天氣')).toBeTruthy();
+  expect(screen.getAllByText('還會保留 30 天')).toHaveLength(2);
+
+  pickAction(0);
+  await fireEvent.press(screen.getByLabelText('已刪除的對話 天氣'));
+  await waitFor(() => expect(screen.queryByLabelText('已刪除的對話 天氣')).toBeNull());
+  expect((await store.listSessions()).map((s) => s.title)).toContain('天氣');
+
+  pickAction(1);
+  const alert = confirm();
+  await fireEvent.press(screen.getByLabelText('已刪除的對話 午餐'));
+  expect(alert.mock.calls[0][0]).toBe('永久刪除「午餐」？');
+  await waitFor(() => expect(screen.getByText(/最近刪除是空的/)).toBeTruthy());
+
+  await fireEvent.press(screen.getByLabelText('返回對話清單'));
+  expect(await screen.findByLabelText('對話 天氣')).toBeTruthy();
 });
 
 test('清單裡的「新對話」', async () => {
@@ -155,29 +183,30 @@ test('對話清單最下面顯示資料庫位置與大小，可以匯出整個�
 });
 
 describe('使用者自己移除資料', () => {
-  test('刪除所有對話：先確認，取消就不刪；確認後只剩一段新對話，主機保留', async () => {
+  test('刪除所有對話：不用先確認；只剩一段新對話，主機保留；可以復原', async () => {
     const { store } = await setup();
     await fireEvent.press(screen.getByLabelText('對話清單'));
-    const cancel = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[0]?.onPress?.());
+    const alert = jest.spyOn(Alert, 'alert');
     await fireEvent.press(await screen.findByText('刪除所有對話'));
-    expect(cancel.mock.calls[0][0]).toBe('刪除所有對話？');
-    expect(cancel.mock.calls[0][1]).toContain('2 段對話');
-    expect((await store.listSessions()).length).toBe(2);
-
-    cancel.mockRestore();
-    confirm();
-    await fireEvent.press(screen.getByText('刪除所有對話'));
+    expect(alert).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getAllByLabelText(/^對話 /).map((r) => r.props.accessibilityLabel)).toEqual(['對話 新對話']));
     expect(store.getState().hosts).toHaveLength(1);
+    expect(screen.getByText('已刪除 2 段對話')).toBeTruthy();
+    await fireEvent.press(screen.getByText('復原'));
+    await waitFor(() => expect(screen.getAllByLabelText(/^對話 /).map((r) => r.props.accessibilityLabel).sort()).toEqual(['對話 午餐', '對話 天氣']));
   });
 
-  test('清除全部資料：確認後回到第一次打開的樣子', async () => {
+  test('清除全部資料：先確認；之後幾秒內可以復原', async () => {
     const { store } = await setup();
     await fireEvent.press(screen.getByLabelText('對話清單'));
     const alert = confirm();
     await fireEvent.press(await screen.findByText('清除全部資料'));
     expect(alert.mock.calls[0][0]).toBe('清除全部資料？');
     await waitFor(() => expect(store.getState().hosts).toEqual([]));
+    await fireEvent.press(screen.getByText('復原'));
+    await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
+    await store.resetAll();
+    await store.dismissUndo();
     await fireEvent.press(screen.getByText('完成'));
     expect(screen.getByText('連接你的電腦')).toBeTruthy();
   });

@@ -25,6 +25,8 @@ const msg = (role: Role, content: string, extra: Partial<Message> = {}): Message
   hostLabel: null,
   stats: null,
   detail: '',
+  versions: null,
+  altGroup: null,
   createdAt: n,
   attachments: [],
   ...extra,

@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import type { ChatStore } from '../state/chatStore';
 import type { Template } from '../store/repo';
 import { SwipeRow } from './SwipeRow';
+import { UndoToast } from './UndoToast';
 import { C, TEXT } from '../ui/theme';
 
 /** 管理提示詞範本：新增、修改、刪除 */
@@ -29,11 +30,9 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
     setEditing(null);
   }
 
+  /** 直接刪，畫面下方可以復原 */
   function remove(t: Template) {
-    Alert.alert(`刪除範本「${t.title}」？`, undefined, [
-      { text: '取消', style: 'cancel' },
-      { text: '刪除', style: 'destructive', onPress: () => store.deleteTemplate(t.id) },
-    ]);
+    void store.deleteTemplate(t.id);
   }
 
   if (editing) {
@@ -107,8 +106,9 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
             ))
           )}
         </View>
-        <Text style={styles.footnote}>在輸入框打 / 可以叫出範本；新對話時，範本也會出現在輸入框上方。</Text>
+        <Text style={styles.footnote}>在輸入框打 / 可以叫出範本；新對話時，範本也會出現在輸入框上方。往左滑可以刪除。</Text>
       </ScrollView>
+      <UndoToast store={store} />
     </View>
   );
 }

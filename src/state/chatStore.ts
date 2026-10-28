@@ -39,7 +39,11 @@ export type ChatState = {
   /** 一次性的提示，例如「這個模型看不懂圖片，前面的照片不會送出」 */
   notice: string;
   templates: Template[];
+  /** 剛做的刪除或取代，可以按「復原」（畫面顯示幾秒後消失） */
+  undo: { id: number; message: string } | null;
 };
+
+type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
 
 export type ChatEvent = 'answered' | 'failed' | 'stopped';
 
@@ -71,6 +75,8 @@ export class HostOfflineError extends Error {
 export const TITLE_PROMPT = '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。';
 
 const SETTING_LAST_HOST = 'lastHost';
+/** 「清除全部資料」還沒確定（還在可以復原的那幾秒）就關掉 App 時，下次打開要真的刪掉的對話 */
+const SETTING_PENDING_WIPE = 'pendingWipe';
 /** 使用者自己按過「自動尋找」（iPhone 的區域網路權限已經問過），之後開 App 才自動找 */
 const SETTING_SCAN_CONSENTED = 'scanConsented';
 const SETTING_LAST_MODEL = 'lastModel';
@@ -116,7 +122,10 @@ export class ChatStore {
     context: null,
     notice: '',
     templates: [],
+    undo: null,
   };
+  private pendingUndo: PendingUndo | null = null;
+  private undoCounter = 0;
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
   /** 正在幫對話取標題（測試用來等它完成） */
@@ -146,6 +155,41 @@ export class ChatStore {
     this.listeners.forEach((l) => l());
   }
 
+  // ---- 復原 ----
+
+  /** 記下一個可以復原的操作；之前那個還沒處理的就當作確定 */
+  private async offerUndo(message: string, undo: () => Promise<void>, commit?: () => Promise<void>): Promise<void> {
+    await this.dismissUndo();
+    this.pendingUndo = { id: ++this.undoCounter, message, undo, commit };
+    this.set({ undo: { id: this.pendingUndo.id, message } });
+  }
+
+  /** 按「復原」 */
+  async undoLast(): Promise<void> {
+    const p = this.pendingUndo;
+    if (!p) return;
+    this.pendingUndo = null;
+    this.set({ undo: null });
+    await p.undo();
+  }
+
+  /** 提示消失（時間到或換了別的操作）：這個操作就確定了 */
+  async dismissUndo(): Promise<void> {
+    const p = this.pendingUndo;
+    if (!p) return;
+    this.pendingUndo = null;
+    if (this.state.undo?.id === p.id) this.set({ undo: null });
+    await p.commit?.();
+  }
+
+  /** 目前的對話換成最近的一段（沒有就開新的） */
+  private async openLatestOrNew(): Promise<void> {
+    const { repo } = this.deps;
+    const latest = (await repo.listSessions())[0];
+    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '' });
+    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+  }
+
   // ---- 查詢 ----
 
   /** 目前對話用的模型資訊（主機的模型清單還沒載入時是 undefined） */
@@ -165,6 +209,12 @@ export class ChatStore {
   async init(): Promise<void> {
     const { repo } = this.deps;
     await repo.migrate();
+    await repo.purgeExpired();
+    const pendingWipe = await repo.getSetting(SETTING_PENDING_WIPE);
+    if (pendingWipe) {
+      for (const id of JSON.parse(pendingWipe) as string[]) await repo.deleteSession(id);
+      await repo.clearSettings();
+    }
     const hosts = await repo.listHosts();
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
@@ -326,11 +376,25 @@ export class ChatStore {
     this.set({ hosts: await this.deps.repo.listHosts() });
   }
 
+  /** 移除電腦（可以復原） */
   async removeHost(url: string): Promise<void> {
-    await this.deps.repo.removeHost(url);
+    const { repo } = this.deps;
+    const host = this.state.hosts.find((h) => h.url === url);
+    if (!host) return;
+    const status = this.state.hostStatus[url];
+    const modelsEntry = this.state.models[url];
+    await repo.removeHost(url);
     const { [url]: _s, ...hostStatus } = this.state.hostStatus;
     const { [url]: _m, ...models } = this.state.models;
-    this.set({ hosts: await this.deps.repo.listHosts(), hostStatus, models });
+    this.set({ hosts: await repo.listHosts(), hostStatus, models });
+    await this.offerUndo(`已移除「${host.label}」`, async () => {
+      await repo.restoreHost(host);
+      this.set({
+        hosts: await repo.listHosts(),
+        hostStatus: status ? { ...this.state.hostStatus, [url]: status } : this.state.hostStatus,
+        models: modelsEntry ? { ...this.state.models, [url]: modelsEntry } : this.state.models,
+      });
+    });
   }
 
   // ---- 模型 ----
@@ -424,18 +488,38 @@ export class ChatStore {
     if (session.hostUrl && !this.state.models[session.hostUrl]) void this.loadModels(session.hostUrl);
   }
 
+  /** 刪除對話：移到最近刪除（30 天內可以救回來），畫面上也可以馬上復原 */
   async deleteSession(id: string): Promise<void> {
     const { repo } = this.deps;
-    if (this.state.session?.id === id) this.stop();
-    await repo.deleteSession(id);
-    if (this.state.session?.id === id) {
-      const latest = (await repo.listSessions())[0];
-      if (latest) {
-        this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '' });
-      } else {
-        this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
-      }
-    }
+    const wasCurrent = this.state.session?.id === id;
+    if (wasCurrent) this.stop();
+    const session = await repo.getSession(id);
+    await repo.trashSessions([id]);
+    if (wasCurrent) await this.openLatestOrNew();
+    await this.offerUndo(`已刪除「${session?.title || '對話'}」`, async () => {
+      await repo.restoreSessions([id]);
+      await this.openSession(id);
+    });
+  }
+
+  /** 最近刪除的對話 */
+  listTrash() {
+    return this.deps.repo.listTrash();
+  }
+
+  /** 從最近刪除救回來 */
+  async restoreSession(id: string): Promise<void> {
+    await this.deps.repo.restoreSessions([id]);
+  }
+
+  /** 從最近刪除永久刪除（不能復原，畫面上要先確認） */
+  async deleteForever(id: string): Promise<void> {
+    await this.deps.repo.deleteSession(id);
+  }
+
+  /** 清空最近刪除（不能復原，畫面上要先確認） */
+  async emptyTrash(): Promise<void> {
+    await this.deps.repo.emptyTrash();
   }
 
   listSessions(search = '') {
@@ -487,9 +571,34 @@ export class ChatStore {
     const target = this.state.messages.find((m) => m.id === assistantId && m.role === 'assistant');
     if (!s || !target || this.state.streaming) return;
     if (override) await this.selectModel(override.hostUrl, override.model);
-    await repo.deleteMessagesFrom(s.id, target.seq);
+    // 舊回答收成版本（可以用 ‹ › 切回來）；它後面的訊息先藏起來
+    const later = await repo.softDeleteFrom(s.id, target.seq + 1);
+    const group = await repo.hideAsVersion(target.id);
     this.set({ messages: await repo.listMessages(s.id), notice: '' });
-    await this.answer();
+    if (later.length > 0) {
+      const before = new Set(this.state.messages.map((m) => m.id));
+      await this.offerUndo(`已刪掉後面的 ${later.length} 則訊息`, async () => {
+        const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id) && m.id !== target.id);
+        for (const m of added) await repo.deleteMessage(m.id);
+        await repo.showVersion(target.id);
+        await repo.restoreMessages(later);
+        if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
+      });
+    }
+    await this.answer({ altGroup: group });
+  }
+
+  /** 切換回答版本（‹ ›）：delta = -1 上一個、+1 下一個 */
+  async switchVersion(messageId: string, delta: number): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    const m = this.state.messages.find((x) => x.id === messageId);
+    if (!s || !m?.altGroup || this.state.streaming) return;
+    const ids = await repo.versionIds(m.altGroup);
+    const next = ids[ids.indexOf(m.id) + delta];
+    if (!next) return;
+    await repo.showVersion(next);
+    this.set({ messages: await repo.listMessages(s.id) });
   }
 
   /** 編輯某則自己說的話並重送：這則和之後的訊息都換掉 */
@@ -500,8 +609,16 @@ export class ChatStore {
     if (!s || !target || this.state.streaming) return;
     if (images.length > 0 && !this.canAttachImages()) throw new Error('這個模型看不懂圖片，不能附照片');
     if (!text.trim() && images.length === 0) return;
-    await repo.deleteMessagesFrom(s.id, target.seq);
+    const before = new Set((await repo.listMessages(s.id)).map((m) => m.id));
+    const old = await repo.softDeleteFrom(s.id, target.seq);
     this.set({ messages: await repo.listMessages(s.id) });
+    await this.offerUndo('已取代原本的訊息', async () => {
+      this.stop();
+      const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id));
+      for (const m of added) await repo.deleteMessage(m.id);
+      await repo.restoreMessages(old);
+      if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
+    });
     await this.send(text, images);
   }
 
@@ -526,11 +643,17 @@ export class ChatStore {
     return i < 0 ? 0 : this.state.messages.length - i - 1;
   }
 
+  /** 刪除單則訊息（可以復原） */
   async deleteMessage(id: string): Promise<void> {
+    const { repo } = this.deps;
     const s = this.state.session;
     if (!s || this.state.streaming?.messageId === id) return;
-    await this.deps.repo.deleteMessage(id);
-    this.set({ messages: await this.deps.repo.listMessages(s.id) });
+    await repo.softDeleteMessages([id]);
+    this.set({ messages: await repo.listMessages(s.id) });
+    await this.offerUndo('已刪除訊息', async () => {
+      await repo.restoreMessages([id]);
+      if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
+    });
   }
 
   // ---- 提示詞範本 ----
@@ -545,9 +668,17 @@ export class ChatStore {
     this.set({ templates: await this.deps.repo.listTemplates() });
   }
 
+  /** 刪除範本（可以復原） */
   async deleteTemplate(id: string): Promise<void> {
-    await this.deps.repo.deleteTemplate(id);
-    this.set({ templates: await this.deps.repo.listTemplates() });
+    const { repo } = this.deps;
+    const tpl = this.state.templates.find((x) => x.id === id);
+    if (!tpl) return;
+    await repo.deleteTemplate(id);
+    this.set({ templates: await repo.listTemplates() });
+    await this.offerUndo(`已刪除範本「${tpl.title}」`, async () => {
+      await repo.restoreTemplate(tpl);
+      this.set({ templates: await repo.listTemplates() });
+    });
   }
 
   /** 中途停止回答 */
@@ -556,7 +687,7 @@ export class ChatStore {
   }
 
   /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
-  private async answer(): Promise<void> {
+  private async answer(options: { altGroup?: string } = {}): Promise<void> {
     const { repo, client } = this.deps;
     const s = this.state.session!;
     const url = s.hostUrl!;
@@ -569,7 +700,7 @@ export class ChatStore {
     if (droppedImages > 0) this.set({ notice: `目前的模型看不懂圖片，前面的 ${droppedImages} 張照片這次不會送出。` });
 
     const hostLabel = this.hostLabel(url);
-    const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel });
+    const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel, altGroup: options.altGroup ?? null });
     const streaming: Streaming = { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' };
     this.set({ streaming, messages: [...this.state.messages, placeholder] });
 
@@ -675,20 +806,32 @@ export class ChatStore {
     };
   }
 
-  /** 刪除所有對話，保留主機、範本與模型設定；換成一段新的空白對話 */
+  /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦、範本與模型設定；換成一段新的空白對話 */
   async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
     this.stop();
-    await repo.deleteAllSessions();
+    const ids = await repo.trashAllSessions();
     this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+    await this.offerUndo(`已刪除 ${ids.length} 段對話`, async () => {
+      await repo.restoreSessions(ids);
+      await repo.deleteEmptySessions();
+      await this.openLatestOrNew();
+    });
   }
 
-  /** 清除全部資料（對話、主機、範本、設定），回到第一次打開的樣子 */
+  /**
+   * 清除全部資料（對話、電腦、範本、設定），回到第一次打開的樣子。
+   * 畫面上那幾秒內可以復原；時間到才真的刪掉並壓縮檔案（中途關掉 App，下次打開時刪）。
+   */
   async resetAll(): Promise<void> {
     const { repo } = this.deps;
     this.stop();
     this.stopScan();
-    await repo.resetAll();
+    const snapshot = await repo.snapshotSettings();
+    const ids = await repo.trashAllSessions();
+    await repo.clearSettings();
+    await repo.setSetting(SETTING_PENDING_WIPE, JSON.stringify(ids));
+    const saved = { hosts: this.state.hosts, hostStatus: this.state.hostStatus, models: this.state.models, loaded: this.state.loaded };
     this.set({
       hosts: [],
       hostStatus: {},
@@ -701,12 +844,28 @@ export class ChatStore {
       notice: '',
       templates: await repo.listTemplates(),
     });
+    await this.offerUndo(
+      '已清除全部資料',
+      async () => {
+        await repo.restoreSnapshot(snapshot);
+        await repo.restoreSessions(ids);
+        await repo.deleteEmptySessions();
+        this.set({ ...saved, templates: await repo.listTemplates() });
+        await this.openLatestOrNew();
+      },
+      async () => {
+        for (const id of ids) await repo.deleteSession(id);
+        await repo.setSetting(SETTING_PENDING_WIPE, '');
+        await repo.resetAll();
+        this.set({ templates: await repo.listTemplates(), session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
+      }
+    );
   }
 
   /** 資料存在哪裡、多大、有幾段對話 */
-  async dataInfo(): Promise<{ path: string | null; bytes: number; sessions: number }> {
+  async dataInfo(): Promise<{ path: string | null; bytes: number; sessions: number; trash: number }> {
     const { repo } = this.deps;
-    return { path: repo.dbPath(), bytes: await repo.sizeBytes(), sessions: await repo.countSessions() };
+    return { path: repo.dbPath(), bytes: await repo.sizeBytes(), sessions: await repo.countSessions(), trash: await repo.countTrash() };
   }
 
   /** 準備匯出整個資料庫：先合併暫存的寫入，回傳可以分享的檔案網址；沒有檔案（記憶體資料庫）回 null */

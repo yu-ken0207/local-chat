@@ -19,6 +19,8 @@ type Handlers = {
   /** 最後一則回答下方直接顯示的「複製」「重新產生」 */
   onCopy?: () => void;
   onRegenerate?: () => void;
+  /** 切換回答版本（‹ ›） */
+  onSwitchVersion?: (delta: number) => void;
   isLast?: boolean;
 };
 
@@ -51,7 +53,14 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
           <View style={styles.body}>
             {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
-            {live ? <Working streaming={live} /> : <Text style={styles.meta}>{metaLine(m)}</Text>}
+            {live ? (
+              <Working streaming={live} />
+            ) : (
+              <View style={styles.metaRow}>
+                {m.versions && h.onSwitchVersion ? <Versions versions={m.versions} onSwitch={h.onSwitchVersion} /> : null}
+                <Text style={[styles.meta, styles.flex]}>{metaLine(m)}</Text>
+              </View>
+            )}
             {!live && h.isLast && content ? (
               <View style={styles.actions}>
                 {h.onCopy ? <ActionButton text="複製" onPress={h.onCopy} /> : null}
@@ -81,6 +90,25 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
         </View>
       </View>
     </Pressable>
+  );
+}
+
+/** 回答版本切換：‹ 2 / 3 › */
+function Versions({ versions, onSwitch }: { versions: { index: number; total: number }; onSwitch: (delta: number) => void }) {
+  const first = versions.index <= 1;
+  const last = versions.index >= versions.total;
+  return (
+    <View style={styles.versions} accessibilityLabel={`第 ${versions.index} 個回答，共 ${versions.total} 個`}>
+      <Pressable onPress={() => onSwitch(-1)} disabled={first} hitSlop={10} accessibilityRole="button" accessibilityLabel="上一個回答">
+        <Text style={[styles.versionArrow, first && styles.versionOff]}>‹</Text>
+      </Pressable>
+      <Text style={styles.meta}>
+        {versions.index} / {versions.total}
+      </Text>
+      <Pressable onPress={() => onSwitch(1)} disabled={last} hitSlop={10} accessibilityRole="button" accessibilityLabel="下一個回答">
+        <Text style={[styles.versionArrow, last && styles.versionOff]}>›</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -239,4 +267,9 @@ const styles = StyleSheet.create({
   actionText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
   actionTextPrimary: { color: '#ffffff' },
   detail: { backgroundColor: C.surface, borderRadius: 6, padding: 8 },
+  flex: { flex: 1 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  versions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  versionArrow: { ...TEXT.body, color: C.accent, fontWeight: '700' },
+  versionOff: { color: C.tertiary },
 });

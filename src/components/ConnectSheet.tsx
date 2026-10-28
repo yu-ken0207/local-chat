@@ -7,6 +7,7 @@ import { HostOfflineError, type ChatState, type ChatStore } from '../state/chatS
 import { C, MONO, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { SwipeRow } from './SwipeRow';
+import { UndoToast } from './UndoToast';
 
 type Props = {
   store: ChatStore;
@@ -158,6 +159,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         </Pressable>
         {helpOpen ? <ConnectHelp copyText={copyText} /> : null}
       </ScrollView>
+      <UndoToast store={store} />
     </View>
   );
 }

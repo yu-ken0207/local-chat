@@ -48,18 +48,31 @@ export type Message = {
   detail: string;
   createdAt: number;
   attachments: Attachment[];
+  /** 重新產生過的回答：目前是第幾個版本、一共幾個（沒有其他版本是 null） */
+  versions: { index: number; total: number } | null;
+  /** 同一題的不同回答版本共用這個代號 */
+  altGroup: string | null;
 };
 
 export type Template = { id: string; title: string; content: string; position: number };
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
   2: "ALTER TABLE messages ADD COLUMN detail TEXT NOT NULL DEFAULT ''",
+  // 刪除先放「最近刪除」（可以復原）；重新產生保留舊回答當版本
+  3: `ALTER TABLE sessions ADD COLUMN deleted_at INTEGER;
+      ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
+      ALTER TABLE messages ADD COLUMN alt_group TEXT;
+      ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;`,
 };
+
+/** 最近刪除保留幾天 */
+export const TRASH_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** 第 1 版的資料表（之後的改變在 MIGRATIONS） */
 export const BASE_SCHEMA = `
@@ -125,6 +138,11 @@ export const DEFAULT_TEMPLATES: { title: string; content: string }[] = [
   { title: '照片裡的文字', content: '把這張照片裡的文字完整抄下來。' },
 ]
 
+/** 看得到的訊息：沒被刪除、也不是收起來的舊版本 */
+const VISIBLE = 'm.deleted_at IS NULL AND m.hidden = 0';
+/** 對話預覽：最後一則看得到的使用者或 AI 訊息 */
+const PREVIEW = `(SELECT substr(m.content, 1, 80) FROM messages m WHERE m.session_id = s.id AND ${VISIBLE} AND m.role IN ('user', 'assistant') ORDER BY m.seq DESC LIMIT 1)`;
+
 let idCounter = 0;
 /** 產生不重複的 id（時間＋計數＋亂數） */
 export function newId(): string {
@@ -173,6 +191,7 @@ type MessageRow = {
   host_label: string | null;
   stats: string | null;
   detail: string;
+  alt_group: string | null;
   created_at: number;
 };
 
@@ -242,6 +261,14 @@ export class Repo {
     }));
   }
 
+  /** 把移除的電腦原樣加回去（復原用） */
+  async restoreHost(h: Host): Promise<void> {
+    await this.db.run(
+      'INSERT OR REPLACE INTO hosts (url, label, source, version, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [h.url, h.label, h.source, h.version, h.lastSeenAt, h.createdAt]
+    );
+  }
+
   async removeHost(url: string): Promise<void> {
     await this.db.run('DELETE FROM hosts WHERE url = ?', [url]);
   }
@@ -299,19 +326,50 @@ export class Repo {
   async listSessions(search = ''): Promise<(Session & { preview: string })[]> {
     const q = search.trim();
     const where = q
-      ? `WHERE s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.content LIKE ? ESCAPE '\\')`
+      ? `AND (s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND ${VISIBLE} AND m.content LIKE ? ESCAPE '\\'))`
       : '';
     const params = q ? [likePattern(q), likePattern(q)] : [];
     const rows = await this.db.all<SessionRow & { preview: string | null }>(
-      `SELECT s.*, (SELECT substr(m.content, 1, 80) FROM messages m WHERE m.session_id = s.id AND m.role IN ('user', 'assistant') ORDER BY m.seq DESC LIMIT 1) AS preview
-       FROM sessions s ${where} ORDER BY s.updated_at DESC, s.created_at DESC`,
+      `SELECT s.*, ${PREVIEW} AS preview FROM sessions s WHERE s.deleted_at IS NULL ${where} ORDER BY s.updated_at DESC, s.created_at DESC`,
       params
     );
     return rows.map((r) => ({ ...toSession(r), preview: r.preview ?? '' }));
   }
 
+  /** 最近刪除的對話，最近刪的在上面 */
+  async listTrash(): Promise<(Session & { preview: string; deletedAt: number })[]> {
+    const rows = await this.db.all<SessionRow & { preview: string | null; deleted_at: number }>(
+      `SELECT s.*, ${PREVIEW} AS preview FROM sessions s WHERE s.deleted_at IS NOT NULL ORDER BY s.deleted_at DESC`
+    );
+    return rows.map((r) => ({ ...toSession(r), preview: r.preview ?? '', deletedAt: r.deleted_at }));
+  }
+
+  /** 移到最近刪除（30 天內可以復原） */
+  async trashSessions(ids: string[]): Promise<void> {
+    const now = this.now();
+    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, id]);
+  }
+
+  async restoreSessions(ids: string[]): Promise<void> {
+    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [id]);
+  }
+
+  /** 永久刪除（連訊息與照片） */
   async deleteSession(id: string): Promise<void> {
     await this.db.run('DELETE FROM sessions WHERE id = ?', [id]);
+  }
+
+  /** 清空最近刪除，之後壓縮檔案釋放空間 */
+  async emptyTrash(): Promise<void> {
+    await this.db.run('DELETE FROM sessions WHERE deleted_at IS NOT NULL');
+    await this.db.exec('VACUUM');
+  }
+
+  /** 超過保留天數的刪除項目真正刪掉（開 App 時跑） */
+  async purgeExpired(): Promise<void> {
+    const cutoff = this.now() - TRASH_DAYS * DAY_MS;
+    await this.db.run('DELETE FROM sessions WHERE deleted_at IS NOT NULL AND deleted_at < ?', [cutoff]);
+    await this.db.run('DELETE FROM messages WHERE deleted_at IS NOT NULL AND deleted_at < ?', [cutoff]);
   }
 
   /** 刪掉沒有任何訊息的空白對話（開了新對話卻沒講話） */
@@ -334,6 +392,7 @@ export class Repo {
       hostLabel?: string | null;
       stats?: MessageStats | null;
       detail?: string;
+      altGroup?: string | null;
       attachments?: Omit<Attachment, 'id'>[];
     }
   ): Promise<Message> {
@@ -353,10 +412,12 @@ export class Repo {
       detail: m.detail ?? '',
       createdAt: now,
       attachments: (m.attachments ?? []).map((a) => ({ ...a, id: newId() })),
+      versions: null,
+      altGroup: m.altGroup ?? null,
     };
     await this.db.run(
-      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [msg.id, sessionId, seq, msg.role, msg.content, msg.thinking, msg.model, msg.hostLabel, msg.stats ? JSON.stringify(msg.stats) : null, msg.detail, now]
+      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, detail, alt_group, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, sessionId, seq, msg.role, msg.content, msg.thinking, msg.model, msg.hostLabel, msg.stats ? JSON.stringify(msg.stats) : null, msg.detail, msg.altGroup, now]
     );
     for (const [i, a] of msg.attachments.entries()) {
       await this.db.run('INSERT INTO attachments (id, message_id, seq, base64, width, height) VALUES (?, ?, ?, ?, ?, ?)', [
@@ -397,7 +458,13 @@ export class Repo {
   }
 
   async listMessages(sessionId: string): Promise<Message[]> {
-    const rows = await this.db.all<MessageRow>('SELECT * FROM messages WHERE session_id = ? ORDER BY seq', [sessionId]);
+    const rows = await this.db.all<MessageRow>(`SELECT * FROM messages m WHERE session_id = ? AND ${VISIBLE} ORDER BY seq`, [sessionId]);
+    const groupRows = await this.db.all<{ id: string; alt_group: string }>(
+      'SELECT id, alt_group FROM messages WHERE session_id = ? AND alt_group IS NOT NULL AND deleted_at IS NULL ORDER BY seq',
+      [sessionId]
+    );
+    const groups = new Map<string, string[]>();
+    for (const g of groupRows) groups.set(g.alt_group, [...(groups.get(g.alt_group) ?? []), g.id]);
     const atts = await this.db.all<{ id: string; message_id: string; base64: string; width: number; height: number }>(
       'SELECT a.id, a.message_id, a.base64, a.width, a.height FROM attachments a JOIN messages m ON m.id = a.message_id WHERE m.session_id = ? ORDER BY a.message_id, a.seq',
       [sessionId]
@@ -421,6 +488,11 @@ export class Repo {
       detail: r.detail ?? '',
       createdAt: r.created_at,
       attachments: byMessage.get(r.id) ?? [],
+      altGroup: r.alt_group ?? null,
+      versions: (() => {
+        const ids = r.alt_group ? (groups.get(r.alt_group) ?? []) : [];
+        return ids.length > 1 ? { index: ids.indexOf(r.id) + 1, total: ids.length } : null;
+      })(),
     }));
   }
 
@@ -428,9 +500,44 @@ export class Repo {
     await this.db.run('DELETE FROM messages WHERE id = ?', [id]);
   }
 
-  /** 刪掉某則訊息（含）之後的所有訊息：編輯重送、重新產生時用 */
+  /** 刪掉某則訊息（含）之後的所有訊息（永久） */
   async deleteMessagesFrom(sessionId: string, seq: number): Promise<void> {
     await this.db.run('DELETE FROM messages WHERE session_id = ? AND seq >= ?', [sessionId, seq]);
+  }
+
+  /** 先藏起來（可以復原）：某則訊息（含）之後所有看得到的訊息。回傳被藏的訊息 id */
+  async softDeleteFrom(sessionId: string, seq: number): Promise<string[]> {
+    const rows = await this.db.all<{ id: string }>(`SELECT id FROM messages m WHERE session_id = ? AND seq >= ? AND ${VISIBLE}`, [sessionId, seq]);
+    const ids = rows.map((r) => r.id);
+    await this.softDeleteMessages(ids);
+    return ids;
+  }
+
+  async softDeleteMessages(ids: string[]): Promise<void> {
+    const now = this.now();
+    for (const id of ids) await this.db.run('UPDATE messages SET deleted_at = ? WHERE id = ?', [now, id]);
+  }
+
+  async restoreMessages(ids: string[]): Promise<void> {
+    for (const id of ids) await this.db.run('UPDATE messages SET deleted_at = NULL WHERE id = ?', [id]);
+  }
+
+  /** 把回答收成「舊版本」（看不到，但可以切回來）。回傳版本群組代號 */
+  async hideAsVersion(id: string): Promise<string> {
+    await this.db.run('UPDATE messages SET alt_group = COALESCE(alt_group, id), hidden = 1 WHERE id = ?', [id]);
+    return (await this.db.get<{ alt_group: string }>('SELECT alt_group FROM messages WHERE id = ?', [id]))!.alt_group;
+  }
+
+  /** 顯示同一群組裡的某個版本，其他版本藏起來 */
+  async showVersion(id: string): Promise<void> {
+    const row = await this.db.get<{ alt_group: string | null }>('SELECT alt_group FROM messages WHERE id = ?', [id]);
+    if (!row?.alt_group) return;
+    await this.db.run('UPDATE messages SET hidden = CASE WHEN id = ? THEN 0 ELSE 1 END WHERE alt_group = ?', [id, row.alt_group]);
+  }
+
+  /** 同一群組的版本 id（依先後） */
+  async versionIds(group: string): Promise<string[]> {
+    return (await this.db.all<{ id: string }>('SELECT id FROM messages WHERE alt_group = ? AND deleted_at IS NULL ORDER BY seq', [group])).map((r) => r.id);
   }
 
   // ---- 提示詞範本 ----
@@ -450,23 +557,51 @@ export class Repo {
     await this.db.run('UPDATE templates SET title = ?, content = ? WHERE id = ?', [title, content, id]);
   }
 
+  /** 把刪掉的範本原樣加回去（復原用） */
+  async restoreTemplate(tpl: Template): Promise<void> {
+    await this.db.run('INSERT OR REPLACE INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [tpl.id, tpl.title, tpl.content, tpl.position]);
+  }
+
   async deleteTemplate(id: string): Promise<void> {
     await this.db.run('DELETE FROM templates WHERE id = ?', [id]);
   }
 
   // ---- 資料庫檔案 ----
 
-  /** 刪除所有對話（連訊息與照片），保留主機、範本、設定；之後壓縮檔案釋放空間 */
-  async deleteAllSessions(): Promise<void> {
-    await this.db.run('DELETE FROM sessions');
-    await this.db.exec('VACUUM');
+  /** 所有（還沒刪除的）對話移到最近刪除，回傳它們的 id */
+  async trashAllSessions(): Promise<string[]> {
+    const ids = (await this.db.all<{ id: string }>('SELECT id FROM sessions WHERE deleted_at IS NULL')).map((r) => r.id);
+    await this.trashSessions(ids);
+    return ids;
   }
 
-  /** 清除全部資料，回到第一次打開的樣子（範本恢復成預設） */
+  /** 清除全部資料，回到第一次打開的樣子（範本恢復成預設）；永久刪除，之後壓縮檔案 */
   async resetAll(): Promise<void> {
     await this.db.exec('DELETE FROM sessions; DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
     await this.seedTemplates();
     await this.db.exec('VACUUM');
+  }
+
+  /** 清除前先記下主機、範本、設定，復原時放回去 */
+  async snapshotSettings(): Promise<{ hosts: Host[]; templates: Template[]; settings: { key: string; value: string }[] }> {
+    return {
+      hosts: await this.listHosts(),
+      templates: await this.listTemplates(),
+      settings: await this.db.all<{ key: string; value: string }>('SELECT key, value FROM settings'),
+    };
+  }
+
+  async restoreSnapshot(snap: { hosts: Host[]; templates: Template[]; settings: { key: string; value: string }[] }): Promise<void> {
+    await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+    for (const h of snap.hosts) await this.restoreHost(h);
+    for (const tpl of snap.templates) await this.restoreTemplate(tpl);
+    for (const s of snap.settings) await this.setSetting(s.key, s.value);
+  }
+
+  /** 清掉主機、範本、設定（範本恢復預設），對話另外處理 */
+  async clearSettings(): Promise<void> {
+    await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+    await this.seedTemplates();
   }
 
   private async seedTemplates(): Promise<void> {
@@ -477,7 +612,11 @@ export class Repo {
 
   /** 對話有幾段 */
   async countSessions(): Promise<number> {
-    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions'))?.n ?? 0;
+    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NULL'))?.n ?? 0;
+  }
+
+  async countTrash(): Promise<number> {
+    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NOT NULL'))?.n ?? 0;
   }
 
   /** 資料庫目前的大小（位元組） */

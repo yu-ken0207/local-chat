@@ -52,17 +52,37 @@ describe('長按 AI 的回答', () => {
     expect(share).toHaveBeenCalledWith({ message: '回答：你好' });
   });
 
-  test('重新產生：後面還有訊息時先確認，確認後後面的訊息都換掉', async () => {
+  test('重新產生中間的回答：不用先確認，後面的訊息可以按「復原」拿回來', async () => {
     const { store } = await setup(['第一題', '第二題']);
     const old = msgId(store, 1);
     pickActions(2);
-    const alert = confirm();
+    const alert = jest.spyOn(Alert, 'alert');
     await longPress(store, 1);
-    expect(alert.mock.calls[0][1]).toBe('之後的 2 則訊息也會一起刪掉。');
+    expect(alert).not.toHaveBeenCalled();
     await waitFor(() => expect(store.getState().messages).toHaveLength(2));
     await waitFor(() => expect(store.getState().streaming).toBeNull());
     expect(msgId(store, 1)).not.toBe(old);
     expect(screen.queryByText('第二題')).toBeNull();
+    expect(screen.getByText('已刪掉後面的 2 則訊息')).toBeTruthy();
+    await fireEvent.press(screen.getByText('復原'));
+    await waitFor(() => expect(screen.getByText('第二題')).toBeTruthy());
+    expect(msgId(store, 1)).toBe(old);
+  });
+
+  test('重新產生最後一則回答：舊回答留著，用 ‹ › 切換', async () => {
+    const { store, net } = await setup();
+    let n = 0;
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: `版本${++n}` }, done: false }, { message: { content: '' }, done: true }] });
+    await store.send('問');
+    await fireEvent.press(screen.getByText('重新產生'));
+    await waitFor(() => expect(store.getState().messages[1]?.content).toBe('版本2'));
+    await waitFor(() => expect(store.getState().streaming).toBeNull());
+    expect(screen.getByLabelText('第 2 個回答，共 2 個')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('上一個回答'));
+    expect(await screen.findByText('版本1')).toBeTruthy();
+    expect(screen.getByLabelText('第 1 個回答，共 2 個')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('下一個回答'));
+    expect(await screen.findByText('版本2')).toBeTruthy();
   });
 
   test('最後一則回答重新產生不用確認', async () => {
@@ -104,12 +124,13 @@ describe('長按 AI 的回答', () => {
     expect(screen.queryByText('朗讀中…')).toBeNull();
   });
 
-  test('刪除', async () => {
+  test('刪除：不用先確認，按「復原」拿回來', async () => {
     const { store } = await setup(['hi']);
     pickActions(6);
-    confirm();
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages).toHaveLength(1));
+    await fireEvent.press(screen.getByText('復原'));
+    await waitFor(() => expect(store.getState().messages).toHaveLength(2));
   });
 });
 
@@ -166,7 +187,7 @@ describe('提示詞範本', () => {
     expect(screen.getByText('沒有符合的範本')).toBeTruthy();
   });
 
-  test('管理範本：新增後出現在清單與輸入框上方；刪除前確認', async () => {
+  test('管理範本：新增後出現在清單；刪除不用確認，可以復原', async () => {
     const { store } = await setup();
     await fireEvent.press(screen.getByLabelText('管理範本'));
     await fireEvent.press(await screen.findByText('新增範本'));
@@ -175,9 +196,10 @@ describe('提示詞範本', () => {
     await fireEvent.press(screen.getByText('儲存'));
     expect(await screen.findByLabelText('修改範本 寫日報')).toBeTruthy();
 
-    confirm();
     await fireEvent.press(screen.getByLabelText('刪除範本 寫日報'));
     await waitFor(() => expect(store.getState().templates.some((t) => t.title === '寫日報')).toBe(false));
+    await fireEvent.press(await screen.findByText('復原'));
+    await waitFor(() => expect(store.getState().templates.some((t) => t.title === '寫日報')).toBe(true));
   });
 
   test('範本沒填完不能存', async () => {

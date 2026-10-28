@@ -93,18 +93,19 @@ test('對話清單往左滑可以刪除（也支援 VoiceOver 的刪除動作）
   await store.titleTask;
   const first = (await store.listSessions()).at(-1)!;
   await fireEvent.press(screen.getByText('對話'));
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
   await swipeDelete(await screen.findByTestId(`swipe-session-${first.id}`));
-  await waitFor(() => expect(alert).toHaveBeenCalled());
   await waitFor(async () => expect(await store.listSessions()).toHaveLength(1));
+  expect(await screen.findByText('復原')).toBeTruthy();
 });
 
-test('連接面板的電腦往左滑可以移除', async () => {
+test('連接面板的電腦往左滑可以移除，也可以復原', async () => {
   const { store } = await setup();
   await fireEvent.press(screen.getByLabelText(/模型：/));
   await fireEvent.press(await screen.findByText('新增電腦'));
   await swipeDelete(await screen.findByTestId(`swipe-host-${A}`));
   await waitFor(() => expect(store.getState().hosts).toEqual([]));
+  await fireEvent.press(await screen.findByText('復原'));
+  await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
 });
 
 test('預設範本是通用的（沒有工作專用的內容）', async () => {

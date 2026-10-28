@@ -22,7 +22,7 @@ describe('migrate', () => {
     const { db, repo } = await freshRepo();
     await repo.migrate();
     expect((await repo.listTemplates()).map((t) => t.title)).toEqual(DEFAULT_TEMPLATES.map((t) => t.title));
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 2 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 3 });
   });
 });
 
@@ -238,16 +238,20 @@ describe('使用者自己移除資料', () => {
     return { db, repo };
   }
 
-  test('刪除所有對話：對話、訊息、照片清空，主機、範本、設定保留，檔案變小', async () => {
+  test('刪除所有對話：先移到最近刪除（主機、範本、設定保留）；清空最近刪除後檔案變小', async () => {
     const { db, repo } = await seeded();
     const before = await repo.sizeBytes();
     expect(await repo.countSessions()).toBe(3);
-    await repo.deleteAllSessions();
+    const ids = await repo.trashAllSessions();
+    expect(ids).toHaveLength(3);
     expect(await repo.countSessions()).toBe(0);
-    expect(await db.get('SELECT COUNT(*) AS n FROM attachments')).toEqual({ n: 0 });
+    expect(await repo.countTrash()).toBe(3);
     expect(await repo.listHosts()).toHaveLength(1);
     expect((await repo.listTemplates()).some((t) => t.title === '自訂')).toBe(true);
     expect(await repo.getSetting('lastModel')).toBe('gemma4:31b');
+    await repo.emptyTrash();
+    expect(await repo.countTrash()).toBe(0);
+    expect(await db.get('SELECT COUNT(*) AS n FROM attachments')).toEqual({ n: 0 });
     expect(await repo.sizeBytes()).toBeLessThan(before / 2);
   });
 
@@ -271,7 +275,7 @@ describe('資料庫升級', () => {
       INSERT INTO messages VALUES ('m1', 's1', 1, 'user', '舊訊息', '', NULL, NULL, NULL, 1);
       PRAGMA user_version = 1;`);
     await v1.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 2 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 3 });
     const msgs = await v1.listMessages('s1');
     expect(msgs.map((m) => [m.content, m.detail])).toEqual([['舊訊息', '']]);
     await v1.addMessage('s1', { role: 'error', content: '連不到', detail: 'Network request failed' });

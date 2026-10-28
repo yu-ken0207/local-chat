@@ -596,3 +596,183 @@ describe('移除資料', () => {
     expect(s.templates.some((t) => t.title === '自訂')).toBe(false);
   });
 });
+
+describe('不怕按錯：復原、最近刪除、回答版本', () => {
+  test('刪除訊息後可以復原', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    await store.deleteMessage(store.getState().messages[1].id);
+    expect(store.getState().messages).toHaveLength(1);
+    expect(store.getState().undo?.message).toBe('已刪除訊息');
+    await store.undoLast();
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['a', '回答：a']);
+    expect(store.getState().undo).toBeNull();
+  });
+
+  test('刪除對話：放進最近刪除，可以馬上復原，也可以之後從最近刪除救回', async () => {
+    const { store } = await ready();
+    await store.send('第一段');
+    const first = store.getState().session!.id;
+    await store.newSession();
+    await store.send('第二段');
+    await store.deleteSession(first);
+    expect((await store.listSessions()).map((s) => s.id)).not.toContain(first);
+    expect((await store.listTrash()).map((s) => s.id)).toEqual([first]);
+    await store.undoLast();
+    expect(store.getState().session?.id).toBe(first);
+    expect(await store.listTrash()).toEqual([]);
+
+    await store.deleteSession(first);
+    await store.dismissUndo();
+    await store.restoreSession(first);
+    expect((await store.listSessions()).map((s) => s.id)).toContain(first);
+  });
+
+  test('最近刪除：永久刪除單一段、清空全部', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    const a = store.getState().session!.id;
+    await store.newSession();
+    await store.send('b');
+    const b = store.getState().session!.id;
+    await store.deleteSession(a);
+    await store.deleteSession(b);
+    await store.deleteForever(a);
+    expect((await store.listTrash()).map((s) => s.id)).toEqual([b]);
+    await store.emptyTrash();
+    expect(await store.listTrash()).toEqual([]);
+  });
+
+  test('最近刪除超過 30 天的，開 App 時真的刪掉', async () => {
+    let now = 1_000_000_000_000;
+    const net = new FakeOllamaNet();
+    const repo = new Repo(memoryDb(), () => now);
+    const store = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false, now: () => now });
+    await store.init();
+    const s = await repo.createSession();
+    await repo.addMessage(s.id, { role: 'user', content: 'old' });
+    await repo.trashSessions([s.id]);
+    now += 29 * 86_400_000;
+    await new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false }).init();
+    expect(await repo.countTrash()).toBe(1);
+    now += 2 * 86_400_000;
+    await new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false }).init();
+    expect(await repo.countTrash()).toBe(0);
+  });
+
+  test('重新產生最後一則回答：保留舊回答當版本，可以用 ‹ › 切換；送出時用看得到的那個版本', async () => {
+    const { net, store } = await ready();
+    let n = 0;
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: `答案${++n}` }, done: false }, { message: { content: '' }, done: true }] });
+    await store.send('問題');
+    await store.regenerate(store.getState().messages[1].id);
+    let msgs = store.getState().messages;
+    expect(msgs.map((m) => m.content)).toEqual(['問題', '答案2']);
+    expect(msgs[1].versions).toEqual({ index: 2, total: 2 });
+    expect(store.getState().undo).toBeNull(); // 後面沒有訊息，不用復原提示
+
+    await store.switchVersion(msgs[1].id, -1);
+    msgs = store.getState().messages;
+    expect(msgs.map((m) => m.content)).toEqual(['問題', '答案1']);
+    expect(msgs[1].versions).toEqual({ index: 1, total: 2 });
+
+    await store.send('追問');
+    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual(['請用繁體中文（台灣用語）回答。', '問題', '答案1', '追問']);
+  });
+
+  test('重新產生中間的回答：後面的訊息先藏起來，可以復原', async () => {
+    const { store } = await ready();
+    await store.send('第一題');
+    await store.send('第二題');
+    const firstAnswer = store.getState().messages[1];
+    await store.regenerate(firstAnswer.id);
+    expect(store.getState().messages).toHaveLength(2);
+    expect(store.getState().undo?.message).toBe('已刪掉後面的 2 則訊息');
+    await store.undoLast();
+    expect(store.getState().messages.map((m) => [m.content, m.id === firstAnswer.id])).toEqual([
+      ['第一題', false],
+      ['回答：第一題', true],
+      ['第二題', false],
+      ['回答：第二題', false],
+    ]);
+  });
+
+  test('編輯重送後可以復原成原本的訊息', async () => {
+    const { store } = await ready();
+    await store.send('原本');
+    const original = store.getState().messages.map((m) => m.id);
+    await store.editAndResend(original[0], '改過');
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['改過', '回答：改過']);
+    await store.undoLast();
+    expect(store.getState().messages.map((m) => m.id)).toEqual(original);
+  });
+
+  test('移除電腦、刪除範本都可以復原', async () => {
+    const { store } = await ready();
+    await store.renameHost(A, '書房');
+    await store.removeHost(A);
+    expect(store.getState().hosts).toEqual([]);
+    expect(store.getState().undo?.message).toBe('已移除「書房」');
+    await store.undoLast();
+    expect(store.getState().hosts.map((h) => h.label)).toEqual(['書房']);
+    expect(store.getState().models[A].list.length).toBeGreaterThan(0);
+
+    const tpl = store.getState().templates[0];
+    await store.deleteTemplate(tpl.id);
+    expect(store.getState().templates.some((t) => t.id === tpl.id)).toBe(false);
+    await store.undoLast();
+    expect(store.getState().templates[0]).toEqual(tpl);
+  });
+
+  test('刪除所有對話可以復原', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    await store.newSession();
+    await store.send('b');
+    await store.deleteAllSessions();
+    expect((await store.listSessions()).length).toBe(1);
+    expect(store.getState().undo?.message).toBe('已刪除 2 段對話');
+    await store.undoLast();
+    expect((await store.listSessions()).map((s) => s.preview).sort()).toEqual(['回答：a', '回答：b']);
+  });
+
+  test('清除全部資料：幾秒內可以復原；時間到才真的刪', async () => {
+    const { store, repo } = await ready();
+    await store.send('a');
+    await store.addTemplate('自訂', '內容');
+    await store.resetAll();
+    expect(store.getState().hosts).toEqual([]);
+    await store.undoLast();
+    expect(store.getState().hosts.map((h) => h.url)).toEqual([A]);
+    expect(store.getState().templates.some((t) => t.title === '自訂')).toBe(true);
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['a', '回答：a']);
+
+    await store.resetAll();
+    await store.dismissUndo(); // 提示時間到
+    expect(await repo.countTrash()).toBe(0);
+    expect(await repo.listHosts()).toEqual([]);
+    expect(store.getState().templates.some((t) => t.title === '自訂')).toBe(false);
+  });
+
+  test('清除全部資料後還在可以復原的時候就關掉 App：下次打開時真的刪掉', async () => {
+    const { net, store, repo } = await ready();
+    await store.send('a');
+    await store.resetAll();
+    const again = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false });
+    await again.init();
+    expect(await repo.countTrash()).toBe(0);
+    expect(await repo.listHosts()).toEqual([]);
+  });
+
+  test('下一個操作開始時，上一個沒按復原的就確定了', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    await store.send('b');
+    await store.deleteMessage(store.getState().messages[3].id);
+    await store.deleteMessage(store.getState().messages[2].id);
+    expect(store.getState().undo?.message).toBe('已刪除訊息');
+    await store.undoLast();
+    // 只復原最後一次刪除
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['a', '回答：a', 'b']);
+  });
+});

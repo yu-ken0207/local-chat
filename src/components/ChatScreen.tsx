@@ -21,6 +21,7 @@ import { ModelSheet } from './ModelSheet';
 import { SessionList, SessionSettings } from './SessionSheets';
 import { TemplatesSheet } from './TemplatesSheet';
 import { Toast, type ToastData } from './Toast';
+import { UndoToast } from './UndoToast';
 
 export type ChatScreenProps = {
   store: ChatStore;
@@ -84,14 +85,9 @@ export function ChatScreen(p: ChatScreenProps) {
     Speech.speak(plainText(m.content), { language: 'zh-TW', onDone: done, onStopped: done, onError: done });
   }
 
-  /** 重新產生前，如果後面還有訊息就先確認 */
-  function confirmLater(m: Message, action: () => Promise<void>) {
-    const later = store.laterCount(m.id);
-    if (later === 0) return void action();
-    Alert.alert('重新產生？', `之後的 ${later} 則訊息也會一起刪掉。`, [
-      { text: '取消', style: 'cancel' },
-      { text: '重新產生', onPress: () => void action() },
-    ]);
+  /** 重新產生：舊回答會留著當版本，後面的訊息可以復原，所以不用先確認 */
+  function confirmLater(_m: Message, action: () => Promise<void>) {
+    void action();
   }
 
   function startEdit(m: Message) {
@@ -104,11 +100,9 @@ export function ChatScreen(p: ChatScreenProps) {
     setInjected({ text: '', photos: [], nonce: Date.now() });
   }
 
+  /** 刪除訊息：直接刪，畫面下方可以復原 */
   function confirmDeleteMessage(m: Message) {
-    Alert.alert('刪除這則訊息？', undefined, [
-      { text: '取消', style: 'cancel' },
-      { text: '刪除', style: 'destructive', onPress: () => void store.deleteMessage(m.id) },
-    ]);
+    void store.deleteMessage(m.id);
   }
 
   /** 長按訊息的選單 */
@@ -157,6 +151,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
+  const anySheetOpen = sheetOpen || listOpen || settingsOpen || templatesOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
   const title = session?.title || (state.messages.length > 0 ? '對話' : '新對話');
 
@@ -224,6 +219,7 @@ export function ChatScreen(p: ChatScreenProps) {
               onHelp={() => setConnect({ help: true })}
               onCopy={() => copy(m.content)}
               onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
+              onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
             />
           ))
         )}
@@ -256,7 +252,8 @@ export function ChatScreen(p: ChatScreenProps) {
       ) : null}
 
       <View style={styles.toastAnchor} pointerEvents="box-none">
-        <Toast toast={toast} onDone={() => setToast(null)} />
+        {/* 面板開著時，復原提示由面板自己顯示 */}
+        {state.undo ? anySheetOpen ? null : <UndoToast store={store} /> : <Toast toast={toast} onDone={() => setToast(null)} />}
       </View>
       <Composer
         modelLabel={modelLabel}
