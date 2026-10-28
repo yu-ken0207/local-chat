@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { BASE_SCHEMA, DEFAULT_TEMPLATES, NotBackupError, Repo, likePattern } from '../src/store/repo';
+import { BASE_SCHEMA, NotBackupError, Repo, defaultTemplates, likePattern } from '../src/store/repo';
 import { memoryDb } from './helpers/nodeDb';
 
 /** 每次呼叫時間加 1，方便檢查排序 */
@@ -21,7 +21,7 @@ describe('migrate', () => {
   test('建表、放入預設範本；重跑不會重複', async () => {
     const { db, repo } = await freshRepo();
     await repo.migrate();
-    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(DEFAULT_TEMPLATES.map((t) => t.title));
+    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(defaultTemplates().map((t) => t.title));
     expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 3 });
   });
 });
@@ -261,7 +261,7 @@ describe('使用者自己移除資料', () => {
     expect(await repo.countSessions()).toBe(0);
     expect(await repo.listHosts()).toEqual([]);
     expect(await repo.getSetting('lastModel')).toBeNull();
-    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(DEFAULT_TEMPLATES.map((t) => t.title));
+    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(defaultTemplates().map((t) => t.title));
   });
 });
 

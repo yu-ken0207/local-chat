@@ -14,6 +14,7 @@ import { chooseOption } from './Composer';
 import { SwipeRow } from './SwipeRow';
 import { SettingsView } from './SettingsSheet';
 import { UndoToast } from './UndoToast';
+import { t } from '../i18n';
 
 type ListItem = Session & { preview: string };
 
@@ -23,7 +24,7 @@ export async function shareSession(store: ChatStore, id: string) {
     const { title, markdown } = await store.exportSession(id);
     await Share.share({ title, message: markdown });
   } catch (e: any) {
-    Alert.alert('匯出失敗', String(e?.message ?? e));
+    Alert.alert(t('匯出失敗'), String(e?.message ?? e));
   }
 }
 
@@ -68,9 +69,9 @@ export function SessionList({
   }, [query, version, store, undo?.id, view]);
 
   function menu(s: ListItem) {
-    const name = s.title || s.preview || '新對話';
-    chooseOption(name, ['重新命名', '匯出', '刪除'], (i) => {
-      if (i === 0) Alert.prompt('重新命名', undefined, async (t) => (await store.renameSession(s.id, t), reload()), 'plain-text', s.title);
+    const name = s.title || s.preview || t('新對話');
+    chooseOption(name, [t('重新命名'), t('匯出'), t('刪除')], (i) => {
+      if (i === 0) Alert.prompt(t('重新命名'), undefined, async (t) => (await store.renameSession(s.id, t), reload()), 'plain-text', s.title);
       if (i === 1) void shareSession(store, s.id);
       if (i === 2) void deleteSession(store, s.id, reload);
     });
@@ -84,9 +85,9 @@ export function SessionList({
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Text style={styles.title}>對話</Text>
+        <Text style={styles.title}>{t('對話')}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.done}>完成</Text>
+          <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
       <View style={styles.search}>
@@ -95,11 +96,11 @@ export function SessionList({
           style={styles.searchInput}
           value={query}
           onChangeText={setQuery}
-          placeholder="搜尋標題或內容"
+          placeholder={t('搜尋標題或內容')}
           placeholderTextColor={C.placeholder}
           clearButtonMode="while-editing"
           returnKeyType="search"
-          accessibilityLabel="搜尋對話"
+          accessibilityLabel={t('搜尋對話')}
         />
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
@@ -109,17 +110,17 @@ export function SessionList({
             onClose();
           }}
           accessibilityRole="button"
-          accessibilityLabel="開始新對話"
+          accessibilityLabel={t('開始新對話')}
           style={({ pressed }) => [styles.newRow, pressed && styles.pressed]}>
           <SymbolView name="square.and.pencil" size={18} tintColor={C.accent} />
-          <Text style={styles.newText}>開始新對話</Text>
+          <Text style={styles.newText}>{t('開始新對話')}</Text>
         </Pressable>
         <View style={styles.card}>
           {items === null ? null : items.length === 0 ? (
-            <Text style={styles.empty}>{query ? '沒有符合的對話' : '還沒有對話'}</Text>
+            <Text style={styles.empty}>{query ? t('沒有符合的對話') : t('還沒有對話')}</Text>
           ) : (
             items.map((s, i) => {
-              const name = s.title || s.preview || '新對話';
+              const name = s.title || s.preview || t('新對話');
               return (
                 <SwipeRow key={s.id} testID={`swipe-session-${s.id}`} onDelete={() => void deleteSession(store, s.id, reload)}>
                 <Pressable
@@ -130,7 +131,7 @@ export function SessionList({
                   }}
                   onLongPress={() => menu(s)}
                   accessibilityRole="button"
-                  accessibilityLabel={`對話 ${name}`}
+                  accessibilityLabel={t('對話 {p0}', { p0: name })}
                   accessibilityState={{ selected: s.id === currentId }}
                   style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                   <View style={styles.row}>
@@ -147,7 +148,7 @@ export function SessionList({
                         </Text>
                       ) : null}
                     </View>
-                    <Pressable onPress={() => menu(s)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`${name} 的選項`}>
+                    <Pressable onPress={() => menu(s)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: name })}>
                       <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
                     </Pressable>
                   </View>
@@ -158,11 +159,11 @@ export function SessionList({
             })
           )}
         </View>
-        <Text style={styles.footnote}>對話只存在這支手機。往左滑可以刪除；按 ⋯ 可以改名、匯出。</Text>
+        <Text style={styles.footnote}>{t('對話只存在這支手機。往左滑可以刪除；按 ⋯ 可以改名、匯出。')}</Text>
         <Pressable onPress={() => setView('settings')} accessibilityRole="button" style={({ pressed }) => [styles.card, styles.settingsRow, pressed && { backgroundColor: C.pressed }]}>
           <View style={styles.row}>
             <SymbolView name="gearshape" size={18} tintColor={C.accent} />
-            <Text style={[styles.rowTitle, styles.flex]}>設定</Text>
+            <Text style={[styles.rowTitle, styles.flex]}>{t('設定')}</Text>
             <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
           </View>
         </Pressable>
@@ -186,14 +187,14 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   const daysLeft = (deletedAt: number) => Math.max(1, TRASH_DAYS - Math.floor((Date.now() - deletedAt) / 86_400_000));
 
   function forever(s: TrashItem, name: string) {
-    Alert.alert(`永久刪除「${name}」？`, '永久刪除後就救不回來了。', [
-      { text: '取消', style: 'cancel' },
-      { text: '永久刪除', style: 'destructive', onPress: () => void store.deleteForever(s.id).then(reload) },
+    Alert.alert(t('永久刪除「{p0}」？', { p0: name }), t('永久刪除後就救不回來了。'), [
+      { text: t('取消'), style: 'cancel' },
+      { text: t('永久刪除'), style: 'destructive', onPress: () => void store.deleteForever(s.id).then(reload) },
     ]);
   }
 
   function menu(s: TrashItem, name: string) {
-    chooseOption(name, ['救回這段對話', '永久刪除'], async (i) => {
+    chooseOption(name, [t('救回這段對話'), t('永久刪除')], async (i) => {
       if (i === 0) {
         await store.restoreSession(s.id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -204,42 +205,42 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   }
 
   function emptyAll() {
-    Alert.alert('清空最近刪除？', `${items?.length ?? 0} 段對話會永久刪除，救不回來。`, [
-      { text: '取消', style: 'cancel' },
-      { text: '全部清空', style: 'destructive', onPress: () => void store.emptyTrash().then(reload) },
+    Alert.alert(t('清空最近刪除？'), t('{p0} 段對話會永久刪除，救不回來。', { p0: items?.length ?? 0 }), [
+      { text: t('取消'), style: 'cancel' },
+      { text: t('全部清空'), style: 'destructive', onPress: () => void store.emptyTrash().then(reload) },
     ]);
   }
 
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="返回設定" style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
+        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('返回設定')} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
           <SymbolView name="chevron.left" size={16} tintColor={C.accent} />
-          <Text style={styles.cancel}>設定</Text>
+          <Text style={styles.cancel}>{t('設定')}</Text>
         </Pressable>
-        <Text style={styles.title}>最近刪除</Text>
+        <Text style={styles.title}>{t('最近刪除')}</Text>
         <Pressable onPress={emptyAll} disabled={!items?.length} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={[styles.cancel, !items?.length && { color: C.tertiary }]}>全部清空</Text>
+          <Text style={[styles.cancel, !items?.length && { color: C.tertiary }]}>{t('全部清空')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           {items === null ? null : items.length === 0 ? (
-            <Text style={styles.empty}>最近刪除是空的。刪除的對話會在這裡保留 {TRASH_DAYS} 天，之後才真的刪掉。</Text>
+            <Text style={styles.empty}>{t('最近刪除是空的。刪除的對話會在這裡保留 {n} 天，之後才真的刪掉。', { n: TRASH_DAYS })}</Text>
           ) : (
             items.map((s, i) => {
-              const name = s.title || s.preview || '對話';
+              const name = s.title || s.preview || t('對話');
               return (
-                <SwipeRow key={s.id} label="永久刪除" testID={`swipe-trash-${s.id}`} onDelete={() => forever(s, name)}>
-                  <Pressable onPress={() => menu(s, name)} accessibilityRole="button" accessibilityLabel={`已刪除的對話 ${name}`} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+                <SwipeRow key={s.id} label={t('永久刪除')} testID={`swipe-trash-${s.id}`} onDelete={() => forever(s, name)}>
+                  <Pressable onPress={() => menu(s, name)} accessibilityRole="button" accessibilityLabel={t('已刪除的對話 {p0}', { p0: name })} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                     <View style={styles.row}>
                       <View style={styles.flex}>
                         <Text style={styles.rowTitle} numberOfLines={1}>
                           {name}
                         </Text>
-                        <Text style={styles.preview}>還會保留 {daysLeft(s.deletedAt)} 天</Text>
+                        <Text style={styles.preview}>{t('還會保留 {n} 天', { n: daysLeft(s.deletedAt) })}</Text>
                       </View>
-                      <Text style={styles.restore}>救回</Text>
+                      <Text style={styles.restore}>{t('救回')}</Text>
                     </View>
                     {i < items.length - 1 ? <View style={styles.separator} /> : null}
                   </Pressable>
@@ -248,7 +249,7 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
             })
           )}
         </View>
-        <Text style={styles.footnote}>點一下可以救回或永久刪除。</Text>
+        <Text style={styles.footnote}>{t('點一下可以救回或永久刪除。')}</Text>
       </ScrollView>
     </View>
   );
@@ -269,43 +270,43 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
     <View style={styles.sheet}>
       <View style={styles.header}>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.cancel}>取消</Text>
+          <Text style={styles.cancel}>{t('取消')}</Text>
         </Pressable>
-        <Text style={styles.title}>對話設定</Text>
+        <Text style={styles.title}>{t('對話設定')}</Text>
         <Pressable onPress={save} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.done}>完成</Text>
+          <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.section}>標題</Text>
+        <Text style={styles.section}>{t('標題')}</Text>
         <View style={styles.card}>
           <TextInput
             style={styles.field}
             value={title}
             onChangeText={setTitle}
-            placeholder="第一次回答後會自動取標題"
+            placeholder={t('第一次回答後會自動取標題')}
             placeholderTextColor={C.placeholder}
-            accessibilityLabel="對話標題"
+            accessibilityLabel={t('對話標題')}
           />
         </View>
-        <Text style={styles.section}>自訂指示</Text>
+        <Text style={styles.section}>{t('自訂指示')}</Text>
         <View style={styles.card}>
           <TextInput
             style={[styles.field, styles.multiline]}
             value={role}
             onChangeText={setRole}
-            placeholder="例如：用簡單的話解釋，回答不要太長。"
+            placeholder={t('例如：用簡單的話解釋，回答不要太長。')}
             placeholderTextColor={C.placeholder}
             multiline
-            accessibilityLabel="自訂指示"
+            accessibilityLabel={t('自訂指示')}
           />
         </View>
-        <Text style={styles.footnote}>告訴 AI 在這段對話裡要怎麼回答，只用在這段對話。留空就照預設。</Text>
+        <Text style={styles.footnote}>{t('告訴 AI 在這段對話裡要怎麼回答，只用在這段對話。留空就照預設。')}</Text>
         <View style={[styles.card, styles.actions]}>
           <Pressable onPress={() => shareSession(store, session.id)} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
             <View style={styles.row}>
               <SymbolView name="square.and.arrow.up" size={18} tintColor={C.accent} />
-              <Text style={[styles.rowTitle, { color: C.accent }]}>匯出成 Markdown</Text>
+              <Text style={[styles.rowTitle, { color: C.accent }]}>{t('匯出成 Markdown')}</Text>
             </View>
           </Pressable>
           <View style={styles.separator} />
@@ -315,7 +316,7 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
             style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
             <View style={styles.row}>
               <SymbolView name="trash" size={18} tintColor={C.red} />
-              <Text style={[styles.rowTitle, { color: C.red }]}>刪除這段對話</Text>
+              <Text style={[styles.rowTitle, { color: C.red }]}>{t('刪除這段對話')}</Text>
             </View>
           </Pressable>
         </View>

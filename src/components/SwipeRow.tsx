@@ -2,6 +2,7 @@ import { useMemo, useRef, type ReactNode } from 'react';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { C, TEXT } from '../ui/theme';
+import { t } from '../i18n';
 
 const ACTION_WIDTH = 88;
 
@@ -9,7 +10,8 @@ const ACTION_WIDTH = 88;
  * 左滑露出「刪除」（iOS 清單的慣例）。滑過一半放開會停在打開的位置，滑很遠或很快直接刪除。
  * 用彈簧動畫、從手指放開的位置接續；也提供輔助使用的「刪除」動作（VoiceOver 轉輪）。
  */
-export function SwipeRow({ children, onDelete, label = '刪除', testID }: { children: ReactNode; onDelete: () => void; label?: string; testID?: string }) {
+export function SwipeRow({ children, onDelete, label: labelProp, testID }: { children: ReactNode; onDelete: () => void; label?: string; testID?: string }) {
+  const label = labelProp ?? t('刪除');
   const x = useRef(new Animated.Value(0)).current;
   const open = useRef(false);
 

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { Message, Session } from '../store/repo';
 
 /** 時間寫成 2026-10-28 19:05 */
@@ -9,17 +10,17 @@ export function fmtDateTime(ts: number): string {
 
 /** 把一段對話匯出成 Markdown（照片只標張數，不放圖） */
 export function exportMarkdown(session: Session, messages: Message[], options: { hostLabel: string; now: number }): string {
-  const lines: string[] = [`# ${session.title || '對話'}`, ''];
-  if (session.model) lines.push(`- 模型：${[options.hostLabel, session.model].filter(Boolean).join(' · ')}`);
-  if (session.systemPrompt.trim()) lines.push(`- 角色：${session.systemPrompt.trim().replace(/\n+/g, ' ')}`);
-  lines.push(`- 匯出時間：${fmtDateTime(options.now)}`, '', '---', '');
+  const lines: string[] = [`# ${session.title || t('對話')}`, ''];
+  if (session.model) lines.push(t('- 模型：{model}', { model: [options.hostLabel, session.model].filter(Boolean).join(' · ') }));
+  if (session.systemPrompt.trim()) lines.push(t('- 自訂指示：{text}', { text: session.systemPrompt.trim().replace(/\n+/g, ' ') }));
+  lines.push(t('- 匯出時間：{time}', { time: fmtDateTime(options.now) }), '', '---', '');
   for (const m of messages) {
     if (m.role === 'user') {
-      lines.push(`**你**：${m.content}`);
-      if (m.attachments.length > 0) lines.push(`（附 ${m.attachments.length} 張照片）`);
+      lines.push(t('**你**：{text}', { text: m.content }));
+      if (m.attachments.length > 0) lines.push(t('（附 {n} 張照片）', { n: m.attachments.length }));
     } else if (m.role === 'assistant') {
       if (!m.content.trim()) continue;
-      lines.push(`**AI**${m.model ? `（${m.model}）` : ''}：`, '', m.content.trim());
+      lines.push(m.model ? t('**AI**（{model}）：', { model: m.model }) : t('**AI**：'), '', m.content.trim());
     } else {
       lines.push(`> ${m.content}`);
     }
@@ -35,7 +36,7 @@ export function cleanTitle(raw: string): string {
     .split('\n')
     .map((l) => l.trim())
     .find(Boolean) ?? '';
-  return [...first.replace(/^(標題|title)\s*[:：]\s*/i, '').replace(/[#*`"'“”‘’「」『』《》【】]/g, '').replace(/[。．.!！]+$/, '').trim()]
+  return [...first.replace(/^(標題|title)\s*[:：]\s*/i, '').replace(/[#*`"'“”‘’「」『』《》【】]/g, '').replace(/[。．.!！]+$/, '').trim()] // i18n-ignore：比對模型可能回的「標題：」與各種引號
     .slice(0, 20)
     .join('');
 }

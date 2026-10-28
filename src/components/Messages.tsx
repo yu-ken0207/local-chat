@@ -8,6 +8,7 @@ import type { Streaming } from '../state/chatStore';
 import type { Attachment, Message } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { Markdown } from './Markdown';
+import { t } from '../i18n';
 
 type Handlers = {
   onOpenImage: (images: Attachment[], index: number) => void;
@@ -63,8 +64,8 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
             )}
             {!live && h.isLast && content ? (
               <View style={styles.actions}>
-                {h.onCopy ? <ActionButton text="複製" onPress={h.onCopy} /> : null}
-                {h.onRegenerate ? <ActionButton text="重新產生" onPress={h.onRegenerate} /> : null}
+                {h.onCopy ? <ActionButton text={t('複製')} onPress={h.onCopy} /> : null}
+                {h.onRegenerate ? <ActionButton text={t('重新產生')} onPress={h.onRegenerate} /> : null}
               </View>
             ) : null}
           </View>
@@ -84,7 +85,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
           {h.isLast && m.role === 'error' ? <ErrorActions detail={m.detail} onRetry={h.onRetry} onHelp={h.onHelp} /> : null}
           {h.isLast && m.role === 'note' && h.onRetry ? (
             <View style={styles.actions}>
-              <ActionButton text="重新回答" onPress={h.onRetry} />
+              <ActionButton text={t('重新回答')} onPress={h.onRetry} />
             </View>
           ) : null}
         </View>
@@ -98,14 +99,14 @@ function Versions({ versions, onSwitch }: { versions: { index: number; total: nu
   const first = versions.index <= 1;
   const last = versions.index >= versions.total;
   return (
-    <View style={styles.versions} accessibilityLabel={`第 ${versions.index} 個回答，共 ${versions.total} 個`}>
-      <Pressable onPress={() => onSwitch(-1)} disabled={first} hitSlop={10} accessibilityRole="button" accessibilityLabel="上一個回答">
+    <View style={styles.versions} accessibilityLabel={t('第 {p0} 個回答，共 {p1} 個', { p0: versions.index, p1: versions.total })}>
+      <Pressable onPress={() => onSwitch(-1)} disabled={first} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('上一個回答')}>
         <Text style={[styles.versionArrow, first && styles.versionOff]}>‹</Text>
       </Pressable>
       <Text style={styles.meta}>
         {versions.index} / {versions.total}
       </Text>
-      <Pressable onPress={() => onSwitch(1)} disabled={last} hitSlop={10} accessibilityRole="button" accessibilityLabel="下一個回答">
+      <Pressable onPress={() => onSwitch(1)} disabled={last} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('下一個回答')}>
         <Text style={[styles.versionArrow, last && styles.versionOff]}>›</Text>
       </Pressable>
     </View>
@@ -118,9 +119,9 @@ function ErrorActions({ detail, onRetry, onHelp }: { detail: string; onRetry?: (
   return (
     <View style={styles.errorActions}>
       <View style={styles.actions}>
-        {onRetry ? <ActionButton text="重試" onPress={onRetry} primary /> : null}
-        {onHelp ? <ActionButton text="連線說明" onPress={onHelp} /> : null}
-        {detail ? <ActionButton text={open ? '收起詳細資訊' : '詳細資訊'} onPress={() => setOpen((v) => !v)} /> : null}
+        {onRetry ? <ActionButton text={t('重試')} onPress={onRetry} primary /> : null}
+        {onHelp ? <ActionButton text={t('連線說明')} onPress={onHelp} /> : null}
+        {detail ? <ActionButton text={open ? t('收起詳細資訊') : t('詳細資訊')} onPress={() => setOpen((v) => !v)} /> : null}
       </View>
       {open ? (
         <Text style={[styles.meta, styles.detail]} selectable>
@@ -157,7 +158,7 @@ export function Thumbnails({ images, onOpen }: { images: Attachment[]; onOpen: (
           key={img.id}
           onPress={() => onOpen(images, i)}
           accessibilityRole="imagebutton"
-          accessibilityLabel={`照片 ${i + 1}，點一下放大`}
+          accessibilityLabel={t('照片 {p0}，點一下放大', { p0: i + 1 })}
           style={({ pressed }) => pressed && styles.pressed}>
           <Image source={{ uri: dataUri(img.base64) }} style={styles.thumb} />
         </Pressable>
@@ -176,11 +177,11 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         onPress={() => setOpen((v) => !v)}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={open ? '收起思考過程' : '展開思考過程'}
+        accessibilityLabel={open ? t('收起思考過程') : t('展開思考過程')}
         hitSlop={6}>
         <Text style={styles.thinkingHeader}>
-          {live ? '✻ 思考中' : '✻ 思考過程'}
-          <Text style={styles.dim}>（{text.length} 字）{open ? ' ▾' : ' ▸'}</Text>
+          {live ? t('✻ 思考中') : t('✻ 思考過程')}
+          <Text style={styles.dim}>{t('（{n} 字）', { n: text.length })}{open ? ' ▾' : ' ▸'}</Text>
         </Text>
       </Pressable>
       {open ? (
@@ -202,13 +203,13 @@ function Working({ streaming }: { streaming: Streaming }) {
     return () => clearInterval(timer);
   }, []);
   const seconds = Math.max(0, (now - streaming.startedAt) / 1000);
-  const label = streaming.phase === 'waiting' ? '等待模型' : streaming.phase === 'thinking' ? '思考中' : '回答中';
+  const label = streaming.phase === 'waiting' ? t('等待模型') : streaming.phase === 'thinking' ? t('思考中') : t('回答中');
   return (
-    <View style={styles.working} accessibilityLiveRegion="polite" accessibilityLabel={`${label}，${Math.floor(seconds)} 秒`}>
+    <View style={styles.working} accessibilityLiveRegion="polite" accessibilityLabel={t('{p0}，{p1} 秒', { p0: label, p1: Math.floor(seconds) })}>
       <Shimmer text={label} seconds={seconds} />
       <Text style={[styles.small, styles.dim]}> ({fmtElapsed(seconds)})</Text>
       {streaming.phase === 'waiting' && seconds > 8 ? (
-        <Text style={[styles.small, styles.dim]}>　第一次用這個模型要先載入</Text>
+        <Text style={[styles.small, styles.dim]}>　{t('第一次用這個模型要先載入')}</Text>
       ) : null}
     </View>
   );

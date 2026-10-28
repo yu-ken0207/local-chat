@@ -1,7 +1,9 @@
+import { t } from '../i18n';
+
 /** 把 Markdown 變成適合朗讀的純文字：程式碼區塊不念、去掉符號、連結只念文字 */
 export function plainText(markdown: string): string {
   return markdown
-    .replace(/```[\s\S]*?(```|$)/g, '（程式碼）')
+    .replace(/```[\s\S]*?(```|$)/g, t('（程式碼）'))
     .replace(/`([^`]*)`/g, '$1')
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')

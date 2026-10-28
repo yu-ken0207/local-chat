@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 // 找 Ollama 主機：區網掃描、手動輸入位址的解析。主機一律不寫死在程式裡。
 
 export const OLLAMA_PORT = 11434;
@@ -38,14 +40,14 @@ export function hostUrl(host: string, port = OLLAMA_PORT): string {
  */
 export function parseHostInput(input: string): { url: string; label: string } | { error: string } {
   const text = input.trim().replace(/\/+$/, '');
-  if (!text) return { error: '請輸入位址' };
+  if (!text) return { error: t('請輸入位址') };
   const m = /^(?:(https?):\/\/)?([a-z0-9.-]+|\[[0-9a-f:]+\])(?::(\d{1,5}))?$/i.exec(text);
-  if (!m) return { error: '位址格式不對，例如 192.168.1.20' };
+  if (!m) return { error: t('位址格式不對，例如 192.168.1.20') };
   const scheme = (m[1] ?? 'http').toLowerCase();
   const host = m[2].toLowerCase();
   const port = m[3] ? Number(m[3]) : OLLAMA_PORT;
-  if (port < 1 || port > 65535) return { error: '連接埠要在 1～65535 之間' };
-  if (/^\d+(\.\d+)*$/.test(host) && !parseIPv4(host)) return { error: 'IP 位址格式不對' };
+  if (port < 1 || port > 65535) return { error: t('連接埠要在 1～65535 之間') };
+  if (/^\d+(\.\d+)*$/.test(host) && !parseIPv4(host)) return { error: t('IP 位址格式不對') };
   return { url: `${scheme}://${host}:${port}`, label: port === OLLAMA_PORT ? host : `${host}:${port}` };
 }
 

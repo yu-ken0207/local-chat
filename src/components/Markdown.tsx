@@ -3,6 +3,7 @@ import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
 import { C, MONO, TEXT } from '../ui/theme';
+import { t } from '../i18n';
 
 // 把 Markdown 畫成原生元件。串流時文字一直變長，每次重新解析（有 useMemo，內容沒變就不重算）。
 
@@ -29,14 +30,14 @@ function blocks(tokens: Token[], ctx: Ctx, keyPrefix = 'b'): ReactNode[] {
   return tokens.map((t, i) => block(t, ctx, `${keyPrefix}${i}`)).filter((n) => n !== null);
 }
 
-function block(t: Token, ctx: Ctx, key: string): ReactNode {
-  switch (t.type) {
+function block(token: Token, ctx: Ctx, key: string): ReactNode {
+  switch (token.type) {
     case 'space':
     case 'def':
       return null;
     case 'paragraph':
     case 'text': {
-      const tok = t as Tokens.Paragraph | Tokens.Text;
+      const tok = token as Tokens.Paragraph | Tokens.Text;
       return (
         <Text key={key} style={ctx.base} selectable>
           {tok.tokens ? inline(tok.tokens, ctx) : decode(tok.text)}
@@ -44,7 +45,7 @@ function block(t: Token, ctx: Ctx, key: string): ReactNode {
       );
     }
     case 'heading': {
-      const h = t as Tokens.Heading;
+      const h = token as Tokens.Heading;
       return (
         <Text key={key} style={[ctx.base, styles.heading]} selectable accessibilityRole="header">
           <Text style={styles.headingMark}>{'#'.repeat(h.depth)} </Text>
@@ -53,15 +54,15 @@ function block(t: Token, ctx: Ctx, key: string): ReactNode {
       );
     }
     case 'code':
-      return <CodeBlock key={key} code={(t as Tokens.Code).text} lang={(t as Tokens.Code).lang ?? ''} onCopy={ctx.onCopyCode} />;
+      return <CodeBlock key={key} code={(token as Tokens.Code).text} lang={(token as Tokens.Code).lang ?? ''} onCopy={ctx.onCopyCode} />;
     case 'blockquote':
       return (
         <View key={key} style={styles.quote}>
-          {blocks((t as Tokens.Blockquote).tokens, { ...ctx, base: { ...ctx.base, color: C.secondary } }, key)}
+          {blocks((token as Tokens.Blockquote).tokens, { ...ctx, base: { ...ctx.base, color: C.secondary } }, key)}
         </View>
       );
     case 'list': {
-      const list = t as Tokens.List;
+      const list = token as Tokens.List;
       const start = typeof list.start === 'number' ? list.start : 1;
       return (
         <View key={key} style={styles.list}>
@@ -77,60 +78,60 @@ function block(t: Token, ctx: Ctx, key: string): ReactNode {
       );
     }
     case 'table':
-      return <Table key={key} table={t as Tokens.Table} ctx={ctx} />;
+      return <Table key={key} table={token as Tokens.Table} ctx={ctx} />;
     case 'hr':
       return <View key={key} style={styles.hr} />;
     case 'html':
       return (
         <Text key={key} style={[ctx.base, { color: C.secondary }]} selectable>
-          {(t as Tokens.HTML).text.trim()}
+          {(token as Tokens.HTML).text.trim()}
         </Text>
       );
     default:
-      return 'text' in t && typeof t.text === 'string' ? (
+      return 'text' in token && typeof token.text === 'string' ? (
         <Text key={key} style={ctx.base} selectable>
-          {decode(t.text)}
+          {decode(token.text)}
         </Text>
       ) : null;
   }
 }
 
 function inline(tokens: Token[], ctx: Ctx): ReactNode[] {
-  return tokens.map((t, i) => {
-    switch (t.type) {
+  return tokens.map((token, i) => {
+    switch (token.type) {
       case 'text':
       case 'escape': {
-        const tok = t as Tokens.Text;
+        const tok = token as Tokens.Text;
         return tok.tokens ? <Text key={i}>{inline(tok.tokens, ctx)}</Text> : decode(tok.text);
       }
       case 'strong':
         return (
           <Text key={i} style={styles.strong}>
-            {inline((t as Tokens.Strong).tokens, ctx)}
+            {inline((token as Tokens.Strong).tokens, ctx)}
           </Text>
         );
       case 'em':
         return (
           <Text key={i} style={styles.em}>
-            {inline((t as Tokens.Em).tokens, ctx)}
+            {inline((token as Tokens.Em).tokens, ctx)}
           </Text>
         );
       case 'del':
         return (
           <Text key={i} style={styles.del}>
-            {inline((t as Tokens.Del).tokens, ctx)}
+            {inline((token as Tokens.Del).tokens, ctx)}
           </Text>
         );
       case 'codespan':
         return (
           <Text key={i} style={styles.codespan}>
-            {decode((t as Tokens.Codespan).text)}
+            {decode((token as Tokens.Codespan).text)}
           </Text>
         );
       case 'br':
         return '\n';
       case 'link': {
-        const link = t as Tokens.Link;
+        const link = token as Tokens.Link;
         return (
           <Text key={i} style={styles.link} onPress={() => Linking.openURL(link.href)} accessibilityRole="link">
             {inline(link.tokens, ctx)}
@@ -138,15 +139,15 @@ function inline(tokens: Token[], ctx: Ctx): ReactNode[] {
         );
       }
       case 'image': {
-        const img = t as Tokens.Image;
+        const img = token as Tokens.Image;
         return (
           <Text key={i} style={styles.link} onPress={() => Linking.openURL(img.href)}>
-            [圖片：{img.text || img.href}]
+            {t('[圖片：{name}]', { name: img.text || img.href })}
           </Text>
         );
       }
       default:
-        return 'text' in t && typeof t.text === 'string' ? decode(t.text) : '';
+        return 'text' in token && typeof token.text === 'string' ? decode(token.text) : '';
     }
   });
 }
@@ -166,13 +167,13 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
           <Pressable
             hitSlop={10}
             accessibilityRole="button"
-            accessibilityLabel="複製程式碼"
+            accessibilityLabel={t('複製程式碼')}
             onPress={() => {
               onCopy(code);
               setCopied(true);
             }}
             style={({ pressed }) => pressed && styles.pressed}>
-            <Text style={styles.codeCopy}>{copied ? '已複製' : '複製'}</Text>
+            <Text style={styles.codeCopy}>{copied ? t('已複製') : t('複製')}</Text>
           </Pressable>
         )}
       </View>

@@ -1,11 +1,12 @@
 import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/discovery';
 import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, exportMarkdown, fallbackTitle } from '../lib/exportMd';
-import { DEFAULT_IMAGE_QUESTION, REPLY_PROMPTS, buildChatMessages } from '../lib/history';
+import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import type { Attachment, Host, Message, Repo, Session, Template } from '../store/repo';
+import { setLanguage, t } from '../i18n';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
 
@@ -91,7 +92,11 @@ export class HostOfflineError extends Error {
 }
 
 /** 請模型幫對話取標題用的系統提示詞 */
-export const TITLE_PROMPT = '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。';
+/** 請模型取標題的提示詞（依回答語言；給 AI 的指示，不跟著畫面翻譯） */
+export const TITLE_PROMPTS = {
+  'zh-Hant': '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。', // i18n-ignore
+  en: 'Write a title for the conversation below: in English, at most 6 words, reply with the title only, no quotes or punctuation.',
+} as const;
 
 const SETTING_LAST_HOST = 'lastHost';
 const SETTING_PREFS = 'prefs';
@@ -107,12 +112,12 @@ const WIFI_TIMEOUT_MS = 3000;
 /** 錯誤翻成一般人看得懂的一句話（技術細節另外用 errorDetail 取） */
 export function describeError(e: unknown): string {
   if (e instanceof OllamaError) {
-    if (e.kind === 'network') return '連不到你的電腦。';
-    if (e.kind === 'timeout') return '電腦太久沒有回應。';
-    if (e.kind === 'cancelled') return '已取消。';
-    if (e.kind === 'http' && /not found/i.test(e.message)) return '電腦上找不到這個模型，可能已經被刪除，請換一個模型。';
-    if (e.kind === 'http') return '電腦拒絕了這次請求。';
-    return `電腦回報錯誤：${e.message}`;
+    if (e.kind === 'network') return t('連不到你的電腦。');
+    if (e.kind === 'timeout') return t('電腦太久沒有回應。');
+    if (e.kind === 'cancelled') return t('已取消。');
+    if (e.kind === 'http' && /not found/i.test(e.message)) return t('電腦上找不到這個模型，可能已經被刪除，請換一個模型。');
+    if (e.kind === 'http') return t('電腦拒絕了這次請求。');
+    return t('電腦回報錯誤：{p0}', { p0: e.message });
   }
   return e instanceof Error ? e.message : String(e);
 }
@@ -190,6 +195,8 @@ export class ChatStore {
   async setPref<K extends keyof Prefs>(key: K, value: Prefs[K]): Promise<void> {
     const prefs = { ...this.state.prefs, [key]: value };
     await this.deps.repo.setSetting(SETTING_PREFS, JSON.stringify(prefs));
+    this.state = { ...this.state, prefs };
+    setLanguage(this.appLanguage()); // 先換語言再通知畫面，重畫時就是新語言
     this.set({ prefs });
   }
 
@@ -259,6 +266,8 @@ export class ChatStore {
 
   async init(): Promise<void> {
     const { repo } = this.deps;
+    // 先用手機語言（第一次開 App 放的預設範本才會是對的語言），讀到設定後再套用使用者選的
+    setLanguage(this.deps.deviceLanguage?.() ?? 'zh-Hant');
     await repo.migrate();
     await repo.purgeExpired();
     const pendingWipe = await repo.getSetting(SETTING_PENDING_WIPE);
@@ -269,12 +278,15 @@ export class ChatStore {
     const hosts = await repo.listHosts();
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
+    const prefs = await this.loadPrefs();
+    this.state = { ...this.state, prefs };
+    setLanguage(this.appLanguage());
     this.set({
       hosts,
       session,
       messages: await repo.listMessages(session.id),
       templates: await repo.listTemplates(),
-      prefs: await this.loadPrefs(),
+      prefs,
       ready: true,
     });
     if (session.hostUrl) void this.loadModels(session.hostUrl);
@@ -341,11 +353,11 @@ export class ChatStore {
     try {
       ip = await Promise.race([
         wifiIp(),
-        new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('等了 3 秒沒有回應')), WIFI_TIMEOUT_MS))),
+        new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error(t('等了 3 秒沒有回應'))), WIFI_TIMEOUT_MS))),
       ]);
     } catch (e) {
       clearTimeout(timer);
-      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: `沒辦法確認手機的網路（${errorDetail(e)}）。請改用「手動輸入位址」。` } });
+      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: t('沒辦法確認手機的網路（{p0}）。請改用「手動輸入位址」。', { p0: errorDetail(e) }) } });
       return 0;
     }
     clearTimeout(timer);
@@ -358,8 +370,8 @@ export class ChatStore {
           total: 0,
           found: 0,
           error: ip
-            ? '這個 Wi-Fi 沒辦法自動尋找。請改用「手動輸入位址」。'
-            : '手機目前沒有連 Wi-Fi，沒辦法自動尋找。請連上跟電腦同一個 Wi-Fi，或改用「手動輸入位址」。',
+            ? t('這個 Wi-Fi 沒辦法自動尋找。請改用「手動輸入位址」。')
+            : t('手機目前沒有連 Wi-Fi，沒辦法自動尋找。請連上跟電腦同一個 Wi-Fi，或改用「手動輸入位址」。'),
         },
       });
       return 0;
@@ -406,7 +418,7 @@ export class ChatStore {
       version = v.version;
       status = { state: 'online', latencyMs: v.latencyMs, version };
     } catch (e) {
-      if (!options.force) throw new HostOfflineError(parsed.url, label, '連不到這個位址。');
+      if (!options.force) throw new HostOfflineError(parsed.url, label, t('連不到這個位址。'));
     }
     await repo.saveHost({ url: parsed.url, label, source: 'manual', version });
     const hosts = await repo.listHosts();
@@ -445,7 +457,7 @@ export class ChatStore {
     const { [url]: _s, ...hostStatus } = this.state.hostStatus;
     const { [url]: _m, ...models } = this.state.models;
     this.set({ hosts: await repo.listHosts(), hostStatus, models });
-    await this.offerUndo(`已移除「${host.label}」`, async () => {
+    await this.offerUndo(t('已移除「{p0}」', { p0: host.label }), async () => {
       await repo.restoreHost(host);
       this.set({
         hosts: await repo.listHosts(),
@@ -554,7 +566,7 @@ export class ChatStore {
     const session = await repo.getSession(id);
     await repo.trashSessions([id]);
     if (wasCurrent) await this.openLatestOrNew();
-    await this.offerUndo(`已刪除「${session?.title || '對話'}」`, async () => {
+    await this.offerUndo(t('已刪除「{p0}」', { p0: session?.title || t('對話') }), async () => {
       await repo.restoreSessions([id]);
       await this.openSession(id);
     });
@@ -610,9 +622,9 @@ export class ChatStore {
   async send(text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
     const s = this.state.session;
     if (!s || this.state.streaming) return;
-    if (!s.hostUrl || !s.model) throw new Error('請先選一個模型');
-    if (images.length > 0 && !this.canAttachImages()) throw new Error('這個模型看不懂圖片，不能附照片');
-    const content = text.trim() || (images.length > 0 ? DEFAULT_IMAGE_QUESTION : '');
+    if (!s.hostUrl || !s.model) throw new Error(t('請先選一個模型'));
+    if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
+    const content = text.trim() || (images.length > 0 ? defaultImageQuestion() : '');
     if (!content) return;
     await this.deps.repo.addMessage(s.id, { role: 'user', content, attachments: images });
     this.set({ messages: await this.deps.repo.listMessages(s.id), notice: '' });
@@ -635,7 +647,7 @@ export class ChatStore {
     this.set({ messages: await repo.listMessages(s.id), notice: '' });
     if (later.length > 0) {
       const before = new Set(this.state.messages.map((m) => m.id));
-      await this.offerUndo(`已刪掉後面的 ${later.length} 則訊息`, async () => {
+      await this.offerUndo(t('已刪掉後面的 {p0} 則訊息', { p0: later.length }), async () => {
         const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id) && m.id !== target.id);
         for (const m of added) await repo.deleteMessage(m.id);
         await repo.showVersion(target.id);
@@ -665,12 +677,12 @@ export class ChatStore {
     const s = this.state.session;
     const target = this.state.messages.find((m) => m.id === userId && m.role === 'user');
     if (!s || !target || this.state.streaming) return;
-    if (images.length > 0 && !this.canAttachImages()) throw new Error('這個模型看不懂圖片，不能附照片');
+    if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     if (!text.trim() && images.length === 0) return;
     const before = new Set((await repo.listMessages(s.id)).map((m) => m.id));
     const old = await repo.softDeleteFrom(s.id, target.seq);
     this.set({ messages: await repo.listMessages(s.id) });
-    await this.offerUndo('已取代原本的訊息', async () => {
+    await this.offerUndo(t('已取代原本的訊息'), async () => {
       this.stop();
       const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id));
       for (const m of added) await repo.deleteMessage(m.id);
@@ -708,7 +720,7 @@ export class ChatStore {
     if (!s || this.state.streaming?.messageId === id) return;
     await repo.softDeleteMessages([id]);
     this.set({ messages: await repo.listMessages(s.id) });
-    await this.offerUndo('已刪除訊息', async () => {
+    await this.offerUndo(t('已刪除訊息'), async () => {
       await repo.restoreMessages([id]);
       if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
     });
@@ -733,7 +745,7 @@ export class ChatStore {
     if (!tpl) return;
     await repo.deleteTemplate(id);
     this.set({ templates: await repo.listTemplates() });
-    await this.offerUndo(`已刪除範本「${tpl.title}」`, async () => {
+    await this.offerUndo(t('已刪除範本「{p0}」', { p0: tpl.title }), async () => {
       await repo.restoreTemplate(tpl);
       this.set({ templates: await repo.listTemplates() });
     });
@@ -757,7 +769,7 @@ export class ChatStore {
       vision: info ? info.vision : true,
       defaultSystemPrompt: reply ? REPLY_PROMPTS[reply] : '',
     });
-    if (droppedImages > 0) this.set({ notice: `目前的模型看不懂圖片，前面的 ${droppedImages} 張照片這次不會送出。` });
+    if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
     const hostLabel = this.hostLabel(url);
     const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel, altGroup: options.altGroup ?? null });
@@ -811,7 +823,7 @@ export class ChatStore {
       }
       await repo.addMessage(
         s.id,
-        cancelled ? { role: 'note', content: '已停止' } : { role: 'error', content: `沒有得到回答：${describeError(e)}`, detail: errorDetail(e) }
+        cancelled ? { role: 'note', content: t('已停止') } : { role: 'error', content: t('沒有得到回答：{p0}', { p0: describeError(e) }), detail: errorDetail(e) }
       );
       this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
     } finally {
@@ -837,8 +849,8 @@ export class ChatStore {
           model,
           think,
           messages: [
-            { role: 'system', content: TITLE_PROMPT },
-            { role: 'user', content: `使用者：${question.slice(0, 300)}\nAI：${answer.slice(0, 500)}` },
+            { role: 'system', content: TITLE_PROMPTS[this.replyLanguage() ?? this.appLanguage()] },
+            { role: 'user', content: t('使用者：{p0}\nAI：{p1}', { p0: question.slice(0, 300), p1: answer.slice(0, 500) }) },
           ],
         },
         (d) => (text += d.content ?? '')
@@ -858,10 +870,10 @@ export class ChatStore {
   async exportSession(id: string): Promise<{ title: string; markdown: string }> {
     const { repo } = this.deps;
     const session = await repo.getSession(id);
-    if (!session) throw new Error('找不到這段對話');
+    if (!session) throw new Error(t('找不到這段對話'));
     const messages = await repo.listMessages(id);
     return {
-      title: session.title || '對話',
+      title: session.title || t('對話'),
       markdown: exportMarkdown(session, messages, { hostLabel: this.hostLabel(session.hostUrl), now: this.now() }),
     };
   }
@@ -872,7 +884,7 @@ export class ChatStore {
     this.stop();
     const ids = await repo.trashAllSessions();
     this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
-    await this.offerUndo(`已刪除 ${ids.length} 段對話`, async () => {
+    await this.offerUndo(t('已刪除 {p0} 段對話', { p0: ids.length }), async () => {
       await repo.restoreSessions(ids);
       await repo.deleteEmptySessions();
       await this.openLatestOrNew();
@@ -905,7 +917,7 @@ export class ChatStore {
       templates: await repo.listTemplates(),
     });
     await this.offerUndo(
-      '已清除全部資料',
+      t('已清除全部資料'),
       async () => {
         await repo.restoreSnapshot(snapshot);
         await repo.restoreSessions(ids);
@@ -936,7 +948,7 @@ export class ChatStore {
     await repo.replaceWith(source);
     await this.reloadAll();
     if (snapshot) {
-      await this.offerUndo('已從備份還原', async () => {
+      await this.offerUndo(t('已從備份還原'), async () => {
         await repo.replaceWith(snapshot);
         await this.reloadAll();
       });
@@ -962,6 +974,8 @@ export class ChatStore {
       context: null,
       notice: '',
     });
+    setLanguage(this.appLanguage());
+    this.set({});
     void this.refreshHosts();
     if (session.hostUrl) void this.loadModels(session.hostUrl);
   }

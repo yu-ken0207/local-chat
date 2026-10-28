@@ -23,6 +23,7 @@ import { SessionList, SessionSettings } from './SessionSheets';
 import { TemplatesSheet } from './TemplatesSheet';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
+import { t } from '../i18n';
 
 export type ChatScreenProps = {
   store: ChatStore;
@@ -55,19 +56,19 @@ export function ChatScreen(p: ChatScreenProps) {
   /** 複製並在畫面上提示「已複製」 */
   function copy(text: string) {
     p.copyText(text);
-    showToast('已複製');
+    showToast(t('已複製'));
   }
 
   /** 回答的詳細資訊：原始模型名稱、電腦、速度、時間（進階資訊，平常不顯示） */
   function showDetails(m: Message) {
     const lines = [
-      m.model ? `模型：${friendlyModelName(m.model)}（${m.model}）` : '',
-      m.hostLabel ? `電腦：${m.hostLabel}` : '',
-      m.stats ? `速度：每秒約 ${fmtTokPerSec(m.stats.evalCount, m.stats.evalDurationNs).replace(' tok/s', '')} 個字詞（tok/s）` : '',
-      m.stats?.totalDurationNs ? `花費時間：${fmtElapsed(m.stats.totalDurationNs / 1e9)}` : '',
-      m.stats ? `用掉的上下文：${m.stats.promptEvalCount + m.stats.evalCount} tokens` : '',
+      m.model ? t('模型：{p0}（{p1}）', { p0: friendlyModelName(m.model), p1: m.model }) : '',
+      m.hostLabel ? t('電腦：{p0}', { p0: m.hostLabel }) : '',
+      m.stats ? t('速度：每秒約 {p0} 個字詞（tok/s）', { p0: fmtTokPerSec(m.stats.evalCount, m.stats.evalDurationNs).replace(' tok/s', '') }) : '',
+      m.stats?.totalDurationNs ? t('花費時間：{p0}', { p0: fmtElapsed(m.stats.totalDurationNs / 1e9) }) : '',
+      m.stats ? t('用掉的上下文：{p0} tokens', { p0: m.stats.promptEvalCount + m.stats.evalCount }) : '',
     ].filter(Boolean);
-    Alert.alert('詳細資訊', lines.join('\n'));
+    Alert.alert(t('詳細資訊'), lines.join('\n'));
   }
 
   // 換對話時結束編輯與朗讀
@@ -85,7 +86,9 @@ export function ChatScreen(p: ChatScreenProps) {
     }
     setSpeakingId(m.id);
     const done = () => setSpeakingId((id) => (id === m.id ? null : id));
-    Speech.speak(plainText(m.content), { language: 'zh-TW', onDone: done, onStopped: done, onError: done });
+    // 朗讀語言跟著 AI 回答的語言（不指定時跟著 App 語言）
+    const lang = store.replyLanguage() ?? store.appLanguage();
+    Speech.speak(plainText(m.content), { language: lang === 'en' ? 'en-US' : 'zh-TW', onDone: done, onStopped: done, onError: done });
   }
 
   /** 重新產生：舊回答會留著當版本，後面的訊息可以復原，所以不用先確認 */
@@ -112,26 +115,26 @@ export function ChatScreen(p: ChatScreenProps) {
   function messageMenu(m: Message) {
     if (state.streaming) return;
     if (m.role === 'user') {
-      chooseOption('你的訊息', ['複製', '編輯並重送', '刪除'], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
+      chooseOption(t('你的訊息'), [t('複製'), t('編輯並重送'), t('刪除')], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
-      chooseOption('AI 的回答', ['複製', '分享', '重新產生', '換個模型重新產生', speakingId === m.id ? '停止朗讀' : '朗讀', '詳細資訊', '刪除'], (i) =>
+      chooseOption(t('AI 的回答'), [t('複製'), t('分享'), t('重新產生'), t('換個模型重新產生'), speakingId === m.id ? t('停止朗讀') : t('朗讀'), t('詳細資訊'), t('刪除')], (i) =>
         [
           () => copy(m.content),
           () => void Share.share({ message: m.content }),
           () => confirmLater(m, () => store.regenerate(m.id)),
           () =>
             hostUrl && others.length > 0
-              ? chooseOption('用哪個模型重新產生', others.map(friendlyModelName), (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
-              : Alert.alert('沒有其他模型', '這台電腦上只有一個模型。'),
+              ? chooseOption(t('用哪個模型重新產生'), others.map(friendlyModelName), (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
+              : Alert.alert(t('沒有其他模型'), t('這台電腦上只有一個模型。')),
           () => speak(m),
           () => showDetails(m),
           () => confirmDeleteMessage(m),
         ][i]()
       );
     } else {
-      chooseOption(m.role === 'error' ? '錯誤訊息' : '提示', ['複製', '刪除'], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i]());
+      chooseOption(m.role === 'error' ? t('錯誤訊息') : t('提示'), [t('複製'), t('刪除')], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i]());
     }
   }
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
@@ -156,32 +159,32 @@ export function ChatScreen(p: ChatScreenProps) {
   const model = store.currentModel();
   const anySheetOpen = sheetOpen || listOpen || settingsOpen || templatesOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
-  const title = session?.title || (state.messages.length > 0 ? '對話' : '新對話');
+  const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerSide}>
-          <HeaderButton name="list.bullet" text="對話" label="對話清單" onPress={() => setListOpen(true)} />
+          <HeaderButton name="list.bullet" text={t('對話')} label={t('對話清單')} onPress={() => setListOpen(true)} />
         </View>
         <Pressable
           style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
           onPress={() => session && setSettingsOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel={`${title}，點一下打開對話設定`}>
+          accessibilityLabel={t('{p0}，點一下打開對話設定', { p0: title })}>
           <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
             {title}
           </Text>
           <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
         </Pressable>
         <View style={[styles.headerSide, styles.headerRight]}>
-          <HeaderButton name="square.and.pencil" text="新對話" label="新對話" disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
+          <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
         </View>
       </View>
       {session?.systemPrompt.trim() ? (
         <Pressable onPress={() => setSettingsOpen(true)} accessibilityRole="button" style={styles.roleBar}>
           <Text style={styles.roleMark} numberOfLines={1}>
-            ◆ 自訂指示：{session.systemPrompt.trim().replace(/\s+/g, ' ')}
+            {t('◆ 自訂指示：')}{session.systemPrompt.trim().replace(/\s+/g, ' ')}
           </Text>
         </Pressable>
       ) : null}
@@ -203,7 +206,7 @@ export function ChatScreen(p: ChatScreenProps) {
         {state.messages.length === 0 ? (
           <EmptyState
             phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
-            scanning={state.scan?.running && state.scan.total > 0 ? `正在尋找你的電腦…（${state.scan.done}/${state.scan.total}）` : ''}
+            scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
             modelLabel={modelLabel}
             onConnect={() => setConnect({ help: false })}
             onPickModel={() => setSheetOpen(true)}
@@ -230,10 +233,10 @@ export function ChatScreen(p: ChatScreenProps) {
 
       {speakingId ? (
         <Banner
-          text="朗讀中…"
+          text={t('朗讀中…')}
           tone="info"
           action={{
-            text: '停止',
+            text: t('停止'),
             onPress: () => {
               Speech.stop();
               setSpeakingId(null);
@@ -247,10 +250,10 @@ export function ChatScreen(p: ChatScreenProps) {
           tone={state.context.level === 'full' ? 'error' : 'warn'}
           text={
             state.context.level === 'full'
-              ? '這段對話太長了，AI 已經記不住最前面的內容。'
-              : '這段對話快要太長了，AI 可能開始忘記前面的內容。'
+              ? t('這段對話太長了，AI 已經記不住最前面的內容。')
+              : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
           }
-          action={{ text: '開新對話', onPress: () => store.newSession() }}
+          action={{ text: t('開新對話'), onPress: () => store.newSession() }}
         />
       ) : null}
 
@@ -284,8 +287,8 @@ export function ChatScreen(p: ChatScreenProps) {
           editing ? (
             <Banner
               tone="info"
-              text={`編輯中：送出後會取代這則訊息${editing.later > 0 ? `和之後的 ${editing.later} 則` : ''}`}
-              action={{ text: '取消編輯', onPress: cancelEdit }}
+              text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
+              action={{ text: t('取消編輯'), onPress: cancelEdit }}
             />
           ) : null
         }
@@ -333,9 +336,9 @@ function EmptyState({
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>
         <Text style={{ color: C.accent }}>◆ </Text>
-        {APP_NAME}
+        {t(APP_NAME)}
       </Text>
-      <Text style={styles.dim}>跟你自己電腦上的 AI 模型聊天。對話只存在這支手機。</Text>
+      <Text style={styles.dim}>{t('跟你自己電腦上的 AI 模型聊天。對話只存在這支手機。')}</Text>
       {scanning ? (
         <Text style={styles.dim} accessibilityLiveRegion="polite">
           {scanning}
@@ -343,17 +346,17 @@ function EmptyState({
       ) : null}
       {phase === 'noComputer' ? (
         <>
-          <PrimaryButton text="連接你的電腦" onPress={onConnect} />
-          <Text style={styles.hint}>需要一台開著 Ollama 的電腦，跟手機連同一個 Wi-Fi。</Text>
+          <PrimaryButton text={t('連接你的電腦')} onPress={onConnect} />
+          <Text style={styles.hint}>{t('需要一台開著 Ollama 的電腦，跟手機連同一個 Wi-Fi。')}</Text>
         </>
       ) : phase === 'noModel' ? (
         <>
-          <PrimaryButton text="選擇模型" onPress={onPickModel} />
-          <Text style={styles.hint}>已經連上電腦，選一個模型就能開始聊天。</Text>
+          <PrimaryButton text={t('選擇模型')} onPress={onPickModel} />
+          <Text style={styles.hint}>{t('已經連上電腦，選一個模型就能開始聊天。')}</Text>
         </>
       ) : (
         <Text style={styles.ready}>
-          已經連上 <Text style={styles.readyModel}>{modelLabel}</Text>，直接在下面輸入問題就可以開始。
+          {t('已經連上')} <Text style={styles.readyModel}>{modelLabel}</Text>{t('，直接在下面輸入問題就可以開始。')}
         </Text>
       )}
     </View>
@@ -378,7 +381,7 @@ function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 
         </Pressable>
       ) : null}
       {onClose ? (
-        <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel="關閉提示">
+        <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('關閉提示')}>
           <SymbolView name="xmark" size={12} tintColor={C.secondary} />
         </Pressable>
       ) : null}

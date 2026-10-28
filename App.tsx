@@ -16,6 +16,7 @@ import { ChatStore, type AppLanguage, type ChatEvent } from './src/state/chatSto
 import { openBackupBytes, openMemoryDb, openPhoneDb, type Db } from './src/store/db';
 import { Repo } from './src/store/repo';
 import { C, TEXT } from './src/ui/theme';
+import { t } from './src/i18n';
 
 function haptic(event: ChatEvent) {
   if (event === 'answered') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -61,7 +62,7 @@ export default function App() {
         <ChatScreen store={store} pickPhotos={pickPhotos} copyText={copyText} pickBackup={pickBackup} />
       ) : (
         <View style={styles.center}>
-          {error ? <Text style={styles.error}>開啟失敗：{error}</Text> : <ActivityIndicator />}
+          {error ? <Text style={styles.error}>{t('開啟失敗：')}{error}</Text> : <ActivityIndicator />}
         </View>
       )}
     </SafeAreaProvider>

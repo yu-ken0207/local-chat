@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 // 秒數寫法照 Codex：59s、1m 05s、1h 02m 03s
 export function fmtElapsed(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
@@ -39,7 +41,7 @@ export function fmtWhen(ts: number, now: number): string {
   const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   if (sameDay(d, n)) return `${p(d.getHours())}:${p(d.getMinutes())}`;
   const yesterday = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1);
-  if (sameDay(d, yesterday)) return '昨天';
+  if (sameDay(d, yesterday)) return t('昨天');
   if (d.getFullYear() === n.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }

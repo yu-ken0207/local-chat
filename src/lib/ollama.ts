@@ -1,6 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch';
 
 import { NdjsonSplitter } from './ndjson';
+import { t } from '../i18n';
 
 // ---- 型別 ----
 
@@ -138,9 +139,9 @@ function makeAbort(timeoutMs: number, outer?: AbortSignal) {
 
 function toOllamaError(e: any, abort: { timedOut(): boolean; cancelled(): boolean }, timeoutMs: number): OllamaError {
   if (e instanceof OllamaError) return e;
-  if (abort.cancelled()) return new OllamaError('cancelled', '已取消');
-  if (abort.timedOut()) return new OllamaError('timeout', `等了 ${Math.round(timeoutMs / 1000)} 秒沒有回應`);
-  return new OllamaError('network', `連不到主機：${e?.message ?? e}`);
+  if (abort.cancelled()) return new OllamaError('cancelled', t('已取消'));
+  if (abort.timedOut()) return new OllamaError('timeout', t('等了 {p0} 秒沒有回應', { p0: Math.round(timeoutMs / 1000) }));
+  return new OllamaError('network', t('連不到主機：{p0}', { p0: e?.message ?? e }));
 }
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -179,7 +180,7 @@ export class OllamaClient {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: abort.signal,
       });
-      if (!res.ok) throw new OllamaError('http', `HTTP ${res.status}：${(await res.text()).slice(0, 200)}`);
+      if (!res.ok) throw new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: (await res.text()).slice(0, 200) }));
       return await res.json();
     } catch (e) {
       throw toOllamaError(e, abort, timeoutMs);
@@ -192,7 +193,7 @@ export class OllamaClient {
   async version(timeoutMs = this.requestTimeout, signal?: AbortSignal): Promise<{ version: string; latencyMs: number }> {
     const start = Date.now();
     const data = await this.json('/api/version', undefined, timeoutMs, signal);
-    if (typeof data?.version !== 'string') throw new OllamaError('server', '這個位址不是 Ollama');
+    if (typeof data?.version !== 'string') throw new OllamaError('server', t('這個位址不是 Ollama'));
     return { version: data.version, latencyMs: Date.now() - start };
   }
 
@@ -253,8 +254,8 @@ export class OllamaClient {
         body: JSON.stringify(body),
         signal: abort.signal,
       });
-      if (!res.ok) throw new OllamaError('http', `HTTP ${res.status}：${(await res.text()).slice(0, 200)}`);
-      if (!res.body) throw new OllamaError('server', '主機沒有回傳串流資料');
+      if (!res.ok) throw new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: (await res.text()).slice(0, 200) }));
+      if (!res.body) throw new OllamaError('server', t('主機沒有回傳串流資料'));
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -276,7 +277,7 @@ export class OllamaClient {
       }
       splitter.push(decoder.decode()).forEach(handle);
       splitter.flush().forEach(handle);
-      if (!final) throw new OllamaError('network', '回答還沒結束連線就斷了');
+      if (!final) throw new OllamaError('network', t('回答還沒結束連線就斷了'));
       return {
         doneReason: String(final.done_reason ?? ''),
         evalCount: Number(final.eval_count ?? 0),

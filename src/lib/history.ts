@@ -1,11 +1,12 @@
 import type { Message } from '../store/repo';
 import type { ChatMessage } from './ollama';
+import { t } from '../i18n';
 
 /** 沒設自訂指示時的系統提示詞（依「AI 回答的語言」） */
-export const DEFAULT_SYSTEM_PROMPT = '請用繁體中文（台灣用語）回答。';
+export const DEFAULT_SYSTEM_PROMPT = '請用繁體中文（台灣用語）回答。'; // i18n-ignore：給 AI 的指示，不跟著畫面語言
 export const REPLY_PROMPTS = { 'zh-Hant': DEFAULT_SYSTEM_PROMPT, en: 'Please reply in English.' } as const;
 /** 只附照片沒打字時，代替使用者問的問題 */
-export const DEFAULT_IMAGE_QUESTION = '這張照片裡有什麼？';
+export const defaultImageQuestion = () => t('這張照片裡有什麼？');
 
 /**
  * 把存起來的對話整理成要送給 Ollama 的訊息。

@@ -7,6 +7,7 @@ import type { Template } from '../store/repo';
 import { SwipeRow } from './SwipeRow';
 import { UndoToast } from './UndoToast';
 import { C, TEXT } from '../ui/theme';
+import { t } from '../i18n';
 
 /** 管理提示詞範本：新增、修改、刪除 */
 export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore; templates: Template[]; onClose: () => void }) {
@@ -22,7 +23,7 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
 
   async function save() {
     if (!title.trim() || !content.trim()) {
-      Alert.alert('還沒填完', '標題和內容都要填。');
+      Alert.alert(t('還沒填完'), t('標題和內容都要填。'));
       return;
     }
     if (editing === 'new') await store.addTemplate(title, content);
@@ -40,28 +41,28 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
       <View style={styles.sheet}>
         <View style={styles.header}>
           <Pressable onPress={() => setEditing(null)} hitSlop={10} accessibilityRole="button">
-            <Text style={styles.cancel}>取消</Text>
+            <Text style={styles.cancel}>{t('取消')}</Text>
           </Pressable>
-          <Text style={styles.title}>{editing === 'new' ? '新增範本' : '修改範本'}</Text>
+          <Text style={styles.title}>{editing === 'new' ? t('新增範本') : t('修改範本')}</Text>
           <Pressable onPress={save} hitSlop={10} accessibilityRole="button">
-            <Text style={styles.done}>儲存</Text>
+            <Text style={styles.done}>{t('儲存')}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Text style={styles.section}>標題（打 / 時用來找）</Text>
+          <Text style={styles.section}>{t('標題（打 / 時用來找）')}</Text>
           <View style={styles.card}>
-            <TextInput style={styles.field} value={title} onChangeText={setTitle} placeholder="例如：寫日報" placeholderTextColor={C.placeholder} accessibilityLabel="範本標題" />
+            <TextInput style={styles.field} value={title} onChangeText={setTitle} placeholder={t('例如：寫日報')} placeholderTextColor={C.placeholder} accessibilityLabel={t('範本標題')} />
           </View>
-          <Text style={styles.section}>內容（會放進輸入框）</Text>
+          <Text style={styles.section}>{t('內容（會放進輸入框）')}</Text>
           <View style={styles.card}>
             <TextInput
               style={[styles.field, styles.multiline]}
               value={content}
               onChangeText={setContent}
-              placeholder="例如：幫我把下面的工作紀錄整理成日報："
+              placeholder={t('例如：幫我把下面的工作紀錄整理成日報：')}
               placeholderTextColor={C.placeholder}
               multiline
-              accessibilityLabel="範本內容"
+              accessibilityLabel={t('範本內容')}
             />
           </View>
         </ScrollView>
@@ -72,31 +73,31 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Text style={styles.title}>提示詞範本</Text>
+        <Text style={styles.title}>{t('提示詞範本')}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button">
-          <Text style={styles.done}>完成</Text>
+          <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Pressable onPress={() => edit('new')} accessibilityRole="button" style={({ pressed }) => [styles.newRow, pressed && styles.pressed]}>
           <SymbolView name="plus.circle.fill" size={18} tintColor={C.accent} />
-          <Text style={styles.newText}>新增範本</Text>
+          <Text style={styles.newText}>{t('新增範本')}</Text>
         </Pressable>
         <View style={styles.card}>
           {templates.length === 0 ? (
-            <Text style={styles.empty}>還沒有範本</Text>
+            <Text style={styles.empty}>{t('還沒有範本')}</Text>
           ) : (
-            templates.map((t, i) => (
-              <SwipeRow key={t.id} testID={`swipe-template-${t.id}`} onDelete={() => remove(t)}>
-                <Pressable onPress={() => edit(t)} accessibilityRole="button" accessibilityLabel={`修改範本 ${t.title}`} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+            templates.map((tpl, i) => (
+              <SwipeRow key={tpl.id} testID={`swipe-template-${tpl.id}`} onDelete={() => remove(tpl)}>
+                <Pressable onPress={() => edit(tpl)} accessibilityRole="button" accessibilityLabel={t('修改範本 {p0}', { p0: tpl.title })} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                   <View style={styles.row}>
                     <View style={styles.flex}>
-                      <Text style={styles.rowTitle}>/{t.title}</Text>
+                      <Text style={styles.rowTitle}>/{tpl.title}</Text>
                       <Text style={styles.rowSub} numberOfLines={1}>
-                        {t.content.replace(/\s+/g, ' ')}
+                        {tpl.content.replace(/\s+/g, ' ')}
                       </Text>
                     </View>
-                    <Pressable onPress={() => remove(t)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`刪除範本 ${t.title}`}>
+                    <Pressable onPress={() => remove(tpl)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('刪除範本 {p0}', { p0: tpl.title })}>
                       <SymbolView name="trash" size={17} tintColor={C.red} />
                     </Pressable>
                   </View>
@@ -106,7 +107,7 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
             ))
           )}
         </View>
-        <Text style={styles.footnote}>在輸入框打 / 可以叫出範本；新對話時，範本也會出現在輸入框上方。往左滑可以刪除。</Text>
+        <Text style={styles.footnote}>{t('在輸入框打 / 可以叫出範本；新對話時，範本也會出現在輸入框上方。往左滑可以刪除。')}</Text>
       </ScrollView>
       <UndoToast store={store} />
     </View>

@@ -32,7 +32,7 @@ const msg = (role: Role, content: string, extra: Partial<Message> = {}): Message
   ...extra,
 });
 
-test('匯出 Markdown：標題、模型、角色、時間、你與 AI 的話、照片張數、提示', () => {
+test('匯出 Markdown：標題、模型、自訂指示、時間、你與 AI 的話、照片張數、提示', () => {
   const now = new Date(2026, 9, 28, 19, 5).getTime();
   const md = exportMarkdown(
     session,
@@ -49,7 +49,7 @@ test('匯出 Markdown：標題、模型、角色、時間、你與 AI 的話、�
       '# 午餐討論',
       '',
       '- 模型：書房電腦 · gemma4:31b',
-      '- 角色：你是美食家 回答要簡短',
+      '- 自訂指示：你是美食家 回答要簡短',
       '- 匯出時間：2026-10-28 19:05',
       '',
       '---',
@@ -73,7 +73,7 @@ test('匯出 Markdown：標題、模型、角色、時間、你與 AI 的話、�
 test('沒有標題與角色時', () => {
   const md = exportMarkdown({ ...session, title: '', systemPrompt: '', model: null }, [], { hostLabel: '', now: 0 });
   expect(md.startsWith('# 對話\n\n- 匯出時間：')).toBe(true);
-  expect(md).not.toContain('角色');
+  expect(md).not.toContain('自訂指示');
 });
 
 test.each([

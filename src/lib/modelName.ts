@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 // 把 Ollama 的模型名稱（gemma4:12b、gpt-oss:20b、hf.co/xxx/Name:Q4_0）變成一般人好讀的名字。原始名稱放在詳細資訊裡。
 
 const KNOWN: Record<string, string> = {
@@ -43,5 +45,5 @@ export function friendlyModelName(name: string): string {
 
 /** 思考等級的白話說法 */
 export function friendlyLevel(level: string): string {
-  return ({ low: '快速', medium: '平衡', high: '仔細' } as Record<string, string>)[level] ?? level;
+  return ({ low: t('快速'), medium: t('平衡'), high: t('仔細') } as Record<string, string>)[level] ?? level;
 }

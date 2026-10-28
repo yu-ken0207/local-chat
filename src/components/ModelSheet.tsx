@@ -10,6 +10,7 @@ import type { ChatState, ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { CommandBox, ConnectSheet } from './ConnectSheet';
+import { t } from '../i18n';
 
 /** 選擇模型：上面選電腦，下面選模型。主要任務只有「選一個模型」 */
 export function ModelSheet({ store, state, onClose, copyText }: { store: ChatStore; state: ChatState; onClose: () => void; copyText: (text: string) => void }) {
@@ -35,16 +36,16 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   function modelMenu(url: string, m: ModelInfo, loadedBytes: number | null) {
     const name = m.name;
     const loaded = loadedBytes !== null;
-    chooseOption(friendlyModelName(name), ['詳細資訊', loaded ? '卸載（釋放電腦的顯示卡記憶體）' : '預先載入（之後第一次回答比較快）'], async (i) => {
+    chooseOption(friendlyModelName(name), [t('詳細資訊'), loaded ? t('卸載（釋放電腦的顯示卡記憶體）') : t('預先載入（之後第一次回答比較快）')], async (i) => {
       if (i === 0) {
         Alert.alert(
-          '詳細資訊',
+          t('詳細資訊'),
           [
-            `原始名稱：${name}`,
-            m.parameterSize ? `大小：${m.parameterSize} 參數` : '',
-            m.quantization ? `壓縮格式：${m.quantization}` : '',
-            m.contextLength ? `最多能記住：${m.contextLength.toLocaleString()} tokens` : '',
-            loaded ? `目前佔用顯示卡：${fmtBytes(loadedBytes)}` : '目前沒有載入顯示卡',
+            t('原始名稱：{p0}', { p0: name }),
+            m.parameterSize ? t('大小：{p0} 參數', { p0: m.parameterSize }) : '',
+            m.quantization ? t('壓縮格式：{p0}', { p0: m.quantization }) : '',
+            m.contextLength ? t('最多能記住：{p0} tokens', { p0: m.contextLength.toLocaleString() }) : '',
+            loaded ? t('目前佔用顯示卡：{p0}', { p0: fmtBytes(loadedBytes) }) : t('目前沒有載入顯示卡'),
           ]
             .filter(Boolean)
             .join('\n')
@@ -56,12 +57,12 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
           await store.preload(url, name);
           return;
         }
-        Alert.alert(`卸載 ${name}？`, '模型會離開電腦的顯示卡。如果其他人或程式正在用這個模型，下次使用要重新載入。', [
-          { text: '取消', style: 'cancel' },
-          { text: '卸載', style: 'destructive', onPress: () => store.unload(url, name).catch((e) => Alert.alert('卸載失敗', String(e?.message ?? e))) },
+        Alert.alert(t('卸載 {p0}？', { p0: name }), t('模型會離開電腦的顯示卡。如果其他人或程式正在用這個模型，下次使用要重新載入。'), [
+          { text: t('取消'), style: 'cancel' },
+          { text: t('卸載'), style: 'destructive', onPress: () => store.unload(url, name).catch((e) => Alert.alert(t('卸載失敗'), String(e?.message ?? e))) },
         ]);
       } catch (e: any) {
-        Alert.alert('預先載入失敗', String(e?.message ?? e));
+        Alert.alert(t('預先載入失敗'), String(e?.message ?? e));
       }
     });
   }
@@ -74,13 +75,13 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Text style={styles.title}>選擇模型</Text>
+        <Text style={styles.title}>{t('選擇模型')}</Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.done}>完成</Text>
+          <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
-        <Text style={styles.section}>電腦</Text>
+        <Text style={styles.section}>{t('電腦')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {state.hosts.map((h) => {
             const st = state.hostStatus[h.url]?.state;
@@ -93,7 +94,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                   setViewing(h.url);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={`顯示 ${h.label} 的模型，${st === 'online' ? '可以使用' : st === 'offline' ? '目前連不到' : '檢查中'}`}
+                accessibilityLabel={t('顯示 {p0} 的模型，{p1}', { p0: h.label, p1: st === 'online' ? t('可以使用') : st === 'offline' ? t('目前連不到') : t('檢查中') })}
                 accessibilityState={{ selected: on }}
                 style={[styles.chip, on && styles.chipOn]}>
                 <View style={[styles.dot, { backgroundColor: st === 'online' ? C.green : C.tertiary }]} />
@@ -103,32 +104,32 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
           })}
           <Pressable onPress={() => setConnectOpen(true)} accessibilityRole="button" style={[styles.chip, styles.addChip]}>
             <SymbolView name="plus" size={12} tintColor={C.accent} />
-            <Text style={[styles.chipText, { color: C.accent }]}>{state.hosts.length === 0 ? '連接你的電腦' : '新增電腦'}</Text>
+            <Text style={[styles.chipText, { color: C.accent }]}>{state.hosts.length === 0 ? t('連接你的電腦') : t('新增電腦')}</Text>
           </Pressable>
         </ScrollView>
 
         {viewing ? (
           <>
-            <Text style={styles.section}>模型</Text>
+            <Text style={styles.section}>{t('模型')}</Text>
             <View style={styles.card}>
               {models?.loading && models.list.length === 0 ? (
                 <View style={styles.row}>
                   <ActivityIndicator />
-                  <Text style={styles.rowSub}>讀取中…</Text>
+                  <Text style={styles.rowSub}>{t('讀取中…')}</Text>
                 </View>
               ) : models?.error || (status === 'offline' && !models?.list.length) ? (
                 <View style={styles.empty}>
-                  <Text style={[styles.emptyText, { color: C.orange }]}>連不到這台電腦。</Text>
+                  <Text style={[styles.emptyText, { color: C.orange }]}>{t('連不到這台電腦。')}</Text>
                   <View style={styles.inlineButtons}>
-                    <TextButton text="重試" onPress={() => store.connectHost(viewing)} />
-                    <TextButton text="連線說明" onPress={() => setConnectOpen(true)} />
+                    <TextButton text={t('重試')} onPress={() => store.connectHost(viewing)} />
+                    <TextButton text={t('連線說明')} onPress={() => setConnectOpen(true)} />
                   </View>
                 </View>
               ) : models && models.list.length === 0 ? (
                 <View style={styles.empty}>
-                  <Text style={styles.emptyText}>這台電腦還沒有模型。在電腦的終端機執行下面這行，就會下載一個：</Text>
+                  <Text style={styles.emptyText}>{t('這台電腦還沒有模型。在電腦的終端機執行下面這行，就會下載一個：')}</Text>
                   <CommandBox command="ollama pull gemma3" copyText={copyText} />
-                  <TextButton text="下載好了，重新整理" onPress={() => store.loadModels(viewing)} />
+                  <TextButton text={t('下載好了，重新整理')} onPress={() => store.loadModels(viewing)} />
                 </View>
               ) : (
                 (models?.list ?? []).map((m, i) => {
@@ -143,20 +144,20 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                         onClose();
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`模型 ${friendlyModelName(m.name)}${m.vision ? '，看得懂圖片' : ''}${m.think ? '，可以深入思考' : ''}${isLoaded ? '，回答較快' : ''}`}
+                      accessibilityLabel={t('模型 {p0}{p1}{p2}{p3}', { p0: friendlyModelName(m.name), p1: m.vision ? t('，看得懂圖片') : '', p2: m.think ? t('，可以深入思考') : '', p3: isLoaded ? t('，回答較快') : '' })}
                       accessibilityState={{ selected: current }}
                       style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                       <View style={styles.row}>
                         <View style={styles.flex}>
                           <Text style={styles.rowTitle}>{friendlyModelName(m.name)}</Text>
                           <View style={styles.badges}>
-                            {m.vision ? <Badge icon="eye" text="看得懂圖片" /> : null}
-                            {m.think ? <Badge icon="lightbulb" text="可以深入思考" /> : null}
-                            {isLoaded ? <Badge icon="bolt.fill" text="回答較快" color={C.green} /> : null}
+                            {m.vision ? <Badge icon="eye" text={t('看得懂圖片')} /> : null}
+                            {m.think ? <Badge icon="lightbulb" text={t('可以深入思考')} /> : null}
+                            {isLoaded ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
                           </View>
                         </View>
                         {current ? <SymbolView name="checkmark" size={16} weight="semibold" tintColor={C.accent} /> : null}
-                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`${friendlyModelName(m.name)} 的選項`}>
+                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: friendlyModelName(m.name) })}>
                           <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
                         </Pressable>
                       </View>
@@ -168,7 +169,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
             </View>
           </>
         ) : (
-          <Text style={styles.footnote}>還沒有連接電腦。按上面的「連接你的電腦」開始。</Text>
+          <Text style={styles.footnote}>{t('還沒有連接電腦。按上面的「連接你的電腦」開始。')}</Text>
         )}
       </ScrollView>
 
