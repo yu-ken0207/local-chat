@@ -15,7 +15,7 @@ const MODELS = [
   { name: 'llama3:latest' },
 ];
 
-async function setup(options: { wifi?: string | null } = {}) {
+async function setup(options: { wifi?: string | null; autoScan?: boolean } = {}) {
   const net = new FakeOllamaNet();
   net.addHost(A, { models: MODELS });
   const repo = new Repo(memoryDb());
@@ -25,6 +25,7 @@ async function setup(options: { wifi?: string | null } = {}) {
     client: net.client,
     wifiIp: async () => (options.wifi === undefined ? '192.168.1.10' : options.wifi),
     throttleMs: 5,
+    autoScan: options.autoScan ?? false,
     onEvent: (e) => events.push(e),
   });
   await store.init();
@@ -82,6 +83,27 @@ describe('啟動與主機', () => {
     ]);
     expect(s.scan).toMatchObject({ running: false, done: 253, total: 253, found: 2 });
     expect(s.hostStatus[B]).toMatchObject({ state: 'online', version: '0.31.1' });
+  });
+
+  test('開 App 時在 Wi-Fi 上又沒有主機：自動掃描，並先抓好第一台的模型', async () => {
+    const { store } = await setup({ autoScan: true });
+    await store.startupTask;
+    expect(store.getState().hosts.map((h) => h.url)).toEqual([A]);
+    expect(store.getState().models[A].list.map((m) => m.name)).toContain('gemma4:31b');
+  });
+
+  test('已經有在線的主機就不自動掃描；沒連 Wi-Fi 也不掃', async () => {
+    const first = await setup({ autoScan: true });
+    await first.store.startupTask;
+    const calls = first.net.calls.length;
+    const again = new ChatStore({ repo: first.repo, client: first.net.client, wifiIp: async () => '192.168.1.10', throttleMs: 5 });
+    await again.init();
+    await again.startupTask;
+    expect(first.net.calls.length - calls).toBeLessThan(5); // 只問了一次在線狀態，沒有掃 253 個位址
+
+    const offline = await setup({ autoScan: true, wifi: null });
+    await offline.store.startupTask;
+    expect(offline.store.getState().hosts).toEqual([]);
   });
 
   test('沒連 Wi-Fi 不掃描，給提示', async () => {

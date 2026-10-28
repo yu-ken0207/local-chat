@@ -16,10 +16,10 @@ const MODELS: FakeModel[] = [
 ];
 const PHOTO: NewPhoto = { base64: 'QUJD', width: 400, height: 300 };
 
-async function setup(options: { model?: string | null } = {}) {
+async function setup(options: { model?: string | null; autoScan?: boolean } = {}) {
   const net = new FakeOllamaNet();
   net.addHost(A, { models: MODELS });
-  const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => '192.168.1.10', throttleMs: 5 });
+  const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => '192.168.1.10', throttleMs: 5, autoScan: options.autoScan ?? false });
   await store.init();
   if (options.model !== null) {
     await store.addHost('192.168.1.20');
@@ -72,6 +72,17 @@ describe('第一次使用', () => {
 
     await fireEvent.press(screen.getByLabelText(/模型 gemma4:31b/));
     expect(await screen.findByText('192.168.1.20 · gemma4:31b')).toBeTruthy();
+  });
+
+  test('連著 Wi-Fi 開 App：自動找到主機，歡迎畫面提示去選模型', async () => {
+    const { store } = await setup({ model: null, autoScan: true });
+    await act(async () => {
+      await store.startupTask;
+    });
+    expect(screen.getByText(/目前模型：還沒選/)).toBeTruthy();
+    await fireEvent.press(screen.getByText('選擇模型'));
+    expect(await screen.findByLabelText('主機 192.168.1.20，在線')).toBeTruthy();
+    expect(screen.getByText('掃描完成，找到 1 台')).toBeTruthy();
   });
 
   test('新增連不到的主機：問要不要照樣加入', async () => {

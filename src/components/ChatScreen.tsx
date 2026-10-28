@@ -166,7 +166,12 @@ export function ChatScreen(p: ChatScreenProps) {
           if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
         }}>
         {state.messages.length === 0 ? (
-          <Welcome hasHosts={state.hosts.length > 0} modelLabel={modelLabel} onOpenModels={() => setSheetOpen(true)} />
+          <Welcome
+            hasHosts={state.hosts.length > 0}
+            scanning={state.scan?.running ? `› 正在區網找 Ollama 主機…（${state.scan.done}/${state.scan.total}）` : ''}
+            modelLabel={modelLabel}
+            onOpenModels={() => setSheetOpen(true)}
+          />
         ) : (
           state.messages.map((m) => (
             <MessageView
@@ -262,7 +267,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
 const kTokens = (n: number | null) => (n === null ? '?' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-function Welcome({ hasHosts, modelLabel, onOpenModels }: { hasHosts: boolean; modelLabel: string | null; onOpenModels: () => void }) {
+function Welcome({ hasHosts, scanning, modelLabel, onOpenModels }: { hasHosts: boolean; scanning: string; modelLabel: string | null; onOpenModels: () => void }) {
   return (
     <View style={styles.welcome}>
       <Text style={styles.welcomeTitle}>
@@ -270,7 +275,11 @@ function Welcome({ hasHosts, modelLabel, onOpenModels }: { hasHosts: boolean; mo
       </Text>
       <Text style={styles.dim}>跟自己電腦上的 Ollama 模型聊天，對話只存在這支手機。</Text>
       <View style={styles.tips}>
-        {!hasHosts ? (
+        {scanning ? (
+          <Text style={styles.dim} accessibilityLiveRegion="polite">
+            {scanning}
+          </Text>
+        ) : !hasHosts ? (
           <Text style={styles.dim}>
             › 還沒有主機：
             <Text style={styles.link} onPress={onOpenModels}>

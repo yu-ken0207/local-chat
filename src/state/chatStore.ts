@@ -50,6 +50,8 @@ export type ChatDeps = {
   now?: () => number;
   /** 串流更新畫面的最短間隔（毫秒），太頻繁會讓 Markdown 一直重排 */
   throttleMs?: number;
+  /** 開 App 時，在 Wi-Fi 上且沒有在線的主機就自動掃描區網（預設開） */
+  autoScan?: boolean;
   onEvent?: (event: ChatEvent) => void;
 };
 
@@ -107,6 +109,8 @@ export class ChatStore {
   private abort: AbortController | null = null;
   /** 正在幫對話取標題（測試用來等它完成） */
   titleTask: Promise<void> | null = null;
+  /** 開 App 時的檢查主機＋自動掃描（測試用來等它完成） */
+  startupTask: Promise<void> | null = null;
   private scanAbort: AbortController | null = null;
   private readonly now: () => number;
   private readonly throttleMs: number;
@@ -153,8 +157,18 @@ export class ChatStore {
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
     this.set({ hosts, session, messages: await repo.listMessages(session.id), templates: await repo.listTemplates(), ready: true });
-    void this.refreshHosts();
     if (session.hostUrl) void this.loadModels(session.hostUrl);
+    this.startupTask = this.refreshHosts().then(() => this.autoScan());
+  }
+
+  /** 沒有在線的主機、而且手機連著 Wi-Fi 時，自動掃描區網；找到後先把第一台的模型清單抓好 */
+  private async autoScan(): Promise<void> {
+    if (this.deps.autoScan === false) return;
+    const online = Object.values(this.state.hostStatus).some((st) => st.state === 'online');
+    if (online || !(await this.deps.wifiIp())) return;
+    const found = await this.scanLan();
+    const first = this.state.hosts.find((h) => this.state.hostStatus[h.url]?.state === 'online');
+    if (found > 0 && first && !this.state.session?.hostUrl) await this.loadModels(first.url);
   }
 
   private async createSessionFromLast(): Promise<Session> {
