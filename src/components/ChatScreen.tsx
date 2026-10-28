@@ -12,13 +12,12 @@ import { Composer, type PickSource } from './Composer';
 import { ImageViewer } from './ImageViewer';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
+import { SessionList, SessionSettings } from './SessionSheets';
 
 export type ChatScreenProps = {
   store: ChatStore;
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   copyText: (text: string) => void;
-  /** 標題列左邊的按鈕（對話清單） */
-  headerLeft?: ReactNode;
   /** 長按訊息 */
   onMessageMenu?: (message: Message) => void;
   /** 由外面塞進輸入框的內容 */
@@ -33,6 +32,8 @@ export function ChatScreen(p: ChatScreenProps) {
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const nearBottom = useRef(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
   const [keyboardUp, setKeyboardUp] = useState(false);
 
@@ -59,10 +60,19 @@ export function ChatScreen(p: ChatScreenProps) {
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-        <View style={styles.headerSide}>{p.headerLeft}</View>
-        <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
-          {title}
-        </Text>
+        <View style={styles.headerSide}>
+          <HeaderButton name="list.bullet" label="對話清單" onPress={() => setListOpen(true)} />
+        </View>
+        <Pressable
+          style={styles.flex}
+          onPress={() => session && setSettingsOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`${title}，點一下打開對話設定`}>
+          <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
+            {title}
+            {session?.systemPrompt.trim() ? <Text style={styles.roleMark}>  ◆ 角色</Text> : null}
+          </Text>
+        </Pressable>
         <View style={[styles.headerSide, styles.headerRight]}>
           <HeaderButton name="square.and.pencil" label="新對話" disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
         </View>
@@ -132,6 +142,12 @@ export function ChatScreen(p: ChatScreenProps) {
 
       <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
         <ModelSheet store={store} state={state} onClose={() => setSheetOpen(false)} />
+      </Modal>
+      <Modal visible={listOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setListOpen(false)}>
+        <SessionList store={store} currentId={session?.id ?? null} onClose={() => setListOpen(false)} />
+      </Modal>
+      <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
+        {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
       </Modal>
       <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
     </KeyboardAvoidingView>
@@ -205,7 +221,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8 },
   headerSide: { width: 76, flexDirection: 'row' },
   headerRight: { justifyContent: 'flex-end' },
-  headerTitle: { flex: 1, textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label },
+  headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label },
+  roleMark: { ...TEXT.meta, color: C.accent, fontWeight: '400' },
   headerButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.4 },
   transcript: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 16, gap: 14 },

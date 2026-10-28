@@ -1,5 +1,6 @@
 import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/discovery';
 import { contextLevel, type ContextLevel } from '../lib/format';
+import { cleanTitle, exportMarkdown, fallbackTitle } from '../lib/exportMd';
 import { DEFAULT_IMAGE_QUESTION, buildChatMessages } from '../lib/history';
 import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
@@ -62,6 +63,9 @@ export class HostOfflineError extends Error {
   }
 }
 
+/** 請模型幫對話取標題用的系統提示詞 */
+export const TITLE_PROMPT = '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。';
+
 const SETTING_LAST_HOST = 'lastHost';
 const SETTING_LAST_MODEL = 'lastModel';
 const PROBE_TIMEOUT_MS = 2500;
@@ -99,6 +103,8 @@ export class ChatStore {
   };
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
+  /** 正在幫對話取標題（測試用來等它完成） */
+  titleTask: Promise<void> | null = null;
   private scanAbort: AbortController | null = null;
   private readonly now: () => number;
   private readonly throttleMs: number;
@@ -455,6 +461,9 @@ export class ChatStore {
       const used = result.promptEvalCount + result.evalCount;
       this.set({ context: { used, limit, level: contextLevel(used, limit) } });
       this.deps.onEvent?.('answered');
+      // 第一個回答出來後，請模型幫這段對話取標題（不擋住下一次輸入）
+      const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
+      if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
       if (content || thinking) {
@@ -470,6 +479,50 @@ export class ChatStore {
       this.set({ streaming: null, messages: await repo.listMessages(s.id) });
       void this.refreshLoaded(url);
     }
+  }
+
+  /** 請模型取標題；失敗就用第一句話的開頭。使用者這段時間自己改了標題就不蓋掉 */
+  private async autoTitle(sessionId: string, url: string, model: string, info: ModelInfo | undefined): Promise<void> {
+    const { repo, client } = this.deps;
+    const msgs = await repo.listMessages(sessionId);
+    const question = msgs.find((m) => m.role === 'user')?.content ?? '';
+    const answer = msgs.find((m) => m.role === 'assistant' && m.content.trim())?.content ?? '';
+    let title = '';
+    try {
+      let text = '';
+      const think = info?.think ? (info.think.kind === 'toggle' ? false : info.think.levels[0]) : undefined;
+      await client(url).chat(
+        {
+          model,
+          think,
+          messages: [
+            { role: 'system', content: TITLE_PROMPT },
+            { role: 'user', content: `使用者：${question.slice(0, 300)}\nAI：${answer.slice(0, 500)}` },
+          ],
+        },
+        (d) => (text += d.content ?? '')
+      );
+      title = cleanTitle(text);
+    } catch {
+      // 取不到就用備案
+    }
+    if (!title) title = fallbackTitle(question);
+    const current = await repo.getSession(sessionId);
+    if (!current || current.title) return;
+    await repo.updateSession(sessionId, { title });
+    if (this.state.session?.id === sessionId) this.set({ session: { ...this.state.session, title } });
+  }
+
+  /** 把某段對話匯出成 Markdown 文字 */
+  async exportSession(id: string): Promise<{ title: string; markdown: string }> {
+    const { repo } = this.deps;
+    const session = await repo.getSession(id);
+    if (!session) throw new Error('找不到這段對話');
+    const messages = await repo.listMessages(id);
+    return {
+      title: session.title || '對話',
+      markdown: exportMarkdown(session, messages, { hostLabel: this.hostLabel(session.hostUrl), now: this.now() }),
+    };
   }
 
   /** 模型實際執行時的上下文上限：優先看已載入模型的設定，查不到才用模型本身的最大值 */

@@ -29,3 +29,16 @@ export function contextLevel(usedTokens: number, limit: number | null): ContextL
   if (ratio >= 0.8) return 'near';
   return 'ok';
 }
+
+/** 對話清單的時間：今天只寫時間，昨天、今年寫月日，其他寫年月日 */
+export function fmtWhen(ts: number, now: number): string {
+  const d = new Date(ts);
+  const n = new Date(now);
+  const p = (x: number) => String(x).padStart(2, '0');
+  const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, n)) return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  const yesterday = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1);
+  if (sameDay(d, yesterday)) return '昨天';
+  if (d.getFullYear() === n.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}

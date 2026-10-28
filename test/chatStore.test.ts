@@ -330,3 +330,47 @@ describe('對話', () => {
     expect(again.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' });
   });
 });
+
+describe('標題與匯出', () => {
+  test('第一個回答後請模型取標題（關思考、不送照片），之後不再取', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.titleReply = () => ({ lines: [{ message: { content: '「午餐推薦」' }, done: false }, { message: { content: '' }, done: true }] });
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '吃牛肉麵' }, done: false }, { message: { content: '' }, done: true }] });
+    await store.send('中午吃什麼', [{ base64: 'IMG', width: 1, height: 1 }]);
+    await store.titleTask;
+    expect(store.getState().session?.title).toBe('午餐推薦');
+    const titleReq = net.titleBodies()[0];
+    expect(titleReq.think).toBe(false);
+    expect(titleReq.messages[1].content).toBe('使用者：中午吃什麼\nAI：吃牛肉麵');
+    expect(JSON.stringify(titleReq)).not.toContain('IMG');
+    await store.send('那晚餐呢');
+    expect(net.titleBodies()).toHaveLength(1);
+  });
+
+  test('模型取不到標題：用第一句話', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.titleReply = () => ({ lines: [{ error: 'busy' }] });
+    await store.send('幫我寫一封請假信給主管');
+    await store.titleTask;
+    expect(store.getState().session?.title).toBe('幫我寫一封請假信給主管');
+  });
+
+  test('使用者已經自己取了標題就不蓋掉', async () => {
+    const { store } = await ready();
+    await store.renameSession(store.getState().session!.id, '我的標題');
+    await store.send('hi');
+    expect(store.titleTask).toBeNull();
+    expect(store.getState().session?.title).toBe('我的標題');
+  });
+
+  test('匯出對話', async () => {
+    const { store } = await ready();
+    await store.send('你好');
+    await store.titleTask;
+    const { title, markdown } = await store.exportSession(store.getState().session!.id);
+    expect(title).toBe(store.getState().session!.title);
+    expect(markdown).toContain('**你**：你好');
+    expect(markdown).toContain('**AI**（gemma4:31b）：');
+    expect(markdown).toContain('- 模型：192.168.1.20 · gemma4:31b');
+  });
+});

@@ -144,7 +144,7 @@ describe('對話', () => {
     expect(await screen.findByText('你好')).toBeTruthy();
     expect(await screen.findByText('粗體')).toBeTruthy();
     expect(screen.getByText('192.168.1.20 · gemma4:31b · 50.0 tok/s · 2s')).toBeTruthy();
-    expect(screen.getByText('對話')).toBeTruthy(); // 標題列
+    expect(await screen.findByText('測試對話')).toBeTruthy(); // 標題列：模型自動取的標題
   });
 
   test('回答中可以停止，保留已收到的字', async () => {

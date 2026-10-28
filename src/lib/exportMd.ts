@@ -1,0 +1,47 @@
+import type { Message, Session } from '../store/repo';
+
+/** 時間寫成 2026-10-28 19:05 */
+export function fmtDateTime(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 把一段對話匯出成 Markdown（照片只標張數，不放圖） */
+export function exportMarkdown(session: Session, messages: Message[], options: { hostLabel: string; now: number }): string {
+  const lines: string[] = [`# ${session.title || '對話'}`, ''];
+  if (session.model) lines.push(`- 模型：${[options.hostLabel, session.model].filter(Boolean).join(' · ')}`);
+  if (session.systemPrompt.trim()) lines.push(`- 角色：${session.systemPrompt.trim().replace(/\n+/g, ' ')}`);
+  lines.push(`- 匯出時間：${fmtDateTime(options.now)}`, '', '---', '');
+  for (const m of messages) {
+    if (m.role === 'user') {
+      lines.push(`**你**：${m.content}`);
+      if (m.attachments.length > 0) lines.push(`（附 ${m.attachments.length} 張照片）`);
+    } else if (m.role === 'assistant') {
+      if (!m.content.trim()) continue;
+      lines.push(`**AI**${m.model ? `（${m.model}）` : ''}：`, '', m.content.trim());
+    } else {
+      lines.push(`> ${m.content}`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd() + '\n';
+}
+
+/** 整理模型取的標題：去掉引號、井號、粗體符號，只留第一行，最多 20 字 */
+export function cleanTitle(raw: string): string {
+  const first = raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean) ?? '';
+  return [...first.replace(/^(標題|title)\s*[:：]\s*/i, '').replace(/[#*`"'“”‘’「」『』《》【】]/g, '').replace(/[。．.!！]+$/, '').trim()]
+    .slice(0, 20)
+    .join('');
+}
+
+/** 模型取不到標題時，用第一句話的開頭 */
+export function fallbackTitle(firstUserText: string): string {
+  const t = firstUserText.replace(/\s+/g, ' ').trim();
+  return [...t].length > 16 ? [...t].slice(0, 16).join('') + '…' : t;
+}

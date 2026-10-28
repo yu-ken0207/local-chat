@@ -1,4 +1,5 @@
 import { OllamaClient, type FetchLike } from '../../src/lib/ollama';
+import { TITLE_PROMPT } from '../../src/state/chatStore';
 
 export type FakeModel = { name: string; vision?: boolean; think?: 'toggle' | 'levels'; ctx?: number };
 
@@ -11,6 +12,8 @@ export type FakeHost = {
   online: boolean;
   /** 自訂回答：回傳要串流送出的 JSON 物件；hang 代表送完後一直不結束（測停止） */
   reply?: (body: any) => { lines: unknown[]; hang?: boolean };
+  /** 自動取標題的回答；沒設定時固定回「測試對話」 */
+  titleReply?: (body: any) => { lines: unknown[] };
 };
 
 /**
@@ -27,8 +30,14 @@ export class FakeOllamaNet {
     return h;
   }
 
+  /** 聊天請求（不含自動取標題的請求） */
   chatBodies(): any[] {
-    return this.calls.filter((c) => c.path === '/api/chat').map((c) => c.body);
+    return this.calls.filter((c) => c.path === '/api/chat' && c.body.messages[0]?.content !== TITLE_PROMPT).map((c) => c.body);
+  }
+
+  /** 自動取標題的請求 */
+  titleBodies(): any[] {
+    return this.calls.filter((c) => c.path === '/api/chat' && c.body.messages[0]?.content === TITLE_PROMPT).map((c) => c.body);
   }
 
   client = (url: string) => new OllamaClient(url, { fetch: this.fetch, timeouts: { request: 200, firstToken: 2000, idle: 2000 } });
@@ -70,7 +79,12 @@ export class FakeOllamaNet {
       case '/api/chat': {
         if (!host.models.some((x) => x.name === body.model)) return json({ error: `model "${body.model}" not found` }, 404);
         if (!host.loaded.includes(body.model)) host.loaded.push(body.model);
-        const { lines, hang } = host.reply ? host.reply(body) : defaultReply(body);
+        const isTitle = body.messages[0]?.content === TITLE_PROMPT;
+        const { lines, hang }: { lines: unknown[]; hang?: boolean } = isTitle
+          ? (host.titleReply?.(body) ?? { lines: [{ message: { content: '測試對話' }, done: false }, { message: { content: '' }, done: true }] })
+          : host.reply
+            ? host.reply(body)
+            : defaultReply(body);
         return respond(200, lines.map((l) => JSON.stringify(l) + '\n'), init.signal, hang);
       }
     }
