@@ -21,6 +21,7 @@
 ```bash
 npm test            # 單元測試＋元件測試
 npm run typecheck   # 型別檢查
+npm run test:live   # 打真主機（要設 LIVE_HOSTS 等環境變數，見 test/live/ollama.live.test.ts）
 npx expo start      # 開發伺服器，iPhone 用 Expo Go 打開
 ```
 
@@ -43,7 +44,7 @@ test/              測試；test/live/ 是打真主機的測試，不在 npm tes
 | 階段 | 內容 | 狀態 |
 |---|---|---|
 | 0 | 專案骨架、測試環境 | 完成 |
-| 1 | Ollama 連線、主機管理 | |
+| 1 | Ollama 連線層（串流、思考選項、模型能力、預熱／卸載）、區網掃描與位址解析 | 完成 |
 | 2 | 手機資料庫 | |
 | 3 | 聊天主畫面 | |
 | 4 | 對話管理 | |

@@ -30,6 +30,7 @@
   "scripts": {
     "start": "expo start",
     "test": "jest",
+    "test:live": "jest --testPathPatterns=live.test --testPathIgnorePatterns=/node_modules/",
     "typecheck": "tsc --noEmit",
     "android": "expo start --android",
     "ios": "expo start --ios",

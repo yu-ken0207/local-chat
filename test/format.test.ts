@@ -1,4 +1,4 @@
-import { fmtElapsed } from '../src/lib/format';
+import { contextLevel, fmtBytes, fmtElapsed, fmtTokPerSec } from '../src/lib/format';
 
 test('秒數格式跟 Codex 一樣', () => {
   expect(fmtElapsed(0)).toBe('0s');
@@ -7,4 +7,23 @@ test('秒數格式跟 Codex 一樣', () => {
   expect(fmtElapsed(3 * 60 + 5)).toBe('3m 05s');
   expect(fmtElapsed(3600 + 61)).toBe('1h 01m 01s');
   expect(fmtElapsed(-3)).toBe('0s');
+});
+
+test('生成速度', () => {
+  expect(fmtTokPerSec(202, 1_000_000_000)).toBe('202.0 tok/s');
+  expect(fmtTokPerSec(2, 41_805_000)).toBe('47.8 tok/s');
+  expect(fmtTokPerSec(0, 1e9)).toBe('');
+  expect(fmtTokPerSec(10, 0)).toBe('');
+});
+
+test('容量', () => {
+  expect(fmtBytes(8_060_739_255)).toBe('8.1 GB');
+  expect(fmtBytes(250_000_000)).toBe('250 MB');
+});
+
+test('上下文用量：80% 提醒、滿了警告、不知道上限就不提醒', () => {
+  expect(contextLevel(1000, 8192)).toBe('ok');
+  expect(contextLevel(6600, 8192)).toBe('near');
+  expect(contextLevel(8192, 8192)).toBe('full');
+  expect(contextLevel(99999, null)).toBe('ok');
 });
