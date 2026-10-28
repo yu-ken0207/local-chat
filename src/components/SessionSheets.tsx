@@ -39,12 +39,41 @@ export function confirmDelete(store: ChatStore, session: { id: string; title: st
 }
 
 /** 對話清單最下面：資料存在哪裡、多大、匯出整個資料庫 */
-function DataSection({ store }: { store: ChatStore }) {
-  const [info, setInfo] = useState<{ path: string | null; bytes: number } | null>(null);
+function DataSection({ store, onChanged }: { store: ChatStore; onChanged: () => void }) {
+  const [info, setInfo] = useState<{ path: string | null; bytes: number; sessions: number } | null>(null);
+  const [version, setVersion] = useState(0);
   useEffect(() => {
     store.dataInfo().then(setInfo).catch(() => setInfo(null));
-  }, [store]);
+  }, [store, version]);
   if (!info) return null;
+
+  const after = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setVersion((v) => v + 1);
+    onChanged();
+  };
+
+  function deleteAll() {
+    Alert.alert(
+      '刪除所有對話？',
+      `${info!.sessions} 段對話和裡面的照片都會從這支手機刪除，不能復原。主機和範本會保留。\n\n建議先按「匯出資料庫」備份。`,
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '刪除', style: 'destructive', onPress: () => void store.deleteAllSessions().then(after) },
+      ]
+    );
+  }
+
+  function resetAll() {
+    Alert.alert(
+      '清除全部資料？',
+      '對話、照片、主機、範本和設定全部刪除，回到第一次打開的樣子，不能復原。\n\n建議先按「匯出資料庫」備份。',
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '清除', style: 'destructive', onPress: () => void store.resetAll().then(after) },
+      ]
+    );
+  }
 
   async function exportDb() {
     try {
@@ -81,6 +110,22 @@ function DataSection({ store }: { store: ChatStore }) {
           </>
         ) : null}
       </View>
+      <View style={[styles.card, styles.danger]}>
+        <Pressable onPress={deleteAll} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+          <View style={styles.row}>
+            <SymbolView name="trash" size={18} tintColor={C.red} />
+            <Text style={[styles.rowTitle, { color: C.red }]}>刪除所有對話</Text>
+          </View>
+        </Pressable>
+        <View style={styles.separator} />
+        <Pressable onPress={resetAll} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+          <View style={styles.row}>
+            <SymbolView name="arrow.counterclockwise" size={18} tintColor={C.red} />
+            <Text style={[styles.rowTitle, { color: C.red }]}>清除全部資料</Text>
+          </View>
+        </Pressable>
+      </View>
+      <Text style={styles.footnote}>「刪除所有對話」會保留主機和範本；「清除全部資料」連主機、範本、設定一起刪。兩個都會先確認。</Text>
     </View>
   );
 }
@@ -190,7 +235,7 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
           )}
         </View>
         <Text style={styles.footnote}>對話只存在這支手機。長按可以改名、匯出或刪除。</Text>
-        <DataSection store={store} />
+        <DataSection store={store} onChanged={reload} />
       </ScrollView>
     </View>
   );
@@ -304,4 +349,5 @@ const styles = StyleSheet.create({
   data: { gap: 6, marginTop: 14 },
   dataBody: { padding: 16, gap: 6 },
   path: { ...TEXT.meta, color: C.secondary },
+  danger: { marginTop: 4 },
 });

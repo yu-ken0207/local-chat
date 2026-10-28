@@ -153,3 +153,32 @@ test('對話清單最下面顯示資料庫位置與大小，可以匯出整個�
     expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db', { dialogTitle: '匯出資料庫' })
   );
 });
+
+describe('使用者自己移除資料', () => {
+  test('刪除所有對話：先確認，取消就不刪；確認後只剩一段新對話，主機保留', async () => {
+    const { store } = await setup();
+    await fireEvent.press(screen.getByLabelText('對話清單'));
+    const cancel = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[0]?.onPress?.());
+    await fireEvent.press(await screen.findByText('刪除所有對話'));
+    expect(cancel.mock.calls[0][0]).toBe('刪除所有對話？');
+    expect(cancel.mock.calls[0][1]).toContain('2 段對話');
+    expect((await store.listSessions()).length).toBe(2);
+
+    cancel.mockRestore();
+    confirm();
+    await fireEvent.press(screen.getByText('刪除所有對話'));
+    await waitFor(() => expect(screen.getAllByLabelText(/^對話 /).map((r) => r.props.accessibilityLabel)).toEqual(['對話 新對話']));
+    expect(store.getState().hosts).toHaveLength(1);
+  });
+
+  test('清除全部資料：確認後回到第一次打開的樣子', async () => {
+    const { store } = await setup();
+    await fireEvent.press(screen.getByLabelText('對話清單'));
+    const alert = confirm();
+    await fireEvent.press(await screen.findByText('清除全部資料'));
+    expect(alert.mock.calls[0][0]).toBe('清除全部資料？');
+    await waitFor(() => expect(store.getState().hosts).toEqual([]));
+    await fireEvent.press(screen.getByText('完成'));
+    expect(screen.getByText(/還沒有主機/)).toBeTruthy();
+  });
+});

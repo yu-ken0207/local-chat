@@ -621,10 +621,38 @@ export class ChatStore {
     };
   }
 
-  /** 資料存在哪裡、多大 */
-  async dataInfo(): Promise<{ path: string | null; bytes: number }> {
+  /** 刪除所有對話，保留主機、範本與模型設定；換成一段新的空白對話 */
+  async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
-    return { path: repo.dbPath(), bytes: await repo.sizeBytes() };
+    this.stop();
+    await repo.deleteAllSessions();
+    this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+  }
+
+  /** 清除全部資料（對話、主機、範本、設定），回到第一次打開的樣子 */
+  async resetAll(): Promise<void> {
+    const { repo } = this.deps;
+    this.stop();
+    this.stopScan();
+    await repo.resetAll();
+    this.set({
+      hosts: [],
+      hostStatus: {},
+      scan: null,
+      models: {},
+      loaded: {},
+      session: await repo.createSession(),
+      messages: [],
+      context: null,
+      notice: '',
+      templates: await repo.listTemplates(),
+    });
+  }
+
+  /** 資料存在哪裡、多大、有幾段對話 */
+  async dataInfo(): Promise<{ path: string | null; bytes: number; sessions: number }> {
+    const { repo } = this.deps;
+    return { path: repo.dbPath(), bytes: await repo.sizeBytes(), sessions: await repo.countSessions() };
   }
 
   /** 準備匯出整個資料庫：先合併暫存的寫入，回傳可以分享的檔案網址；沒有檔案（記憶體資料庫）回 null */

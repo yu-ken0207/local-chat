@@ -224,3 +224,39 @@ describe('資料庫檔案', () => {
     expect(repo.dbPath()).toBeNull();
   });
 });
+
+describe('使用者自己移除資料', () => {
+  async function seeded() {
+    const { db, repo } = await freshRepo();
+    await repo.saveHost({ url: 'http://a:11434', label: 'a', source: 'manual', version: '1' });
+    await repo.setSetting('lastModel', 'gemma4:31b');
+    await repo.addTemplate('自訂', '內容');
+    for (let i = 0; i < 3; i++) {
+      const s = await repo.createSession();
+      await repo.addMessage(s.id, { role: 'user', content: 'x'.repeat(30000), attachments: [{ base64: 'A'.repeat(60000), width: 1, height: 1 }] });
+    }
+    return { db, repo };
+  }
+
+  test('刪除所有對話：對話、訊息、照片清空，主機、範本、設定保留，檔案變小', async () => {
+    const { db, repo } = await seeded();
+    const before = await repo.sizeBytes();
+    expect(await repo.countSessions()).toBe(3);
+    await repo.deleteAllSessions();
+    expect(await repo.countSessions()).toBe(0);
+    expect(await db.get('SELECT COUNT(*) AS n FROM attachments')).toEqual({ n: 0 });
+    expect(await repo.listHosts()).toHaveLength(1);
+    expect((await repo.listTemplates()).some((t) => t.title === '自訂')).toBe(true);
+    expect(await repo.getSetting('lastModel')).toBe('gemma4:31b');
+    expect(await repo.sizeBytes()).toBeLessThan(before / 2);
+  });
+
+  test('清除全部資料：什麼都不留，範本恢復成預設', async () => {
+    const { repo } = await seeded();
+    await repo.resetAll();
+    expect(await repo.countSessions()).toBe(0);
+    expect(await repo.listHosts()).toEqual([]);
+    expect(await repo.getSetting('lastModel')).toBeNull();
+    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(DEFAULT_TEMPLATES.map((t) => t.title));
+  });
+});

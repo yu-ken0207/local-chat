@@ -482,3 +482,31 @@ describe('掃描的回饋', () => {
     expect(store.getState().scan?.error).toContain('用 4G 時掃不到區網');
   });
 });
+
+describe('移除資料', () => {
+  test('刪除所有對話：換成新的空白對話，模型與主機保留', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    await store.newSession();
+    await store.send('b');
+    await store.deleteAllSessions();
+    expect((await store.listSessions()).length).toBe(1);
+    expect(store.getState().messages).toEqual([]);
+    expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' });
+    expect(store.getState().hosts).toHaveLength(1);
+    expect((await store.dataInfo()).sessions).toBe(1);
+  });
+
+  test('清除全部資料：主機、模型清單都清掉，回到第一次打開的樣子', async () => {
+    const { store } = await ready();
+    await store.addTemplate('自訂', '內容');
+    await store.send('a');
+    await store.resetAll();
+    const s = store.getState();
+    expect(s.hosts).toEqual([]);
+    expect(s.models).toEqual({});
+    expect(s.messages).toEqual([]);
+    expect(s.session).toMatchObject({ hostUrl: null, model: null });
+    expect(s.templates.some((t) => t.title === '自訂')).toBe(false);
+  });
+});

@@ -190,11 +190,7 @@ export class Repo {
     const version = row?.user_version ?? 0;
     if (version >= SCHEMA_VERSION) return;
     await this.db.exec(SCHEMA);
-    if (version === 0) {
-      for (const [i, t] of DEFAULT_TEMPLATES.entries()) {
-        await this.db.run('INSERT INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [newId(), t.title, t.content, i]);
-      }
-    }
+    if (version === 0) await this.seedTemplates();
     await this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 
@@ -444,6 +440,30 @@ export class Repo {
   }
 
   // ---- 資料庫檔案 ----
+
+  /** 刪除所有對話（連訊息與照片），保留主機、範本、設定；之後壓縮檔案釋放空間 */
+  async deleteAllSessions(): Promise<void> {
+    await this.db.run('DELETE FROM sessions');
+    await this.db.exec('VACUUM');
+  }
+
+  /** 清除全部資料，回到第一次打開的樣子（範本恢復成預設） */
+  async resetAll(): Promise<void> {
+    await this.db.exec('DELETE FROM sessions; DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+    await this.seedTemplates();
+    await this.db.exec('VACUUM');
+  }
+
+  private async seedTemplates(): Promise<void> {
+    for (const [i, t] of DEFAULT_TEMPLATES.entries()) {
+      await this.db.run('INSERT INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [newId(), t.title, t.content, i]);
+    }
+  }
+
+  /** 對話有幾段 */
+  async countSessions(): Promise<number> {
+    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions'))?.n ?? 0;
+  }
 
   /** 資料庫目前的大小（位元組） */
   async sizeBytes(): Promise<number> {
