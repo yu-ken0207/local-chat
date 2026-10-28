@@ -80,7 +80,7 @@ describe('長按 AI 的回答', () => {
     pickActions(3, 1); // 換個模型重新產生 → 第二個模型（llama3:latest）
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages[1]?.model).toBe('llama3:latest'));
-    expect(await screen.findByText(/192.168.1.20 · llama3:latest · .*tok\/s/)).toBeTruthy(); // 回答下方的小字
+    await waitFor(() => expect(screen.getAllByText('192.168.1.20 · Llama 3')).toHaveLength(2)); // 回答下方與輸入列下方
   });
 
   test('朗讀：念去掉符號的文字，顯示朗讀中，可以停止', async () => {
@@ -106,7 +106,7 @@ describe('長按 AI 的回答', () => {
 
   test('刪除', async () => {
     const { store } = await setup(['hi']);
-    pickActions(5);
+    pickActions(6);
     confirm();
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages).toHaveLength(1));

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Image, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
-import { fmtElapsed, fmtTokPerSec } from '../lib/format';
+import { fmtElapsed } from '../lib/format';
+import { friendlyModelName } from '../lib/modelName';
 import { dataUri } from '../lib/photos';
 import type { Streaming } from '../state/chatStore';
 import type { Attachment, Message } from '../store/repo';
@@ -15,6 +16,9 @@ type Handlers = {
   /** 最後一則是錯誤時的「重試」「連線說明」 */
   onRetry?: () => void;
   onHelp?: () => void;
+  /** 最後一則回答下方直接顯示的「複製」「重新產生」 */
+  onCopy?: () => void;
+  onRegenerate?: () => void;
   isLast?: boolean;
 };
 
@@ -48,6 +52,12 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
             {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
             {live ? <Working streaming={live} /> : <Text style={styles.meta}>{metaLine(m)}</Text>}
+            {!live && h.isLast && content ? (
+              <View style={styles.actions}>
+                {h.onCopy ? <ActionButton text="複製" onPress={h.onCopy} /> : null}
+                {h.onRegenerate ? <ActionButton text="重新產生" onPress={h.onRegenerate} /> : null}
+              </View>
+            ) : null}
           </View>
         </View>
       </Pressable>
@@ -105,14 +115,9 @@ export function ActionButton({ text, onPress, primary }: { text: string; onPress
   );
 }
 
-/** 回答下方的小字：主機 · 模型 · 速度 · 花了多久 */
+/** 回答下方的小字：電腦 · 模型（速度、時間這些進階資訊放在長按的「詳細資訊」） */
 export function metaLine(m: Message): string {
-  const parts = [m.hostLabel, m.model];
-  if (m.stats) {
-    parts.push(fmtTokPerSec(m.stats.evalCount, m.stats.evalDurationNs));
-    if (m.stats.totalDurationNs > 0) parts.push(fmtElapsed(m.stats.totalDurationNs / 1e9));
-  }
-  return parts.filter(Boolean).join(' · ');
+  return [m.hostLabel, m.model ? friendlyModelName(m.model) : null].filter(Boolean).join(' · ');
 }
 
 /** 照片縮圖，點了看大圖 */

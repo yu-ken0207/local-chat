@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fmtBytes } from '../lib/format';
+import { friendlyModelName } from '../lib/modelName';
+import type { ModelInfo } from '../lib/ollama';
 import type { ChatState, ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
@@ -30,8 +32,25 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
     setRefreshing(false);
   }
 
-  function modelMenu(url: string, name: string, loaded: boolean) {
-    chooseOption(name, [loaded ? '卸載（釋放電腦的顯示卡記憶體）' : '預先載入（之後第一次回答比較快）'], async () => {
+  function modelMenu(url: string, m: ModelInfo, loadedBytes: number | null) {
+    const name = m.name;
+    const loaded = loadedBytes !== null;
+    chooseOption(friendlyModelName(name), ['詳細資訊', loaded ? '卸載（釋放電腦的顯示卡記憶體）' : '預先載入（之後第一次回答比較快）'], async (i) => {
+      if (i === 0) {
+        Alert.alert(
+          '詳細資訊',
+          [
+            `原始名稱：${name}`,
+            m.parameterSize ? `大小：${m.parameterSize} 參數` : '',
+            m.quantization ? `壓縮格式：${m.quantization}` : '',
+            m.contextLength ? `最多能記住：${m.contextLength.toLocaleString()} tokens` : '',
+            loaded ? `目前佔用顯示卡：${fmtBytes(loadedBytes)}` : '目前沒有載入顯示卡',
+          ]
+            .filter(Boolean)
+            .join('\n')
+        );
+        return;
+      }
       try {
         if (!loaded) {
           await store.preload(url, name);
@@ -124,21 +143,20 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                         onClose();
                       }}
                       accessibilityRole="button"
-                      accessibilityLabel={`模型 ${m.name}${m.vision ? '，看得懂圖片' : ''}${m.think ? '，可以思考' : ''}${isLoaded ? '，已載入' : ''}`}
+                      accessibilityLabel={`模型 ${friendlyModelName(m.name)}${m.vision ? '，看得懂圖片' : ''}${m.think ? '，可以深入思考' : ''}${isLoaded ? '，回答較快' : ''}`}
                       accessibilityState={{ selected: current }}
                       style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                       <View style={styles.row}>
                         <View style={styles.flex}>
-                          <Text style={styles.rowTitle}>{m.name}</Text>
+                          <Text style={styles.rowTitle}>{friendlyModelName(m.name)}</Text>
                           <View style={styles.badges}>
-                            {m.vision ? <Badge icon="eye" text="看圖" /> : null}
-                            {m.think ? <Badge icon="lightbulb" text={m.think.kind === 'toggle' ? '思考' : '思考分段'} /> : null}
-                            {m.parameterSize ? <Text style={styles.rowSub}>{m.parameterSize}</Text> : null}
-                            {isLoaded ? <Text style={styles.loaded}>已載入 {fmtBytes(isLoaded.sizeVram)}</Text> : null}
+                            {m.vision ? <Badge icon="eye" text="看得懂圖片" /> : null}
+                            {m.think ? <Badge icon="lightbulb" text="可以深入思考" /> : null}
+                            {isLoaded ? <Badge icon="bolt.fill" text="回答較快" color={C.green} /> : null}
                           </View>
                         </View>
                         {current ? <SymbolView name="checkmark" size={16} weight="semibold" tintColor={C.accent} /> : null}
-                        <Pressable onPress={() => modelMenu(viewing, m.name, !!isLoaded)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`${m.name} 的選項`}>
+                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} hitSlop={10} accessibilityRole="button" accessibilityLabel={`${friendlyModelName(m.name)} 的選項`}>
                           <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
                         </Pressable>
                       </View>
@@ -161,11 +179,11 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   );
 }
 
-function Badge({ icon, text }: { icon: 'eye' | 'lightbulb'; text: string }) {
+function Badge({ icon, text, color }: { icon: 'eye' | 'lightbulb' | 'bolt.fill'; text: string; color?: typeof C.green }) {
   return (
     <View style={styles.badge}>
-      <SymbolView name={icon} size={11} tintColor={C.secondary} />
-      <Text style={styles.rowSub}>{text}</Text>
+      <SymbolView name={icon} size={11} tintColor={color ?? C.secondary} />
+      <Text style={[styles.rowSub, color ? { color } : null]}>{text}</Text>
     </View>
   );
 }
@@ -197,7 +215,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   rowTitle: { ...TEXT.body, color: C.label },
   rowSub: { ...TEXT.meta, color: C.secondary },
-  loaded: { ...TEXT.meta, color: C.green },
   badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 2 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   dot: { width: 8, height: 8, borderRadius: 4 },

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { fmtElapsed, fmtTokPerSec } from '../lib/format';
+import { friendlyModelName } from '../lib/modelName';
 import type { NewPhoto } from '../lib/photos';
 import { plainText } from '../lib/plainText';
 import type { ChatStore } from '../state/chatStore';
@@ -18,6 +20,7 @@ import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SessionSettings } from './SessionSheets';
 import { TemplatesSheet } from './TemplatesSheet';
+import { Toast, type ToastData } from './Toast';
 
 export type ChatScreenProps = {
   store: ChatStore;
@@ -39,6 +42,29 @@ export function ChatScreen(p: ChatScreenProps) {
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
   const [injected, setInjected] = useState<{ text: string; photos?: NewPhoto[]; nonce: number } | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+
+  function showToast(text: string, action?: ToastData['action']) {
+    setToast({ id: Date.now(), text, action });
+  }
+
+  /** 複製並在畫面上提示「已複製」 */
+  function copy(text: string) {
+    p.copyText(text);
+    showToast('已複製');
+  }
+
+  /** 回答的詳細資訊：原始模型名稱、電腦、速度、時間（進階資訊，平常不顯示） */
+  function showDetails(m: Message) {
+    const lines = [
+      m.model ? `模型：${friendlyModelName(m.model)}（${m.model}）` : '',
+      m.hostLabel ? `電腦：${m.hostLabel}` : '',
+      m.stats ? `速度：每秒約 ${fmtTokPerSec(m.stats.evalCount, m.stats.evalDurationNs).replace(' tok/s', '')} 個字詞（tok/s）` : '',
+      m.stats?.totalDurationNs ? `花費時間：${fmtElapsed(m.stats.totalDurationNs / 1e9)}` : '',
+      m.stats ? `用掉的上下文：${m.stats.promptEvalCount + m.stats.evalCount} tokens` : '',
+    ].filter(Boolean);
+    Alert.alert('詳細資訊', lines.join('\n'));
+  }
 
   // 換對話時結束編輯與朗讀
   useEffect(() => {
@@ -89,25 +115,26 @@ export function ChatScreen(p: ChatScreenProps) {
   function messageMenu(m: Message) {
     if (state.streaming) return;
     if (m.role === 'user') {
-      chooseOption('你的訊息', ['複製', '編輯並重送', '刪除'], (i) => [() => p.copyText(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
+      chooseOption('你的訊息', ['複製', '編輯並重送', '刪除'], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
-      chooseOption('AI 的回答', ['複製', '分享', '重新產生', '換個模型重新產生', speakingId === m.id ? '停止朗讀' : '朗讀', '刪除'], (i) =>
+      chooseOption('AI 的回答', ['複製', '分享', '重新產生', '換個模型重新產生', speakingId === m.id ? '停止朗讀' : '朗讀', '詳細資訊', '刪除'], (i) =>
         [
-          () => p.copyText(m.content),
+          () => copy(m.content),
           () => void Share.share({ message: m.content }),
           () => confirmLater(m, () => store.regenerate(m.id)),
           () =>
             hostUrl && others.length > 0
-              ? chooseOption('用哪個模型重新產生', others, (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
-              : Alert.alert('沒有其他模型', '先在下方的模型面板載入這台主機的模型。'),
+              ? chooseOption('用哪個模型重新產生', others.map(friendlyModelName), (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
+              : Alert.alert('沒有其他模型', '這台電腦上只有一個模型。'),
           () => speak(m),
+          () => showDetails(m),
           () => confirmDeleteMessage(m),
         ][i]()
       );
     } else {
-      chooseOption(m.role === 'error' ? '錯誤訊息' : '提示', ['複製', '刪除'], (i) => [() => p.copyText(m.content), () => void store.deleteMessage(m.id)][i]());
+      chooseOption(m.role === 'error' ? '錯誤訊息' : '提示', ['複製', '刪除'], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i]());
     }
   }
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
@@ -130,29 +157,36 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${session.model}` : null;
+  const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
   const title = session?.title || (state.messages.length > 0 ? '對話' : '新對話');
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
         <View style={styles.headerSide}>
-          <HeaderButton name="list.bullet" label="對話清單" onPress={() => setListOpen(true)} />
+          <HeaderButton name="list.bullet" text="對話" label="對話清單" onPress={() => setListOpen(true)} />
         </View>
         <Pressable
-          style={styles.flex}
+          style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
           onPress={() => session && setSettingsOpen(true)}
           accessibilityRole="button"
           accessibilityLabel={`${title}，點一下打開對話設定`}>
           <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
             {title}
-            {session?.systemPrompt.trim() ? <Text style={styles.roleMark}>  ◆ 角色</Text> : null}
           </Text>
+          <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
         </Pressable>
         <View style={[styles.headerSide, styles.headerRight]}>
-          <HeaderButton name="square.and.pencil" label="新對話" disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
+          <HeaderButton name="square.and.pencil" text="新對話" label="新對話" disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
         </View>
       </View>
+      {session?.systemPrompt.trim() ? (
+        <Pressable onPress={() => setSettingsOpen(true)} accessibilityRole="button" style={styles.roleBar}>
+          <Text style={styles.roleMark} numberOfLines={1}>
+            ◆ 自訂指示：{session.systemPrompt.trim().replace(/\s+/g, ' ')}
+          </Text>
+        </Pressable>
+      ) : null}
 
       <ScrollView
         ref={scrollRef}
@@ -184,10 +218,12 @@ export function ChatScreen(p: ChatScreenProps) {
               streaming={state.streaming}
               isLast={i === state.messages.length - 1}
               onOpenImage={(images, index) => setViewer({ images, index })}
-              onCopyCode={p.copyText}
+              onCopyCode={copy}
               onLongPress={messageMenu}
               onRetry={() => void store.retry()}
               onHelp={() => setConnect({ help: true })}
+              onCopy={() => copy(m.content)}
+              onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
             />
           ))
         )}
@@ -212,13 +248,16 @@ export function ChatScreen(p: ChatScreenProps) {
           tone={state.context.level === 'full' ? 'error' : 'warn'}
           text={
             state.context.level === 'full'
-              ? `對話已超過模型能記住的長度（${kTokens(state.context.used)} / ${kTokens(state.context.limit)}），前面的內容可能被忘記。`
-              : `對話快超過模型能記住的長度（${kTokens(state.context.used)} / ${kTokens(state.context.limit)}）。`
+              ? '這段對話太長了，AI 已經記不住最前面的內容。'
+              : '這段對話快要太長了，AI 可能開始忘記前面的內容。'
           }
           action={{ text: '開新對話', onPress: () => store.newSession() }}
         />
       ) : null}
 
+      <View style={styles.toastAnchor} pointerEvents="box-none">
+        <Toast toast={toast} onDone={() => setToast(null)} />
+      </View>
       <Composer
         modelLabel={modelLabel}
         canAttach={!!model?.vision}
@@ -275,7 +314,6 @@ export function ChatScreen(p: ChatScreenProps) {
   );
 }
 
-const kTokens = (n: number | null) => (n === null ? '?' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 /** 沒有對話時：直接告訴使用者下一步（連接電腦、選模型，或直接開始打字） */
 function EmptyState({
@@ -348,7 +386,8 @@ function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 
   );
 }
 
-export function HeaderButton({ name, label, onPress, disabled }: { name: SFSymbol; label: string; onPress: () => void; disabled?: boolean }) {
+/** 標題列按鈕：圖示加文字，一看就知道是什麼 */
+export function HeaderButton({ name, text, label, onPress, disabled }: { name: SFSymbol; text?: string; label: string; onPress: () => void; disabled?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
@@ -358,7 +397,8 @@ export function HeaderButton({ name, label, onPress, disabled }: { name: SFSymbo
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
-      <SymbolView name={name} size={22} tintColor={disabled ? C.tertiary : C.label} />
+      <SymbolView name={name} size={18} tintColor={disabled ? C.tertiary : C.accent} />
+      {text ? <Text style={[styles.headerButtonText, disabled && { color: C.tertiary }]}>{text}</Text> : null}
     </Pressable>
   );
 }
@@ -367,11 +407,15 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8 },
-  headerSide: { width: 76, flexDirection: 'row' },
+  headerSide: { width: 92, flexDirection: 'row' },
   headerRight: { justifyContent: 'flex-end' },
-  headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label },
-  roleMark: { ...TEXT.meta, color: C.accent, fontWeight: '400' },
-  headerButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label, flexShrink: 1 },
+  titleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  roleBar: { marginHorizontal: 16, marginBottom: 4 },
+  roleMark: { ...TEXT.meta, color: C.accent },
+  headerButtonText: { fontSize: 15, fontWeight: '600', color: C.accent },
+  toastAnchor: { height: 0, zIndex: 10 },
+  headerButton: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 4 },
   pressed: { opacity: 0.4 },
   transcript: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 16, gap: 14 },
   empty: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 10, padding: 16, gap: 10, marginTop: 8 },

@@ -118,12 +118,12 @@ CREATE TABLE IF NOT EXISTS settings (
 /** 第一次開 App 時放進去的常用提示詞範本（之後可以自己改） */
 export const DEFAULT_TEMPLATES: { title: string; content: string }[] = [
   { title: '翻譯成英文', content: '把下面這段翻譯成自然的英文：\n' },
-  { title: '翻譯成中文', content: '把下面這段翻譯成繁體中文（台灣用語）：\n' },
+  { title: '翻譯成中文', content: '把下面這段翻譯成繁體中文：\n' },
   { title: '摘要重點', content: '用條列整理下面內容的重點：\n' },
+  { title: '潤飾文字', content: '幫我把下面這段改得更通順、更好讀：\n' },
   { title: '描述照片', content: '詳細描述這張照片裡有什麼。' },
-  { title: '找出異常', content: '這張照片裡有沒有不正常、需要注意的地方？有的話說明位置和原因。' },
-  { title: '解釋程式碼', content: '解釋下面這段程式碼在做什麼：\n' },
-];
+  { title: '照片裡的文字', content: '把這張照片裡的文字完整抄下來。' },
+]
 
 let idCounter = 0;
 /** 產生不重複的 id（時間＋計數＋亂數） */

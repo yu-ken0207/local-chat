@@ -3,6 +3,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
 
+import { friendlyLevel } from '../lib/modelName';
 import type { ThinkOption, ThinkSetting } from '../lib/ollama';
 import { MAX_PHOTOS, dataUri, type NewPhoto } from '../lib/photos';
 import type { Template } from '../store/repo';
@@ -133,12 +134,16 @@ export function Composer(p: Props) {
       p.onThink(!p.thinkValue);
     } else {
       const levels = p.think.levels;
-      chooseOption('思考程度', levels, (i) => p.onThink(levels[i]));
+      chooseOption('深入思考的程度（越仔細越慢）', levels.map(friendlyLevel), (i) => p.onThink(levels[i]));
     }
   }
 
   const thinkText =
-    p.think?.kind === 'toggle' ? `思考 ${p.thinkValue ? '開' : '關'}` : p.think ? `思考 ${String(p.thinkValue ?? p.think.defaultLevel)}` : '';
+    p.think?.kind === 'toggle'
+      ? `深入思考 ${p.thinkValue ? '開' : '關'}`
+      : p.think
+        ? `深入思考：${friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel))}`
+        : '';
 
   const slash = matchTemplates(draft, p.templates ?? []);
   const chips = p.showTemplateChips && !draft && photos.length === 0 && (p.templates?.length ?? 0) > 0;

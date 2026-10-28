@@ -9,6 +9,7 @@ import type { ChatStore } from '../state/chatStore';
 import type { Session } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
+import { SwipeRow } from './SwipeRow';
 
 type ListItem = Session & { preview: string };
 
@@ -187,9 +188,10 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
             onClose();
           }}
           accessibilityRole="button"
+          accessibilityLabel="開始新對話"
           style={({ pressed }) => [styles.newRow, pressed && styles.pressed]}>
           <SymbolView name="square.and.pencil" size={18} tintColor={C.accent} />
-          <Text style={styles.newText}>新對話</Text>
+          <Text style={styles.newText}>開始新對話</Text>
         </Pressable>
         <View style={styles.card}>
           {items === null ? null : items.length === 0 ? (
@@ -198,8 +200,8 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
             items.map((s, i) => {
               const name = s.title || s.preview || '新對話';
               return (
+                <SwipeRow key={s.id} testID={`swipe-session-${s.id}`} onDelete={() => confirmDelete(store, { id: s.id, title: name }, reload)}>
                 <Pressable
-                  key={s.id}
                   onPress={async () => {
                     Haptics.selectionAsync();
                     await store.openSession(s.id);
@@ -230,11 +232,12 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
                   </View>
                   {i < items.length - 1 ? <View style={styles.separator} /> : null}
                 </Pressable>
+                </SwipeRow>
               );
             })
           )}
         </View>
-        <Text style={styles.footnote}>對話只存在這支手機。長按可以改名、匯出或刪除。</Text>
+        <Text style={styles.footnote}>對話只存在這支手機。往左滑可以刪除；按 ⋯ 可以改名、匯出。</Text>
         <DataSection store={store} onChanged={reload} />
       </ScrollView>
     </View>
@@ -275,19 +278,19 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
             accessibilityLabel="對話標題"
           />
         </View>
-        <Text style={styles.section}>角色</Text>
+        <Text style={styles.section}>自訂指示</Text>
         <View style={styles.card}>
           <TextInput
             style={[styles.field, styles.multiline]}
             value={role}
             onChangeText={setRole}
-            placeholder="例如：你是工廠巡檢專家，回答時先列出檢查重點。"
+            placeholder="例如：用簡單的話解釋，回答不要太長。"
             placeholderTextColor={C.placeholder}
             multiline
-            accessibilityLabel="角色設定"
+            accessibilityLabel="自訂指示"
           />
         </View>
-        <Text style={styles.footnote}>角色會當成系統提示詞，只用在這段對話。留空就用預設：「請用繁體中文（台灣用語）回答。」</Text>
+        <Text style={styles.footnote}>告訴 AI 在這段對話裡要怎麼回答，只用在這段對話。留空就照預設。</Text>
         <View style={[styles.card, styles.actions]}>
           <Pressable onPress={() => shareSession(store, session.id)} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
             <View style={styles.row}>

@@ -66,7 +66,7 @@ describe('第一次使用', () => {
     await fireEvent.press(await screen.findByText('手動輸入位址'));
     await waitFor(() => expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' }));
     expect(await screen.findByText(/已經連上/)).toBeTruthy();
-    expect(screen.getByLabelText(/模型：192.168.1.20 · gemma4:31b/)).toBeTruthy();
+    expect(screen.getByLabelText(/模型：192.168.1.20 · Gemma 4 · 31B/)).toBeTruthy();
   });
 
   test('自動尋找：找到電腦就連上並選好模型', async () => {
@@ -135,7 +135,7 @@ describe('第一次使用', () => {
     expect(await screen.findByText(/這台電腦還沒有模型/)).toBeTruthy();
     net.hosts.get(A)!.models = [{ name: 'gemma3:4b', vision: true }];
     await fireEvent.press(screen.getByText('下載好了，重新整理'));
-    expect(await screen.findByLabelText(/模型 gemma3:4b/)).toBeTruthy();
+    expect(await screen.findByLabelText(/模型 Gemma 3 · 4B/)).toBeTruthy();
   });
 });
 
@@ -151,8 +151,8 @@ describe('輸入列', () => {
 
   test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {
     const { store, net } = await setup();
-    await fireEvent.press(screen.getByLabelText('思考 關'));
-    expect(screen.getByLabelText('思考 開')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('深入思考 關'));
+    expect(screen.getByLabelText('深入思考 開')).toBeTruthy();
     await send(store, '問');
     expect(net.chatBodies()[0].think).toBe(true);
 
@@ -160,13 +160,13 @@ describe('輸入列', () => {
       await store.selectModel(A, 'gpt-oss:20b');
     });
     pickActionSheet(2);
-    await fireEvent.press(screen.getByLabelText('思考 medium'));
-    expect(screen.getByLabelText('思考 high')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('深入思考：平衡'));
+    expect(screen.getByLabelText('深入思考：仔細')).toBeTruthy();
 
     await act(async () => {
       await store.selectModel(A, 'llama3:latest');
     });
-    expect(screen.queryByText(/^思考/)).toBeNull();
+    expect(screen.queryByText(/^深入思考/)).toBeNull();
   });
 
   test('沒打字也沒照片時不能送出', async () => {
@@ -178,7 +178,7 @@ describe('輸入列', () => {
 });
 
 describe('對話', () => {
-  test('送出後顯示自己的話、AI 的 Markdown 回答與速度', async () => {
+  test('送出後顯示自己的話、AI 的 Markdown 回答與白話的模型名稱', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({
       lines: [
@@ -189,7 +189,9 @@ describe('對話', () => {
     await send(store, '你好');
     expect(await screen.findByText('你好')).toBeTruthy();
     expect(await screen.findByText('粗體')).toBeTruthy();
-    expect(screen.getByText('192.168.1.20 · gemma4:31b · 50.0 tok/s · 2s')).toBeTruthy();
+    // 回答下方的小字與輸入列下方的模型都顯示白話名稱；速度與時間收在「詳細資訊」
+    expect(screen.getAllByText('192.168.1.20 · Gemma 4 · 31B')).toHaveLength(2);
+    expect(screen.queryByText(/tok\/s/)).toBeNull();
     expect(await screen.findByText('測試對話')).toBeTruthy(); // 標題列：模型自動取的標題
   });
 
@@ -257,15 +259,15 @@ describe('對話', () => {
     expect(screen.getByText('第一步先想清楚')).toBeTruthy();
   });
 
-  test('上下文快滿：顯示提醒，按「開新對話」開新的一段', async () => {
+  test('上下文快滿：用白話提醒，按「開新對話」開新的一段', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.runtimeCtx = 140;
     await send(store, 'hi');
-    expect(await screen.findByText(/對話快超過模型能記住的長度（120 \/ 140）/)).toBeTruthy();
+    expect(await screen.findByText('這段對話快要太長了，AI 可能開始忘記前面的內容。')).toBeTruthy();
     const before = store.getState().session!.id;
     await fireEvent.press(screen.getByText('開新對話'));
     await waitFor(() => expect(store.getState().session!.id).not.toBe(before));
-    expect(screen.getByText('新對話')).toBeTruthy();
+    expect(screen.getByLabelText('新對話，點一下打開對話設定')).toBeTruthy();
   });
 
   test('連不到電腦：白話錯誤下方有重試、連線說明、詳細資訊；重試成功後錯誤消失', async () => {
@@ -313,17 +315,17 @@ describe('主機與模型面板', () => {
   test('模型標示看圖、思考、已載入；卸載前先確認', async () => {
     const { net, store } = await setup();
     await send(store, '先用一次'); // 用過之後 gemma4:31b 會在已載入清單
-    await fireEvent.press(screen.getByLabelText(/模型：192.168.1.20 · gemma4:31b/));
-    const row = await screen.findByLabelText('模型 gemma4:31b，看得懂圖片，可以思考，已載入');
-    expect(within(row).getByText('看圖')).toBeTruthy();
-    expect(within(row).getByText('思考')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText(/模型：192.168.1.20 · Gemma 4 · 31B/));
+    const row = await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考，回答較快');
+    expect(within(row).getByText('看得懂圖片')).toBeTruthy();
+    expect(within(row).getByText('可以深入思考')).toBeTruthy();
 
-    pickActionSheet(0);
+    pickActionSheet(1); // 0 是詳細資訊、1 是卸載
     const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
-    await fireEvent.press(screen.getByLabelText('gemma4:31b 的選項'));
+    await fireEvent.press(screen.getByLabelText('Gemma 4 · 31B 的選項'));
     expect(alert.mock.calls[0][0]).toBe('卸載 gemma4:31b？');
     await waitFor(() => expect(net.hosts.get(A)!.loaded).toEqual([]));
-    expect(await screen.findByLabelText('模型 gemma4:31b，看得懂圖片，可以思考')).toBeTruthy();
+    expect(await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考')).toBeTruthy();
   });
 
   test('選擇模型面板：「新增電腦」打開連接面板；長按電腦可以移除', async () => {

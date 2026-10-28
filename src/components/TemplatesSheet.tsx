@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 
 import type { ChatStore } from '../state/chatStore';
 import type { Template } from '../store/repo';
+import { SwipeRow } from './SwipeRow';
 import { C, TEXT } from '../ui/theme';
 
 /** 管理提示詞範本：新增、修改、刪除 */
@@ -87,7 +88,7 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
             <Text style={styles.empty}>還沒有範本</Text>
           ) : (
             templates.map((t, i) => (
-              <View key={t.id}>
+              <SwipeRow key={t.id} testID={`swipe-template-${t.id}`} onDelete={() => remove(t)}>
                 <Pressable onPress={() => edit(t)} accessibilityRole="button" accessibilityLabel={`修改範本 ${t.title}`} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                   <View style={styles.row}>
                     <View style={styles.flex}>
@@ -102,7 +103,7 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
                   </View>
                 </Pressable>
                 {i < templates.length - 1 ? <View style={styles.separator} /> : null}
-              </View>
+              </SwipeRow>
             ))
           )}
         </View>

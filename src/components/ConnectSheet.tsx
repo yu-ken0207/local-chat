@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { HostOfflineError, type ChatState, type ChatStore } from '../state/chatStore';
 import { C, MONO, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
+import { SwipeRow } from './SwipeRow';
 
 type Props = {
   store: ChatStore;
@@ -114,8 +115,8 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
                 const st = state.hostStatus[h.url]?.state;
                 const stText = st === 'online' ? '可以使用' : st === 'offline' ? '目前連不到' : '檢查中…';
                 return (
+                  <SwipeRow key={h.url} label="移除" testID={`swipe-host-${h.url}`} onDelete={() => void store.removeHost(h.url)}>
                   <Pressable
-                    key={h.url}
                     onPress={async () => {
                       Haptics.selectionAsync();
                       const model = await store.connectHost(h.url);
@@ -139,6 +140,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
                     </View>
                     {i < state.hosts.length - 1 ? <View style={styles.separator} /> : null}
                   </Pressable>
+                  </SwipeRow>
                 );
               })}
             </View>
