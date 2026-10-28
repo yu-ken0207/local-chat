@@ -1,26 +1,18 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
-import * as Network from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChatScreen } from './src/components/ChatScreen';
+import { wifiIp } from './src/lib/network';
 import { OllamaClient } from './src/lib/ollama';
 import { pickPhotos } from './src/lib/photos';
 import { ChatStore, type ChatEvent } from './src/state/chatStore';
 import { openPhoneDb } from './src/store/db';
 import { Repo } from './src/store/repo';
 import { C, TEXT } from './src/ui/theme';
-
-/** 手機連 Wi-Fi 時回傳手機的位址，否則回 null（不掃描） */
-async function wifiIp(): Promise<string | null> {
-  const state = await Network.getNetworkStateAsync();
-  if (state.type !== Network.NetworkStateType.WIFI) return null;
-  const ip = await Network.getIpAddressAsync();
-  return ip && ip !== '0.0.0.0' ? ip : null;
-}
 
 function haptic(event: ChatEvent) {
   if (event === 'answered') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

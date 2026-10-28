@@ -22,6 +22,23 @@ export function ModelSheet({ store, state, onClose }: { store: ChatStore; state:
     if (viewing && !state.models[viewing]) void store.loadModels(viewing);
   }, [viewing]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /** 按「掃描區網」：馬上有回饋；不能掃或沒找到時用對話框講清楚 */
+  async function scan() {
+    Haptics.selectionAsync();
+    const found = await store.scanLan();
+    const result = store.getState().scan;
+    if (result?.error) {
+      Alert.alert('沒辦法掃描區網', result.error);
+    } else if (found === 0 && result && result.total > 0) {
+      Alert.alert(
+        '沒有找到主機',
+        `掃了這個 Wi-Fi 網段的 ${result.total} 個位址，沒有開著 Ollama 的電腦。\n\n請確認：\n• 電腦上的 Ollama 有設定 OLLAMA_HOST=0.0.0.0\n• 「設定 > Expo Go > 區域網路」有打開\n\n也可以按「新增」直接輸入位址。`
+      );
+    } else if (found > 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }
+
   async function refresh() {
     setRefreshing(true);
     await Promise.all([store.refreshHosts(), viewing ? store.loadModels(viewing) : Promise.resolve()]);
@@ -89,7 +106,7 @@ export function ModelSheet({ store, state, onClose }: { store: ChatStore; state:
     });
   }
 
-  const scan = state.scan;
+  const scanState = state.scan;
   const models = viewing ? state.models[viewing] : undefined;
   const loaded = viewing ? (state.loaded[viewing] ?? []) : [];
   const session = state.session;
@@ -106,15 +123,20 @@ export function ModelSheet({ store, state, onClose }: { store: ChatStore; state:
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>主機</Text>
           <View style={styles.actions}>
-            <TextButton text={scan?.running ? '停止掃描' : '掃描區網'} onPress={() => (scan?.running ? store.stopScan() : void store.scanLan())} />
+            <TextButton text={scanState?.running ? '停止掃描' : '掃描區網'} onPress={() => (scanState?.running ? store.stopScan() : void scan())} />
             <TextButton text="新增" onPress={addHost} />
           </View>
         </View>
-        {scan && (scan.running || scan.error || scan.total > 0) ? (
+        {scanState && (scanState.running || scanState.error || scanState.total > 0) ? (
           <View style={styles.scanRow} accessibilityLiveRegion="polite">
-            {scan.running ? <ActivityIndicator size="small" /> : null}
-            <Text style={[styles.footnote, scan.error ? { color: C.orange } : null]}>
-              {scan.error || (scan.running ? `掃描中 ${scan.done}/${scan.total}，找到 ${scan.found} 台` : `掃描完成，找到 ${scan.found} 台`)}
+            {scanState.running ? <ActivityIndicator size="small" /> : null}
+            <Text style={[styles.footnote, styles.flex, scanState.error ? { color: C.orange } : null]}>
+              {scanState.error ||
+                (scanState.running
+                  ? scanState.total === 0
+                    ? '檢查網路中…'
+                    : `掃描中 ${scanState.done}/${scanState.total}，找到 ${scanState.found} 台`
+                  : `掃描完成，找到 ${scanState.found} 台`)}
             </Text>
           </View>
         ) : null}

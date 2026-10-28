@@ -168,7 +168,7 @@ export function ChatScreen(p: ChatScreenProps) {
         {state.messages.length === 0 ? (
           <Welcome
             hasHosts={state.hosts.length > 0}
-            scanning={state.scan?.running ? `› 正在區網找 Ollama 主機…（${state.scan.done}/${state.scan.total}）` : ''}
+            scanning={state.scan?.running && state.scan.total > 0 ? `› 正在區網找 Ollama 主機…（${state.scan.done}/${state.scan.total}）` : ''}
             modelLabel={modelLabel}
             onOpenModels={() => setSheetOpen(true)}
           />

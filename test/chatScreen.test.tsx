@@ -281,3 +281,32 @@ describe('主機與模型面板', () => {
     expect(screen.getByText(/還沒有主機。連 Wi-Fi/)).toBeTruthy();
   });
 });
+
+describe('掃描區網的回饋', () => {
+  test('沒連 Wi-Fi：跳出對話框說明', async () => {
+    const net = new FakeOllamaNet();
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
+    await store.init();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await fireEvent.press(screen.getByText('按這裡'));
+    await fireEvent.press(screen.getByText('掃描區網'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][0]).toBe('沒辦法掃描區網');
+    expect(alert.mock.calls[0][1]).toContain('用 4G 時掃不到區網');
+  });
+
+  test('掃完沒找到：跳出對話框提醒檢查 Ollama 設定與區域網路權限', async () => {
+    const net = new FakeOllamaNet();
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => '192.168.5.10', autoScan: false });
+    await store.init();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await fireEvent.press(screen.getByText('按這裡'));
+    await fireEvent.press(screen.getByText('掃描區網'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][0]).toBe('沒有找到主機');
+    expect(alert.mock.calls[0][1]).toContain('OLLAMA_HOST=0.0.0.0');
+    expect(screen.getByText('掃描完成，找到 0 台')).toBeTruthy();
+  });
+});

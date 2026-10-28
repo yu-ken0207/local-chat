@@ -73,6 +73,7 @@ const SETTING_LAST_HOST = 'lastHost';
 const SETTING_LAST_MODEL = 'lastModel';
 const PROBE_TIMEOUT_MS = 2500;
 const SCAN_TIMEOUT_MS = 800;
+const WIFI_TIMEOUT_MS = 3000;
 
 /** 錯誤翻成看得懂的話 */
 export function describeError(e: unknown): string {
@@ -204,14 +205,35 @@ export class ChatStore {
     this.set({ hosts: await repo.listHosts() });
   }
 
-  /** 掃描手機所在的 Wi-Fi 網段，找到的主機記起來。回傳找到幾台 */
+  /** 掃描手機所在的 Wi-Fi 網段，找到的主機記起來。回傳找到幾台；不能掃時 scan.error 會寫原因 */
   async scanLan(): Promise<number> {
     const { repo, client, wifiIp } = this.deps;
     if (this.state.scan?.running) return 0;
-    const ip = await wifiIp();
+    // 先顯示「檢查網路中」，讓使用者知道有在動
+    this.set({ scan: { running: true, done: 0, total: 0, found: 0, error: '' } });
+    let ip: string | null;
+    try {
+      ip = await Promise.race([
+        wifiIp(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('等了 3 秒沒有回應')), WIFI_TIMEOUT_MS)),
+      ]);
+    } catch (e) {
+      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: `取不到手機的網路狀態：${describeError(e)}` } });
+      return 0;
+    }
     const candidates = ip ? subnetCandidates(ip) : [];
     if (candidates.length === 0) {
-      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: '手機沒有連 Wi-Fi（或不是一般區網），沒辦法掃描。可以手動新增主機。' } });
+      this.set({
+        scan: {
+          running: false,
+          done: 0,
+          total: 0,
+          found: 0,
+          error: ip
+            ? `手機的位址 ${ip} 不是一般區網，沒辦法掃描。請按「新增」輸入主機位址。`
+            : '手機目前沒有連 Wi-Fi（用 4G 時掃不到區網）。請按「新增」輸入主機位址，例如 Tailscale 的 100.x.x.x。',
+        },
+      });
       return 0;
     }
     this.scanAbort = new AbortController();

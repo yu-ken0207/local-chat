@@ -457,3 +457,28 @@ describe('訊息操作與範本', () => {
     expect(titles()).not.toContain('寫週報');
   });
 });
+
+describe('掃描的回饋', () => {
+  test('按下後立刻顯示檢查中；取不到網路狀態時寫出原因', async () => {
+    const net = new FakeOllamaNet();
+    let fail!: (e: Error) => void;
+    const store = new ChatStore({
+      repo: new Repo(memoryDb()),
+      client: net.client,
+      wifiIp: () => new Promise((_, reject) => (fail = reject)),
+      autoScan: false,
+    });
+    await store.init();
+    const p = store.scanLan();
+    expect(store.getState().scan).toMatchObject({ running: true, total: 0 });
+    fail(new Error('no permission'));
+    expect(await p).toBe(0);
+    expect(store.getState().scan).toMatchObject({ running: false, error: '取不到手機的網路狀態：no permission' });
+  });
+
+  test('用 4G 時說明要手動新增', async () => {
+    const { store } = await setup({ wifi: null });
+    await store.scanLan();
+    expect(store.getState().scan?.error).toContain('用 4G 時掃不到區網');
+  });
+});
