@@ -310,3 +310,28 @@ describe('掃描區網的回饋', () => {
     expect(screen.getByText('掃描完成，找到 0 台')).toBeTruthy();
   });
 });
+
+describe('送出時的輸入框', () => {
+  test('按下送出就清空，不用等回答結束', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '慢慢想' }, done: false }], hang: true });
+    await send(store, '嗨你好', 'streaming');
+    expect(screen.getByLabelText('訊息輸入框').props.value).toBe('');
+    expect(store.getState().streaming).not.toBeNull();
+    store.stop();
+    await waitFor(() => expect(store.getState().streaming).toBeNull());
+  });
+
+  test('訊息沒送出去：字和照片放回輸入框，並說明原因', async () => {
+    const { store } = await setup();
+    jest.spyOn(store, 'send').mockRejectedValue(new Error('請先選一個模型'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    pickActionSheet(1);
+    await fireEvent.press(screen.getByLabelText('附加照片'));
+    await type('留著我');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('沒有送出', '請先選一個模型'));
+    expect(screen.getByLabelText('訊息輸入框').props.value).toBe('留著我');
+    expect(screen.getByLabelText('移除照片 1')).toBeTruthy();
+  });
+});

@@ -108,13 +108,18 @@ export function Composer(p: Props) {
 
   async function send() {
     if (!canSend) return;
+    // 按下就清空輸入框（回答要等很久）；訊息沒送出去才把字和照片放回來
+    const text = draft;
+    const pics = photos;
     setSending(true);
     setHint('');
+    setDraft('');
+    setPhotos([]);
     try {
-      await p.onSend(draft, photos);
-      setDraft('');
-      setPhotos([]);
+      await p.onSend(text, pics);
     } catch (e: any) {
+      setDraft(text);
+      setPhotos(pics);
       Alert.alert('沒有送出', e?.message ?? String(e));
     } finally {
       setSending(false);
