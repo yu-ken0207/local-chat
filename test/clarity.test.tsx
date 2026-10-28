@@ -107,12 +107,6 @@ test('連接面板的電腦往左滑可以移除，也可以復原', async () =>
   await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
 });
 
-test('預設範本是通用的（沒有工作專用的內容）', async () => {
-  const { store } = await setup([]);
-  await store.addHost('192.168.1.20');
-  for (const title of ['翻譯成英文', '翻譯成中文', '摘要重點', '潤飾文字', '描述照片', '照片裡的文字']) expect(await screen.findByLabelText(`範本 ${title}`)).toBeTruthy();
-});
-
 test('手動輸入位址後，等待連線時顯示「正在連線」', async () => {
   const { store } = await setup();
   let finish!: () => void;

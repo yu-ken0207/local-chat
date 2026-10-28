@@ -48,7 +48,7 @@ test('語言：預設跟著系統，可以改成 English', async () => {
 
 test('你的電腦：顯示數量，點了打開連接面板；設定裡沒有已拿掉的項目', async () => {
   await setup();
-  for (const gone of ['AI 回答的語言', '自動幫對話取標題', '提示詞範本']) expect(screen.queryByText(gone)).toBeNull();
+  for (const gone of ['AI 回答的語言', '自動幫對話取標題', '提示詞範本', '自訂指示']) expect(screen.queryByText(gone)).toBeNull();
   await fireEvent.press(screen.getByLabelText('你的電腦，1 台'));
   expect(await screen.findByText('連接你的電腦')).toBeTruthy();
 });

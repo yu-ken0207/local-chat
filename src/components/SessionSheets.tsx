@@ -19,15 +19,6 @@ import { t } from '../i18n';
 
 type ListItem = Session & { preview: string };
 
-/** 有改過才問要不要放棄；沒改過直接離開 */
-export function confirmDiscard(dirty: boolean, leave: () => void) {
-  if (!dirty) return leave();
-  Alert.alert(t('放棄修改？'), t('剛剛輸入的內容不會儲存。'), [
-    { text: t('繼續編輯'), style: 'cancel' },
-    { text: t('放棄'), style: 'destructive', onPress: leave },
-  ]);
-}
-
 /** 刪除對話：直接移到最近刪除，畫面下方會出現「復原」，不用先確認 */
 export async function deleteSession(store: ChatStore, id: string, after?: () => void) {
   await store.deleteSession(id);
@@ -272,76 +263,10 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   );
 }
 
-/** 對話設定：標題、自訂指示（系統提示詞）、刪除 */
-export function SessionSettings({ store, session, onClose }: { store: ChatStore; session: Session; onClose: () => void }) {
-  const [title, setTitle] = useState(session.title);
-  const [role, setRole] = useState(session.systemPrompt);
-
-  const dirty = title !== session.title || role !== session.systemPrompt;
-
-  async function save() {
-    if (title.trim() !== session.title) await store.renameSession(session.id, title);
-    if (role !== session.systemPrompt) await store.setSystemPrompt(role);
-    onClose();
-  }
-
-  return (
-    <View style={styles.sheet}>
-      <View style={styles.header}>
-        <Pressable onPress={() => confirmDiscard(dirty, onClose)} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.cancel}>{t('取消')}</Text>
-        </Pressable>
-        <Text style={styles.title}>{t('對話設定')}</Text>
-        <Pressable onPress={save} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.done}>{t('完成')}</Text>
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.section}>{t('標題')}</Text>
-        <View style={styles.card}>
-          <TextInput
-            style={styles.field}
-            value={title}
-            onChangeText={setTitle}
-            placeholder={t('第一次回答後會自動取標題')}
-            placeholderTextColor={C.placeholder}
-            accessibilityLabel={t('對話標題')}
-          />
-        </View>
-        <Text style={styles.section}>{t('自訂指示')}</Text>
-        <View style={styles.card}>
-          <TextInput
-            style={[styles.field, styles.multiline]}
-            value={role}
-            onChangeText={setRole}
-            placeholder={t('例如：用簡單的話解釋，回答不要太長。')}
-            placeholderTextColor={C.placeholder}
-            multiline
-            accessibilityLabel={t('自訂指示')}
-          />
-        </View>
-        <Text style={styles.footnote}>{t('告訴 AI 在這段對話裡要怎麼回答，只用在這段對話。留空就照預設。')}</Text>
-        <View style={[styles.card, styles.actions]}>
-          <Pressable
-            onPress={() => void deleteSession(store, session.id, onClose)}
-            accessibilityRole="button"
-            style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-            <View style={styles.row}>
-              <SymbolView name="trash" size={18} tintColor={C.red} />
-              <Text style={[styles.rowTitle, { color: C.red }]}>{t('刪除這段對話')}</Text>
-            </View>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: C.groupedBg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 8 },
   title: { fontSize: 17, fontWeight: '600', color: C.label },
-  done: { fontSize: 17, fontWeight: '600', color: C.accent },
   cancel: { fontSize: 17, color: C.accent },
   pressed: { opacity: 0.4 },
   search: {
@@ -359,7 +284,6 @@ const styles = StyleSheet.create({
   newRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingVertical: 6 },
   newText: { fontSize: 17, fontWeight: '600', color: C.accent },
   card: { backgroundColor: C.groupedCard, borderRadius: 12, overflow: 'hidden' },
-  actions: { marginTop: 12 },
   row: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   rowTop: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   flex: { flex: 1 },
@@ -369,13 +293,6 @@ const styles = StyleSheet.create({
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 16 },
   empty: { ...TEXT.small, color: C.secondary, padding: 16 },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
-  section: { fontSize: 13, color: C.secondary, marginHorizontal: 4, marginTop: 6 },
-  field: { ...TEXT.body, color: C.label, paddingHorizontal: 16, paddingVertical: 12 },
-  multiline: { minHeight: 110, textAlignVertical: 'top' },
-  data: { gap: 6, marginTop: 14 },
-  dataBody: { padding: 16, gap: 6 },
-  path: { ...TEXT.meta, color: C.secondary },
-  count: { ...TEXT.small, color: C.secondary },
   back: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   restore: { ...TEXT.small, color: C.accent, fontWeight: '700' },
   drawer: { flex: 1 },
@@ -389,5 +306,4 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: C.separator,
   },
-  danger: { marginTop: 4 },
 });

@@ -267,7 +267,7 @@ describe('對話', () => {
     const before = store.getState().session!.id;
     await fireEvent.press(screen.getByText('開新對話'));
     await waitFor(() => expect(store.getState().session!.id).not.toBe(before));
-    expect(screen.getByLabelText('新對話，點一下打開對話設定')).toBeTruthy();
+    expect(screen.getByTestId('chat-title').props.children).toBe('新對話');
   });
 
   test('連不到電腦：白話錯誤下方有重試、連線說明、詳細資訊；重試成功後錯誤消失', async () => {

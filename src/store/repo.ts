@@ -55,7 +55,6 @@ export type Message = {
   altGroup: string | null;
 };
 
-export type Template = { id: string; title: string; content: string; position: number };
 
 // ---- 資料表 ----
 
@@ -130,15 +129,6 @@ CREATE TABLE IF NOT EXISTS settings (
 `;
 
 /** 第一次開 App 時放進去的常用提示詞範本（之後可以自己改） */
-export const defaultTemplates = (): { title: string; content: string }[] => [
-  { title: t('翻譯成英文'), content: t('把下面這段翻譯成自然的英文：\n') },
-  { title: t('翻譯成中文'), content: t('把下面這段翻譯成繁體中文：\n') },
-  { title: t('摘要重點'), content: t('用條列整理下面內容的重點：\n') },
-  { title: t('潤飾文字'), content: t('幫我把下面這段改得更通順、更好讀：\n') },
-  { title: t('描述照片'), content: t('詳細描述這張照片裡有什麼。') },
-  { title: t('照片裡的文字'), content: t('把這張照片裡的文字完整抄下來。') },
-]
-
 /** 備份會帶走的資料表（照這個順序放回去，先放被參照的） */
 const BACKUP_TABLES = ['hosts', 'sessions', 'messages', 'attachments', 'templates', 'settings'] as const;
 
@@ -234,14 +224,13 @@ export class Repo {
     private readonly now: () => number = Date.now
   ) {}
 
-  /** 建表；第一次建立時放入預設範本 */
+  /** 建表、升級資料表 */
   async migrate(): Promise<void> {
     const row = await this.db.get<{ user_version: number }>('PRAGMA user_version');
     const version = row?.user_version ?? 0;
     if (version >= SCHEMA_VERSION) return;
     if (version === 0) {
       await this.db.exec(BASE_SCHEMA);
-      await this.seedTemplates();
     }
     for (let v = Math.max(version, 1) + 1; v <= SCHEMA_VERSION; v++) await this.db.exec(MIGRATIONS[v]);
     await this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
@@ -558,17 +547,6 @@ export class Repo {
     return (await this.db.all<{ id: string }>('SELECT id FROM messages WHERE alt_group = ? AND deleted_at IS NULL ORDER BY seq', [group])).map((r) => r.id);
   }
 
-  // ---- 提示詞範本 ----
-
-  async listTemplates(): Promise<Template[]> {
-    return this.db.all<Template>('SELECT id, title, content, position FROM templates ORDER BY position, title');
-  }
-
-  /** 把範本原樣加回去（清除全部資料後復原用） */
-  async restoreTemplate(tpl: Template): Promise<void> {
-    await this.db.run('INSERT OR REPLACE INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [tpl.id, tpl.title, tpl.content, tpl.position]);
-  }
-
   // ---- 備份與還原 ----
 
   /**
@@ -614,39 +592,29 @@ export class Repo {
     return ids;
   }
 
-  /** 清除全部資料，回到第一次打開的樣子（範本恢復成預設）；永久刪除，之後壓縮檔案 */
+  /** 清除全部資料，回到第一次打開的樣子；永久刪除，之後壓縮檔案（templates 是舊版留下的資料表） */
   async resetAll(): Promise<void> {
     await this.db.exec('DELETE FROM sessions; DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
-    await this.seedTemplates();
     await this.db.exec('VACUUM');
   }
 
-  /** 清除前先記下主機、範本、設定，復原時放回去 */
-  async snapshotSettings(): Promise<{ hosts: Host[]; templates: Template[]; settings: { key: string; value: string }[] }> {
+  /** 清除前先記下主機、設定，復原時放回去 */
+  async snapshotSettings(): Promise<{ hosts: Host[]; settings: { key: string; value: string }[] }> {
     return {
       hosts: await this.listHosts(),
-      templates: await this.listTemplates(),
       settings: await this.db.all<{ key: string; value: string }>('SELECT key, value FROM settings'),
     };
   }
 
-  async restoreSnapshot(snap: { hosts: Host[]; templates: Template[]; settings: { key: string; value: string }[] }): Promise<void> {
-    await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+  async restoreSnapshot(snap: { hosts: Host[]; settings: { key: string; value: string }[] }): Promise<void> {
+    await this.db.exec('DELETE FROM hosts; DELETE FROM settings;');
     for (const h of snap.hosts) await this.restoreHost(h);
-    for (const tpl of snap.templates) await this.restoreTemplate(tpl);
     for (const s of snap.settings) await this.setSetting(s.key, s.value);
   }
 
-  /** 清掉主機、範本、設定（範本恢復預設），對話另外處理 */
+  /** 清掉主機、設定，對話另外處理 */
   async clearSettings(): Promise<void> {
     await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
-    await this.seedTemplates();
-  }
-
-  private async seedTemplates(): Promise<void> {
-    for (const [i, t] of defaultTemplates().entries()) {
-      await this.db.run('INSERT INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [newId(), t.title, t.content, i]);
-    }
   }
 
   /** 對話有幾段 */

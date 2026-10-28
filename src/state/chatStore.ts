@@ -512,7 +512,6 @@ export class ChatStore {
       hostUrl: s?.hostUrl ?? null,
       model: s?.model ?? null,
       think: s?.think ?? null,
-      systemPrompt: '',
     });
     await repo.deleteEmptySessions(next.id);
     this.set({ session: next, messages: [], context: null, notice: '' });
@@ -565,13 +564,6 @@ export class ChatStore {
 
   listSessions(search = '') {
     return this.deps.repo.listSessions(search);
-  }
-
-  async setSystemPrompt(text: string): Promise<void> {
-    const s = this.state.session;
-    if (!s) return;
-    await this.deps.repo.updateSession(s.id, { systemPrompt: text });
-    this.set({ session: { ...s, systemPrompt: text } });
   }
 
   async renameSession(id: string, title: string): Promise<void> {
@@ -710,9 +702,8 @@ export class ChatStore {
     const model = s.model!;
     const info = this.currentModel();
     const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
-      systemPrompt: s.systemPrompt,
       vision: info ? info.vision : true,
-      defaultSystemPrompt: REPLY_PROMPTS[this.appLanguage()],
+      systemPrompt: REPLY_PROMPTS[this.appLanguage()],
     });
     if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 

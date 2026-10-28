@@ -9,7 +9,7 @@ import type { NewPhoto } from '../lib/photos';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
-import { defaultTemplates, type Attachment, type Message } from '../store/repo';
+import type { Attachment, Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { Composer, chooseOption, type PickSource } from './Composer';
@@ -17,7 +17,7 @@ import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
-import { SessionList, SessionSettings, SettingsPages } from './SessionSheets';
+import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer } from './SideDrawer';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
@@ -39,7 +39,6 @@ export function ChatScreen(p: ChatScreenProps) {
   const nearBottom = useRef(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [connect, setConnect] = useState<{ help: boolean } | null>(null);
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
@@ -138,9 +137,19 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || settingsOpen || appSettingsOpen || !!connect;
+  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
   const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
+  const hasChat = !!session && state.messages.length > 0;
+
+  /** 點標題：改名或刪除這段對話（跟對話清單的 ⋯ 一樣） */
+  function sessionMenu() {
+    if (!session || state.streaming) return;
+    chooseOption(title, [t('重新命名'), t('刪除這段對話')], (i) => {
+      if (i === 0) Alert.prompt(t('重新命名'), undefined, (text) => void store.renameSession(session.id, text), 'plain-text', session.title);
+      if (i === 1) void deleteSession(store, session.id);
+    });
+  }
 
   return (
     <>
@@ -164,25 +173,19 @@ export function ChatScreen(p: ChatScreenProps) {
             </View>
             <Pressable
               style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
-              onPress={() => session && setSettingsOpen(true)}
+              onPress={sessionMenu}
+              disabled={!hasChat}
               accessibilityRole="button"
-              accessibilityLabel={t('{p0}，點一下打開對話設定', { p0: title })}>
-              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
+              accessibilityLabel={hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
+              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title">
                 {title}
               </Text>
-              <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
+              {hasChat ? <SymbolView name="chevron.down" size={11} tintColor={C.secondary} /> : null}
             </Pressable>
             <View style={[styles.headerSide, styles.headerRight]}>
               <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
             </View>
           </View>
-          {session?.systemPrompt.trim() ? (
-            <Pressable onPress={() => setSettingsOpen(true)} accessibilityRole="button" style={styles.roleBar}>
-              <Text style={styles.roleMark} numberOfLines={1}>
-                {t('◆ 自訂指示：')}{session.systemPrompt.trim().replace(/\s+/g, ' ')}
-              </Text>
-            </Pressable>
-          ) : null}
 
           <ScrollView
             ref={scrollRef}
@@ -275,15 +278,10 @@ export function ChatScreen(p: ChatScreenProps) {
               ) : null
             }
             notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
-            templates={defaultTemplates()}
-            showTemplateChips={state.messages.length === 0 && !!modelLabel}
           />
 
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
             <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
-          </Modal>
-          <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
-            {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
           </Modal>
           <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
             <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
@@ -396,8 +394,6 @@ const styles = StyleSheet.create({
   headerRight: { justifyContent: 'flex-end' },
   headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label, flexShrink: 1 },
   titleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
-  roleBar: { marginHorizontal: 16, marginBottom: 4 },
-  roleMark: { ...TEXT.meta, color: C.accent },
   headerButtonText: { fontSize: 15, fontWeight: '600', color: C.accent },
   toastAnchor: { height: 0, zIndex: 10 },
   headerButton: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 4 },

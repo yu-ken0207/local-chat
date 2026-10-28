@@ -43,7 +43,7 @@ async function openSettings() {
 
 test('標題列顯示自動取的標題；對話清單列出所有對話，目前這段在最上面', async () => {
   await setup();
-  expect(screen.getByLabelText('午餐，點一下打開對話設定')).toBeTruthy();
+  expect(screen.getByLabelText('午餐，點一下可以改名或刪除')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('對話清單'));
   const rows = await screen.findAllByLabelText(/^對話 /);
   expect(rows.map((r) => r.props.accessibilityLabel)).toEqual(['對話 午餐', '對話 天氣']);
@@ -127,52 +127,33 @@ test('清單裡的「新對話」', async () => {
   await fireEvent.press(screen.getByLabelText('對話清單'));
   await fireEvent.press(await screen.findByLabelText('開始新對話'));
   await waitFor(() => expect(store.getState().messages).toEqual([]));
-  expect(screen.getByLabelText('新對話，點一下打開對話設定')).toBeTruthy();
+  expect(screen.getByTestId('chat-title').props.children).toBe('新對話');
 });
 
-test('對話設定：設定自訂指示後標題列下方顯示，送出時帶著它', async () => {
-  const { net, store } = await setup();
-  await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
-  await fireEvent.changeText(await screen.findByLabelText('自訂指示'), '你是美食家');
-  await fireEvent.changeText(screen.getByLabelText('對話標題'), '午餐計畫');
-  await fireEvent.press(screen.getByText('完成'));
-  await waitFor(() => expect(store.getState().session).toMatchObject({ title: '午餐計畫', systemPrompt: '你是美食家' }));
-  expect(screen.getByText(/◆ 自訂指示：你是美食家/)).toBeTruthy();
-
-  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '晚餐呢');
-  await fireEvent.press(screen.getByLabelText('送出'));
-  await waitFor(() => expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: '你是美食家' }));
-});
-
-test('對話設定：有改過按取消會先問；選「繼續編輯」留著，選「放棄」才不存', async () => {
+test('點標題：可以改名；新對話沒內容時點了沒反應', async () => {
   const { store } = await setup();
-  await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
-  await fireEvent.changeText(await screen.findByLabelText('自訂指示'), '不要存');
-  const alert = jest.spyOn(Alert, 'alert').mockImplementationOnce(() => {});
-  await fireEvent.press(screen.getByText('取消'));
-  expect(alert.mock.calls[0][0]).toBe('放棄修改？');
-  expect(screen.getByLabelText('自訂指示').props.value).toBe('不要存');
-  confirm();
-  await fireEvent.press(screen.getByText('取消'));
-  await waitFor(() => expect(screen.queryByLabelText('自訂指示')).toBeNull());
-  expect(store.getState().session?.systemPrompt).toBe('');
+  pickAction(0);
+  jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, cb: any) => cb('午餐計畫'));
+  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名或刪除'));
+  await waitFor(() => expect(store.getState().session?.title).toBe('午餐計畫'));
+  expect(screen.getByLabelText('午餐計畫，點一下可以改名或刪除')).toBeTruthy();
+
+  await store.newSession();
+  const sheet = pickAction(0);
+  sheet.mockClear();
+  await fireEvent.press(await screen.findByTestId('chat-title'));
+  expect(sheet).not.toHaveBeenCalled();
 });
 
-test('對話設定：沒改過按取消直接關，不用問', async () => {
-  await setup();
-  await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
+test('點標題：刪除這段對話，不用先確認，切到另一段，可以復原', async () => {
+  const { store } = await setup();
+  pickAction(1);
   const alert = jest.spyOn(Alert, 'alert');
-  await fireEvent.press(await screen.findByText('取消'));
-  expect(alert).not.toHaveBeenCalled();
-  await waitFor(() => expect(screen.queryByLabelText('自訂指示')).toBeNull());
-});
-
-test('對話設定：刪除這段對話後切到另一段', async () => {
-  const { store } = await setup();
-  await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
-  confirm();
-  await fireEvent.press(await screen.findByText('刪除這段對話'));
+  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名或刪除'));
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));
+  expect(alert).not.toHaveBeenCalled();
+  await fireEvent.press(await screen.findByText('復原'));
+  await waitFor(async () => expect((await store.listSessions()).map((s) => s.title).sort()).toEqual(['午餐', '天氣']));
 });
 
 test('設定 > 進階：資料庫位置與大小；資料 > 備份所有對話', async () => {

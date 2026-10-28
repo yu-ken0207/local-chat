@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
+import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
 
 import { friendlyLevel } from '../lib/modelName';
 import type { ThinkOption, ThinkSetting } from '../lib/ollama';
@@ -10,9 +10,6 @@ import { C, MONO, TEXT } from '../ui/theme';
 import { t } from '../i18n';
 
 export type PickSource = 'camera' | 'library';
-
-/** 新對話時輸入框上方的範本按鈕 */
-export type QuickPrompt = { title: string; content: string };
 
 type Props = {
   /** 「主機 · 模型」；還沒選模型時是 null */
@@ -33,9 +30,6 @@ type Props = {
   accessory?: ReactNode;
   /** 還不能送出時輸入框的提示（例如「先連接你的電腦」） */
   notReadyHint?: string;
-  templates?: QuickPrompt[];
-  /** 輸入框空白時顯示範本按鈕（新對話時） */
-  showTemplateChips?: boolean;
 };
 
 /** 選項清單：iOS 用系統的動作表，其他平台用對話框 */
@@ -55,11 +49,6 @@ export function Composer(p: Props) {
   const [hint, setHint] = useState('');
   const [sending, setSending] = useState(false);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
-
-  function applyTemplate(tpl: QuickPrompt) {
-    setDraft(tpl.content);
-    inputRef.current?.focus();
-  }
 
   // 換成看不懂圖的模型時，拿掉已附的照片並提示
   useEffect(() => {
@@ -141,25 +130,10 @@ export function Composer(p: Props) {
         ? t('深入思考：{p0}', { p0: friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) })
         : '';
 
-  const chips = p.showTemplateChips && !draft && photos.length === 0 && (p.templates?.length ?? 0) > 0;
 
   return (
     <View style={[styles.wrap, { paddingBottom: p.bottomInset }]}>
       {p.accessory}
-      {chips ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
-          {p.templates!.map((tpl) => (
-            <Pressable
-              key={tpl.title}
-              onPress={() => applyTemplate(tpl)}
-              accessibilityRole="button"
-              accessibilityLabel={t('範本 {p0}', { p0: tpl.title })}
-              style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
-              <Text style={styles.chipText}>{tpl.title}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
       {hint ? (
         <Text style={styles.hint} accessibilityLiveRegion="polite">
           {hint}
@@ -282,7 +256,4 @@ const styles = StyleSheet.create({
   pillOn: { backgroundColor: C.surface },
   footerText: { ...TEXT.meta, color: C.secondary },
   pressed: { opacity: 0.4 },
-  chips: { gap: 8, paddingHorizontal: 2 },
-  chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
-  chipText: { ...TEXT.small, color: C.label },
 });

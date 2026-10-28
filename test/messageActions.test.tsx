@@ -142,22 +142,9 @@ describe('長按自己的訊息', () => {
   });
 });
 
-describe('提示詞範本', () => {
-  test('新對話時輸入框上方有範本，點了放進輸入框；有對話之後就不顯示', async () => {
-    const { store } = await setup();
-    await fireEvent.press(screen.getByLabelText('範本 翻譯成英文'));
-    expect(inputValue()).toBe('把下面這段翻譯成自然的英文：\n');
-    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), 'hello');
-    await fireEvent.press(screen.getByLabelText('送出'));
-    await waitFor(() => expect(store.getState().streaming).toBeNull());
-    await waitFor(() => expect(store.getState().messages).toHaveLength(2));
-    expect(screen.queryByLabelText('範本 翻譯成英文')).toBeNull();
-  });
-
-  test('範本固定、跟著語言；打 / 不會叫出範本', async () => {
-    await setup(['先聊一句']);
-    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '/摘要');
-    expect(screen.queryByLabelText(/^範本 /)).toBeNull();
-    expect(screen.queryByLabelText('管理範本')).toBeNull();
-  });
+test('沒有範本按鈕；打 / 也不會跳出範本', async () => {
+  await setup();
+  expect(screen.queryByLabelText(/^範本 /)).toBeNull();
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '/摘要');
+  expect(screen.queryByLabelText(/^範本 /)).toBeNull();
 });

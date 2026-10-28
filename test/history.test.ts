@@ -32,7 +32,7 @@ const CONVERSATION = [
 ];
 
 test('看得懂圖的模型：照片照送，錯誤與提示不送，思考過程不送，空白回答不送', () => {
-  const { messages, droppedImages } = buildChatMessages(CONVERSATION, { systemPrompt: '', vision: true });
+  const { messages, droppedImages } = buildChatMessages(CONVERSATION, { vision: true });
   expect(droppedImages).toBe(0);
   expect(messages).toEqual([
     { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
@@ -43,9 +43,9 @@ test('看得懂圖的模型：照片照送，錯誤與提示不送，思考過�
 });
 
 test('看不懂圖的模型：拿掉照片並回報張數', () => {
-  const { messages, droppedImages } = buildChatMessages(CONVERSATION, { systemPrompt: '你是獸醫', vision: false });
+  const { messages, droppedImages } = buildChatMessages(CONVERSATION, { vision: false, systemPrompt: 'Please reply in English.' });
   expect(droppedImages).toBe(2);
-  expect(messages[0]).toEqual({ role: 'system', content: '你是獸醫' });
+  expect(messages[0]).toEqual({ role: 'system', content: 'Please reply in English.' });
   expect(messages[1]).toEqual({ role: 'user', content: '這是什麼？' });
   expect(messages.some((m) => m.images)).toBe(false);
 });

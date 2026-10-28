@@ -109,7 +109,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
           <Row icon="globe" label={t('語言')} value={languageName(prefs.language)} onPress={pickLanguage} />
           <Row icon="desktopcomputer" label={t('你的電腦')} value={t('{p0} 台', { p0: state.hosts.length })} onPress={() => setConnectOpen(true)} last />
         </Section>
-        <Text style={styles.footnote}>{t('AI 也會用這個語言回答。對話裡的「自訂指示」會優先。')}</Text>
+        <Text style={styles.footnote}>{t('AI 也會用這個語言回答。')}</Text>
 
         <Section title={t('資料')}>
           <Row icon="trash.slash" label={t('最近刪除')} value={info ? t('{p0} 段', { p0: info.trash }) : ''} onPress={onOpenTrash} accessibilityLabel={t('最近刪除，{p0} 段', { p0: info?.trash ?? 0 })} />

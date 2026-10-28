@@ -334,11 +334,11 @@ describe('對話', () => {
     expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' });
   });
 
-  test('角色（系統提示詞）會送出', async () => {
-    const { net, store } = await ready();
-    await store.setSystemPrompt('你是巡檢專家');
+  test('舊版留下的自訂指示不再送出，只送回答語言', async () => {
+    const { net, store, repo } = await ready();
+    await repo.updateSession(store.getState().session!.id, { systemPrompt: '你是巡檢專家' });
     await store.send('hi');
-    expect(net.chatBodies()[0].messages[0]).toEqual({ role: 'system', content: '你是巡檢專家' });
+    expect(net.chatBodies()[0].messages[0]).toEqual({ role: 'system', content: REPLY_PROMPTS['zh-Hant'] });
   });
 
   test('重新開 App：回到最近的對話，記得模型', async () => {
@@ -384,7 +384,7 @@ describe('標題與匯出', () => {
   });
 });
 
-describe('訊息操作與範本', () => {
+describe('訊息操作', () => {
   test('重新產生：刪掉這則回答與之後的訊息，再問一次', async () => {
     const { net, store } = await ready();
     await store.send('第一題');
@@ -744,16 +744,13 @@ describe('設定', () => {
     await again.setPref('language', 'system');
   });
 
-  test('AI 用 App 的語言回答；自訂指示優先', async () => {
+  test('AI 用 App 的語言回答', async () => {
     const { net, store } = await ready();
     await store.send('hi');
     expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: REPLY_PROMPTS['zh-Hant'] });
     await store.setPref('language', 'en');
     await store.send('hi3');
     expect(net.chatBodies().at(-1).messages[0].content).toBe('Please reply in English.');
-    await store.setSystemPrompt('你是美食家');
-    await store.send('hi4');
-    expect(net.chatBodies().at(-1).messages[0].content).toBe('你是美食家');
   });
 
   test('「跟著系統」用手機的語言', async () => {
