@@ -49,7 +49,11 @@ test('搜尋內容只留下符合的對話；點一下切換過去', async () =>
   const { store } = await setup();
   await fireEvent.press(screen.getByLabelText('對話清單'));
   await fireEvent.changeText(await screen.findByLabelText('搜尋對話'), '下雨');
-  await waitFor(() => expect(screen.queryByLabelText('對話 午餐')).toBeNull());
+  // 清單剛打開時還沒載入，要等到「天氣」出現、「午餐」被篩掉才算搜尋完成
+  await waitFor(() => {
+    expect(screen.getByLabelText('對話 天氣')).toBeTruthy();
+    expect(screen.queryByLabelText('對話 午餐')).toBeNull();
+  });
   await fireEvent.press(screen.getByLabelText('對話 天氣'));
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));
   expect(screen.getByText('明天會下雨嗎')).toBeTruthy();

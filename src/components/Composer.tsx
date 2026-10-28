@@ -1,10 +1,11 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useEffect, useState, type ReactNode } from 'react';
-import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
+import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
 
 import type { ThinkOption, ThinkSetting } from '../lib/ollama';
 import { MAX_PHOTOS, dataUri, type NewPhoto } from '../lib/photos';
+import type { Template } from '../store/repo';
 import { C, MONO, TEXT } from '../ui/theme';
 
 export type PickSource = 'camera' | 'library' | 'clipboard';
@@ -24,9 +25,20 @@ type Props = {
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   /** 由外面塞進輸入框的文字（例如提示詞範本、編輯訊息） */
   injected?: { text: string; photos?: NewPhoto[]; nonce: number } | null;
-  /** 輸入框上方的額外按鈕列（提示詞範本） */
+  /** 輸入框上方的額外內容（例如「編輯中」提示） */
   accessory?: ReactNode;
+  templates?: Template[];
+  /** 輸入框空白時顯示範本按鈕（新對話時） */
+  showTemplateChips?: boolean;
+  onManageTemplates?: () => void;
 };
+
+/** 輸入 / 開頭時，依 / 後面的字篩選範本（比對標題） */
+export function matchTemplates(draft: string, templates: Template[]): Template[] | null {
+  if (!draft.startsWith('/') || draft.includes('\n')) return null;
+  const q = draft.slice(1).trim().toLowerCase();
+  return templates.filter((t) => t.title.toLowerCase().includes(q));
+}
 
 /** 選項清單：iOS 用系統的動作表，其他平台用對話框 */
 export function chooseOption(title: string, options: string[], onPick: (index: number) => void) {
@@ -44,6 +56,12 @@ export function Composer(p: Props) {
   const [photos, setPhotos] = useState<NewPhoto[]>([]);
   const [hint, setHint] = useState('');
   const [sending, setSending] = useState(false);
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
+
+  function applyTemplate(tpl: Template) {
+    setDraft(tpl.content);
+    inputRef.current?.focus();
+  }
 
   // 換成看不懂圖的模型時，拿掉已附的照片並提示
   useEffect(() => {
@@ -117,9 +135,52 @@ export function Composer(p: Props) {
   const thinkText =
     p.think?.kind === 'toggle' ? `思考 ${p.thinkValue ? '開' : '關'}` : p.think ? `思考 ${String(p.thinkValue ?? p.think.defaultLevel)}` : '';
 
+  const slash = matchTemplates(draft, p.templates ?? []);
+  const chips = p.showTemplateChips && !draft && photos.length === 0 && (p.templates?.length ?? 0) > 0;
+
   return (
     <View style={[styles.wrap, { paddingBottom: p.bottomInset }]}>
       {p.accessory}
+      {slash ? (
+        <View style={styles.slash} accessibilityLabel="範本清單">
+          {slash.length === 0 ? (
+            <Text style={styles.slashEmpty}>沒有符合的範本</Text>
+          ) : (
+            slash.slice(0, 6).map((tpl) => (
+              <Pressable
+                key={tpl.id}
+                onPress={() => applyTemplate(tpl)}
+                accessibilityRole="button"
+                accessibilityLabel={`範本 ${tpl.title}`}
+                style={({ pressed }) => [styles.slashRow, pressed && { backgroundColor: C.pressed }]}>
+                <Text style={styles.slashTitle}>/{tpl.title}</Text>
+                <Text style={styles.slashBody} numberOfLines={1}>
+                  {tpl.content.replace(/\s+/g, ' ')}
+                </Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+      ) : null}
+      {chips ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
+          {p.templates!.map((tpl) => (
+            <Pressable
+              key={tpl.id}
+              onPress={() => applyTemplate(tpl)}
+              accessibilityRole="button"
+              accessibilityLabel={`範本 ${tpl.title}`}
+              style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
+              <Text style={styles.chipText}>{tpl.title}</Text>
+            </Pressable>
+          ))}
+          {p.onManageTemplates ? (
+            <Pressable onPress={p.onManageTemplates} accessibilityRole="button" accessibilityLabel="管理範本" style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
+              <SymbolView name="slider.horizontal.3" size={13} tintColor={C.secondary} />
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      ) : null}
       {hint ? (
         <Text style={styles.hint} accessibilityLiveRegion="polite">
           {hint}
@@ -151,10 +212,11 @@ export function Composer(p: Props) {
             disabled={!p.canAttach || p.busy || photos.length >= MAX_PHOTOS}
           />
           <TextInput
+            ref={inputRef}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={p.modelLabel ? '輸入訊息…' : '先在下方選一個模型'}
+            placeholder={p.modelLabel ? '輸入訊息，或打 / 叫出範本' : '先在下方選一個模型'}
             placeholderTextColor={C.placeholder}
             multiline
             accessibilityLabel="訊息輸入框"
@@ -241,4 +303,12 @@ const styles = StyleSheet.create({
   pillOn: { backgroundColor: C.surface },
   footerText: { ...TEXT.meta, color: C.secondary },
   pressed: { opacity: 0.4 },
+  chips: { gap: 8, paddingHorizontal: 2 },
+  chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  chipText: { ...TEXT.small, color: C.label },
+  slash: { backgroundColor: C.surface, borderRadius: 12, overflow: 'hidden' },
+  slashRow: { paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
+  slashTitle: { ...TEXT.small, color: C.accent, fontWeight: '600' },
+  slashBody: { ...TEXT.meta, color: C.secondary },
+  slashEmpty: { ...TEXT.meta, color: C.secondary, padding: 12 },
 });

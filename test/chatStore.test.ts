@@ -374,3 +374,64 @@ describe('標題與匯出', () => {
     expect(markdown).toContain('- 模型：192.168.1.20 · gemma4:31b');
   });
 });
+
+describe('訊息操作與範本', () => {
+  test('重新產生：刪掉這則回答與之後的訊息，再問一次', async () => {
+    const { net, store } = await ready();
+    await store.send('第一題');
+    await store.send('第二題');
+    const firstAnswer = store.getState().messages[1];
+    expect(store.laterCount(firstAnswer.id)).toBe(2);
+    await store.regenerate(firstAnswer.id);
+    expect(store.getState().messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', '第一題'],
+      ['assistant', '回答：第一題'],
+    ]);
+    expect(store.getState().messages[1].id).not.toBe(firstAnswer.id);
+    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual(['請用繁體中文（台灣用語）回答。', '第一題']);
+  });
+
+  test('換個模型重新產生：回答標上新模型，之後也用新模型', async () => {
+    const { net, store } = await ready();
+    await store.send('hi');
+    await store.regenerate(store.getState().messages[1].id, { hostUrl: A, model: 'llama3:latest' });
+    expect(store.getState().messages[1].model).toBe('llama3:latest');
+    expect(store.getState().session?.model).toBe('llama3:latest');
+    expect(net.chatBodies().at(-1).model).toBe('llama3:latest');
+  });
+
+  test('編輯並重送：這則和之後都換掉，照片可以重新附', async () => {
+    const { net, store } = await ready();
+    await store.send('原本的問題', [{ base64: 'OLD', width: 1, height: 1 }]);
+    await store.send('追問');
+    const first = store.getState().messages[0];
+    await store.editAndResend(first.id, '改過的問題', [{ base64: 'NEW', width: 1, height: 1 }]);
+    const msgs = store.getState().messages;
+    expect(msgs.map((m) => [m.role, m.content])).toEqual([
+      ['user', '改過的問題'],
+      ['assistant', '回答：改過的問題'],
+    ]);
+    expect(msgs[0].attachments.map((a) => a.base64)).toEqual(['NEW']);
+    expect(net.chatBodies().at(-1).messages.at(-1).images).toEqual(['NEW']);
+  });
+
+  test('刪除單則訊息', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    await store.deleteMessage(store.getState().messages[1].id);
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['a']);
+  });
+
+  test('範本：啟動時載入預設、可以新增修改刪除', async () => {
+    const { store } = await ready();
+    const titles = () => store.getState().templates.map((t) => t.title);
+    expect(titles()).toContain('翻譯成英文');
+    await store.addTemplate(' 寫日報 ', '幫我整理今天的工作日報：\n');
+    expect(titles().at(-1)).toBe('寫日報');
+    const t = store.getState().templates.at(-1)!;
+    await store.updateTemplate(t.id, '寫週報', '幫我整理本週工作：');
+    expect(store.getState().templates.at(-1)).toMatchObject({ title: '寫週報', content: '幫我整理本週工作：' });
+    await store.deleteTemplate(t.id);
+    expect(titles()).not.toContain('寫週報');
+  });
+});

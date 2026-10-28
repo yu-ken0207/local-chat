@@ -3,7 +3,7 @@ import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, exportMarkdown, fallbackTitle } from '../lib/exportMd';
 import { DEFAULT_IMAGE_QUESTION, buildChatMessages } from '../lib/history';
 import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
-import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
+import type { Attachment, Host, Message, Repo, Session, Template } from '../store/repo';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
 
@@ -37,6 +37,7 @@ export type ChatState = {
   context: ContextInfo | null;
   /** 一次性的提示，例如「這個模型看不懂圖片，前面的照片不會送出」 */
   notice: string;
+  templates: Template[];
 };
 
 export type ChatEvent = 'answered' | 'failed' | 'stopped';
@@ -100,6 +101,7 @@ export class ChatStore {
     streaming: null,
     context: null,
     notice: '',
+    templates: [],
   };
   private listeners = new Set<() => void>();
   private abort: AbortController | null = null;
@@ -150,7 +152,7 @@ export class ChatStore {
     const hosts = await repo.listHosts();
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
-    this.set({ hosts, session, messages: await repo.listMessages(session.id), ready: true });
+    this.set({ hosts, session, messages: await repo.listMessages(session.id), templates: await repo.listTemplates(), ready: true });
     void this.refreshHosts();
     if (session.hostUrl) void this.loadModels(session.hostUrl);
   }
@@ -401,6 +403,64 @@ export class ChatStore {
     await this.deps.repo.addMessage(s.id, { role: 'user', content, attachments: images });
     this.set({ messages: await this.deps.repo.listMessages(s.id), notice: '' });
     await this.answer();
+  }
+
+  /**
+   * 重新產生某則回答：刪掉這則回答與之後的訊息，再問一次。
+   * 有給 hostUrl／model 時先換成那個模型（換模型重新產生）。
+   */
+  async regenerate(assistantId: string, override?: { hostUrl: string; model: string }): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    const target = this.state.messages.find((m) => m.id === assistantId && m.role === 'assistant');
+    if (!s || !target || this.state.streaming) return;
+    if (override) await this.selectModel(override.hostUrl, override.model);
+    await repo.deleteMessagesFrom(s.id, target.seq);
+    this.set({ messages: await repo.listMessages(s.id), notice: '' });
+    await this.answer();
+  }
+
+  /** 編輯某則自己說的話並重送：這則和之後的訊息都換掉 */
+  async editAndResend(userId: string, text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    const target = this.state.messages.find((m) => m.id === userId && m.role === 'user');
+    if (!s || !target || this.state.streaming) return;
+    if (images.length > 0 && !this.canAttachImages()) throw new Error('這個模型看不懂圖片，不能附照片');
+    if (!text.trim() && images.length === 0) return;
+    await repo.deleteMessagesFrom(s.id, target.seq);
+    this.set({ messages: await repo.listMessages(s.id) });
+    await this.send(text, images);
+  }
+
+  /** 某則訊息之後還有幾則（重新產生、編輯前提醒用） */
+  laterCount(messageId: string): number {
+    const i = this.state.messages.findIndex((m) => m.id === messageId);
+    return i < 0 ? 0 : this.state.messages.length - i - 1;
+  }
+
+  async deleteMessage(id: string): Promise<void> {
+    const s = this.state.session;
+    if (!s || this.state.streaming?.messageId === id) return;
+    await this.deps.repo.deleteMessage(id);
+    this.set({ messages: await this.deps.repo.listMessages(s.id) });
+  }
+
+  // ---- 提示詞範本 ----
+
+  async addTemplate(title: string, content: string): Promise<void> {
+    await this.deps.repo.addTemplate(title.trim(), content);
+    this.set({ templates: await this.deps.repo.listTemplates() });
+  }
+
+  async updateTemplate(id: string, title: string, content: string): Promise<void> {
+    await this.deps.repo.updateTemplate(id, title.trim(), content);
+    this.set({ templates: await this.deps.repo.listTemplates() });
+  }
+
+  async deleteTemplate(id: string): Promise<void> {
+    await this.deps.repo.deleteTemplate(id);
+    this.set({ templates: await this.deps.repo.listTemplates() });
   }
 
   /** 中途停止回答 */

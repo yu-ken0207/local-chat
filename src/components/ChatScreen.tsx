@@ -1,28 +1,26 @@
+import * as Speech from 'expo-speech';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { NewPhoto } from '../lib/photos';
+import { plainText } from '../lib/plainText';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Attachment, Message } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
-import { Composer, type PickSource } from './Composer';
+import { Composer, chooseOption, type PickSource } from './Composer';
 import { ImageViewer } from './ImageViewer';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SessionSettings } from './SessionSheets';
+import { TemplatesSheet } from './TemplatesSheet';
 
 export type ChatScreenProps = {
   store: ChatStore;
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   copyText: (text: string) => void;
-  /** 長按訊息 */
-  onMessageMenu?: (message: Message) => void;
-  /** 由外面塞進輸入框的內容 */
-  injected?: { text: string; photos?: NewPhoto[]; nonce: number } | null;
-  composerAccessory?: ReactNode;
 };
 
 export function ChatScreen(p: ChatScreenProps) {
@@ -34,6 +32,81 @@ export function ChatScreen(p: ChatScreenProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
+  const [injected, setInjected] = useState<{ text: string; photos?: NewPhoto[]; nonce: number } | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+
+  // 換對話時結束編輯與朗讀
+  useEffect(() => {
+    setEditing(null);
+    Speech.stop();
+    setSpeakingId(null);
+  }, [state.session?.id]);
+
+  function speak(m: Message) {
+    Speech.stop();
+    if (speakingId === m.id) {
+      setSpeakingId(null);
+      return;
+    }
+    setSpeakingId(m.id);
+    const done = () => setSpeakingId((id) => (id === m.id ? null : id));
+    Speech.speak(plainText(m.content), { language: 'zh-TW', onDone: done, onStopped: done, onError: done });
+  }
+
+  /** 重新產生前，如果後面還有訊息就先確認 */
+  function confirmLater(m: Message, action: () => Promise<void>) {
+    const later = store.laterCount(m.id);
+    if (later === 0) return void action();
+    Alert.alert('重新產生？', `之後的 ${later} 則訊息也會一起刪掉。`, [
+      { text: '取消', style: 'cancel' },
+      { text: '重新產生', onPress: () => void action() },
+    ]);
+  }
+
+  function startEdit(m: Message) {
+    setEditing({ id: m.id, later: store.laterCount(m.id) });
+    setInjected({ text: m.content, photos: m.attachments.map(({ base64, width, height }) => ({ base64, width, height })), nonce: Date.now() });
+  }
+
+  function cancelEdit() {
+    setEditing(null);
+    setInjected({ text: '', photos: [], nonce: Date.now() });
+  }
+
+  function confirmDeleteMessage(m: Message) {
+    Alert.alert('刪除這則訊息？', undefined, [
+      { text: '取消', style: 'cancel' },
+      { text: '刪除', style: 'destructive', onPress: () => void store.deleteMessage(m.id) },
+    ]);
+  }
+
+  /** 長按訊息的選單 */
+  function messageMenu(m: Message) {
+    if (state.streaming) return;
+    if (m.role === 'user') {
+      chooseOption('你的訊息', ['複製', '編輯並重送', '刪除'], (i) => [() => p.copyText(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
+    } else if (m.role === 'assistant') {
+      const hostUrl = state.session?.hostUrl;
+      const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
+      chooseOption('AI 的回答', ['複製', '分享', '重新產生', '換個模型重新產生', speakingId === m.id ? '停止朗讀' : '朗讀', '刪除'], (i) =>
+        [
+          () => p.copyText(m.content),
+          () => void Share.share({ message: m.content }),
+          () => confirmLater(m, () => store.regenerate(m.id)),
+          () =>
+            hostUrl && others.length > 0
+              ? chooseOption('用哪個模型重新產生', others, (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
+              : Alert.alert('沒有其他模型', '先在下方的模型面板載入這台主機的模型。'),
+          () => speak(m),
+          () => confirmDeleteMessage(m),
+        ][i]()
+      );
+    } else {
+      chooseOption(m.role === 'error' ? '錯誤訊息' : '提示', ['複製', '刪除'], (i) => [() => p.copyText(m.content), () => void store.deleteMessage(m.id)][i]());
+    }
+  }
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
   const [keyboardUp, setKeyboardUp] = useState(false);
 
@@ -102,12 +175,25 @@ export function ChatScreen(p: ChatScreenProps) {
               streaming={state.streaming}
               onOpenImage={(images, index) => setViewer({ images, index })}
               onCopyCode={p.copyText}
-              onLongPress={p.onMessageMenu}
+              onLongPress={messageMenu}
             />
           ))
         )}
       </ScrollView>
 
+      {speakingId ? (
+        <Banner
+          text="朗讀中…"
+          tone="info"
+          action={{
+            text: '停止',
+            onPress: () => {
+              Speech.stop();
+              setSpeakingId(null);
+            },
+          }}
+        />
+      ) : null}
       {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
       {state.context && state.context.level !== 'ok' ? (
         <Banner
@@ -130,14 +216,31 @@ export function ChatScreen(p: ChatScreenProps) {
         bottomInset={keyboardUp ? 8 : Math.max(insets.bottom, 8)}
         onSend={async (text, photos) => {
           nearBottom.current = true;
-          await store.send(text, photos);
+          if (editing) {
+            const id = editing.id;
+            setEditing(null);
+            await store.editAndResend(id, text, photos);
+          } else {
+            await store.send(text, photos);
+          }
         }}
         onStop={() => store.stop()}
         onOpenModels={() => setSheetOpen(true)}
         onThink={(v) => store.setThink(v)}
         pickPhotos={p.pickPhotos}
-        injected={p.injected}
-        accessory={p.composerAccessory}
+        injected={injected}
+        accessory={
+          editing ? (
+            <Banner
+              tone="info"
+              text={`編輯中：送出後會取代這則訊息${editing.later > 0 ? `和之後的 ${editing.later} 則` : ''}`}
+              action={{ text: '取消編輯', onPress: cancelEdit }}
+            />
+          ) : null
+        }
+        templates={state.templates}
+        showTemplateChips={state.messages.length === 0}
+        onManageTemplates={() => setTemplatesOpen(true)}
       />
 
       <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
@@ -148,6 +251,9 @@ export function ChatScreen(p: ChatScreenProps) {
       </Modal>
       <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
+      </Modal>
+      <Modal visible={templatesOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setTemplatesOpen(false)}>
+        <TemplatesSheet store={store} templates={state.templates} onClose={() => setTemplatesOpen(false)} />
       </Modal>
       <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
     </KeyboardAvoidingView>
@@ -182,10 +288,10 @@ function Welcome({ hasHosts, modelLabel, onOpenModels }: { hasHosts: boolean; mo
   );
 }
 
-function Banner({ text, tone, onClose, action }: { text: string; tone: 'warn' | 'error'; onClose?: () => void; action?: { text: string; onPress: () => void } }) {
+function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 'warn' | 'error'; onClose?: () => void; action?: { text: string; onPress: () => void } }) {
   return (
     <View style={styles.banner} accessibilityLiveRegion="polite">
-      <Text style={[styles.bannerText, { color: tone === 'error' ? C.red : C.orange }]}>{text}</Text>
+      <Text style={[styles.bannerText, { color: tone === 'error' ? C.red : tone === 'warn' ? C.orange : C.secondary }]}>{text}</Text>
       {action ? (
         <Pressable onPress={action.onPress} hitSlop={8} accessibilityRole="button">
           <Text style={styles.bannerAction}>{action.text}</Text>
