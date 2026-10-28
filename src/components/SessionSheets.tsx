@@ -1,17 +1,18 @@
 import * as Haptics from 'expo-haptics';
-import * as Sharing from 'expo-sharing';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { fmtBytes, fmtWhen } from '../lib/format';
+import { fmtWhen } from '../lib/format';
 import { TRASH_DAYS } from '../store/repo';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
+import type { Db } from '../store/db';
 import type { Session } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { SwipeRow } from './SwipeRow';
+import { SettingsView } from './SettingsSheet';
 import { UndoToast } from './UndoToast';
 
 type ListItem = Session & { preview: string };
@@ -33,109 +34,24 @@ export async function deleteSession(store: ChatStore, id: string, after?: () => 
   after?.();
 }
 
-/** 對話清單最下面：資料存在哪裡、多大、匯出整個資料庫 */
-function DataSection({ store, onChanged, onOpenTrash }: { store: ChatStore; onChanged: () => void; onOpenTrash: () => void }) {
-  const [info, setInfo] = useState<{ path: string | null; bytes: number; sessions: number; trash: number } | null>(null);
-  const [version, setVersion] = useState(0);
-  const { undo, session } = useChatState(store);
-  useEffect(() => {
-    store.dataInfo().then(setInfo).catch(() => setInfo(null));
-  }, [store, version, undo?.id, session?.id]);
-  if (!info) return null;
-
-  const after = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setVersion((v) => v + 1);
-    onChanged();
-  };
-
-  /** 全部移到最近刪除，可以復原，不用先確認 */
-  function deleteAll() {
-    void store.deleteAllSessions().then(after);
-  }
-
-  /** 連電腦、範本、設定一起清掉，幾秒後就救不回來，所以先確認 */
-  function resetAll() {
-    Alert.alert(
-      '清除全部資料？',
-      '對話、照片、電腦、範本和設定全部刪除，回到第一次打開的樣子。按下後幾秒內還可以復原，之後就救不回來。\n\n建議先按「匯出資料庫」備份。',
-      [
-        { text: '取消', style: 'cancel' },
-        { text: '清除', style: 'destructive', onPress: () => void store.resetAll().then(after) },
-      ]
-    );
-  }
-
-  async function exportDb() {
-    try {
-      const uri = await store.prepareDatabaseExport();
-      if (!uri) return;
-      await Sharing.shareAsync(uri, { dialogTitle: '匯出資料庫' });
-    } catch (e: any) {
-      Alert.alert('匯出失敗', String(e?.message ?? e));
-    }
-  }
-
-  return (
-    <View style={styles.data}>
-      <Text style={styles.section}>資料</Text>
-      <View style={styles.card}>
-        <View style={styles.dataBody}>
-          <Text style={styles.rowTitle}>local-chat.db · {fmtBytes(info.bytes)}</Text>
-          <Text style={styles.footnote}>所有對話和照片都在這個檔案，只存在這支手機。iPhone 的「檔案」App 看不到這個位置，要拿出來請用「匯出資料庫」。</Text>
-          {info.path ? (
-            <Text style={styles.path} selectable accessibilityLabel="資料庫位置">
-              {info.path}
-            </Text>
-          ) : null}
-        </View>
-        {info.path ? (
-          <>
-            <View style={styles.separator} />
-            <Pressable onPress={exportDb} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-              <View style={styles.row}>
-                <SymbolView name="square.and.arrow.up" size={18} tintColor={C.accent} />
-                <Text style={[styles.rowTitle, { color: C.accent }]}>匯出資料庫</Text>
-              </View>
-            </Pressable>
-          </>
-        ) : null}
-      </View>
-      <View style={[styles.card, styles.danger]}>
-        <Pressable onPress={onOpenTrash} accessibilityRole="button" accessibilityLabel={`最近刪除，${info.trash} 段`} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-          <View style={styles.row}>
-            <SymbolView name="trash.slash" size={18} tintColor={C.accent} />
-            <Text style={[styles.rowTitle, styles.flex]}>最近刪除</Text>
-            <Text style={styles.count}>{info.trash}</Text>
-            <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
-          </View>
-        </Pressable>
-        <View style={styles.separator} />
-        <Pressable onPress={deleteAll} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-          <View style={styles.row}>
-            <SymbolView name="trash" size={18} tintColor={C.red} />
-            <Text style={[styles.rowTitle, { color: C.red }]}>刪除所有對話</Text>
-          </View>
-        </Pressable>
-        <View style={styles.separator} />
-        <Pressable onPress={resetAll} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-          <View style={styles.row}>
-            <SymbolView name="arrow.counterclockwise" size={18} tintColor={C.red} />
-            <Text style={[styles.rowTitle, { color: C.red }]}>清除全部資料</Text>
-          </View>
-        </Pressable>
-      </View>
-      <Text style={styles.footnote}>刪除的對話會在「最近刪除」保留 {TRASH_DAYS} 天。「清除全部資料」連電腦、範本、設定一起刪，只有按下後幾秒內可以復原。</Text>
-    </View>
-  );
-}
-
 /** 對話清單：搜尋、切換、長按改名／匯出／刪除 */
-export function SessionList({ store, currentId, onClose }: { store: ChatStore; currentId: string | null; onClose: () => void }) {
+export function SessionList({
+  store,
+  currentId,
+  onClose,
+  copyText,
+  pickBackup,
+}: {
+  store: ChatStore;
+  currentId: string | null;
+  onClose: () => void;
+  copyText: (text: string) => void;
+  pickBackup?: () => Promise<Db | null>;
+}) {
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<ListItem[] | null>(null);
   const [version, setVersion] = useState(0);
-  const [trashOpen, setTrashOpen] = useState(false);
+  const [view, setView] = useState<'list' | 'settings' | 'trash'>('list');
   const reload = () => setVersion((v) => v + 1);
   const { undo } = useChatState(store);
 
@@ -149,7 +65,7 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, version, store, undo?.id, trashOpen]);
+  }, [query, version, store, undo?.id, view]);
 
   function menu(s: ListItem) {
     const name = s.title || s.preview || '新對話';
@@ -160,7 +76,9 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
     });
   }
 
-  if (trashOpen) return <TrashView store={store} onBack={() => setTrashOpen(false)} />;
+  if (view === 'trash') return <TrashView store={store} onBack={() => setView('settings')} />;
+  if (view === 'settings')
+    return <SettingsView store={store} copyText={copyText} pickBackup={pickBackup} onBack={() => setView('list')} onOpenTrash={() => setView('trash')} />;
 
   const now = Date.now();
   return (
@@ -241,7 +159,13 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
           )}
         </View>
         <Text style={styles.footnote}>對話只存在這支手機。往左滑可以刪除；按 ⋯ 可以改名、匯出。</Text>
-        <DataSection store={store} onChanged={reload} onOpenTrash={() => setTrashOpen(true)} />
+        <Pressable onPress={() => setView('settings')} accessibilityRole="button" style={({ pressed }) => [styles.card, styles.settingsRow, pressed && { backgroundColor: C.pressed }]}>
+          <View style={styles.row}>
+            <SymbolView name="gearshape" size={18} tintColor={C.accent} />
+            <Text style={[styles.rowTitle, styles.flex]}>設定</Text>
+            <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
+          </View>
+        </Pressable>
       </ScrollView>
       <UndoToast store={store} />
     </View>
@@ -289,9 +213,9 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="返回對話清單" style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
+        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel="返回設定" style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
           <SymbolView name="chevron.left" size={16} tintColor={C.accent} />
-          <Text style={styles.cancel}>對話</Text>
+          <Text style={styles.cancel}>設定</Text>
         </Pressable>
         <Text style={styles.title}>最近刪除</Text>
         <Pressable onPress={emptyAll} disabled={!items?.length} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
@@ -441,5 +365,6 @@ const styles = StyleSheet.create({
   count: { ...TEXT.small, color: C.secondary },
   back: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   restore: { ...TEXT.small, color: C.accent, fontWeight: '700' },
+  settingsRow: { marginTop: 14 },
   danger: { marginTop: 4 },
 });

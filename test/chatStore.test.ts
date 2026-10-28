@@ -776,3 +776,81 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(store.getState().messages.map((m) => m.content)).toEqual(['a', '回答：a', 'b']);
   });
 });
+
+describe('設定', () => {
+  test('偏好設定會存起來，重開 App 還在', async () => {
+    const { net, store, repo } = await ready();
+    expect(store.getState().prefs).toEqual({ language: 'system', replyLanguage: 'app', autoTitle: true });
+    await store.setPref('replyLanguage', 'en');
+    await store.setPref('autoTitle', false);
+    const again = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false });
+    await again.init();
+    expect(again.getState().prefs).toEqual({ language: 'system', replyLanguage: 'en', autoTitle: false });
+  });
+
+  test('AI 回答的語言：英文、不指定（不送語言提示）、跟著 App；自訂指示優先', async () => {
+    const { net, store } = await ready();
+    await store.setPref('replyLanguage', 'en');
+    await store.send('hi');
+    expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: 'Please reply in English.' });
+    await store.setPref('replyLanguage', 'any');
+    await store.send('hi2');
+    expect(net.chatBodies().at(-1).messages[0].role).toBe('user');
+    await store.setPref('replyLanguage', 'app');
+    await store.setPref('language', 'en');
+    await store.send('hi3');
+    expect(net.chatBodies().at(-1).messages[0].content).toBe('Please reply in English.');
+    await store.setSystemPrompt('你是美食家');
+    await store.send('hi4');
+    expect(net.chatBodies().at(-1).messages[0].content).toBe('你是美食家');
+  });
+
+  test('「跟著系統」用手機的語言', async () => {
+    const net = new FakeOllamaNet();
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false, deviceLanguage: () => 'en' });
+    await store.init();
+    expect(store.appLanguage()).toBe('en');
+    expect(store.replyLanguage()).toBe('en');
+    await store.setPref('language', 'zh-Hant');
+    expect(store.appLanguage()).toBe('zh-Hant');
+  });
+
+  test('關掉自動取標題：不會多送取標題的請求', async () => {
+    const { net, store } = await ready();
+    await store.setPref('autoTitle', false);
+    await store.send('hi');
+    expect(store.titleTask).toBeNull();
+    expect(net.titleBodies()).toHaveLength(0);
+  });
+
+  test('從備份還原：資料換成備份的；幾秒內可以復原', async () => {
+    const { net, store } = await ready();
+    await store.send('現在的對話');
+    // 準備另一支手機的備份
+    const otherDb = memoryDb();
+    const other = new ChatStore({ repo: new Repo(otherDb), client: net.client, wifiIp: async () => null, autoScan: false });
+    await other.init();
+    await other.addHost('192.168.1.20');
+    await other.send('備份裡的對話');
+    await other.renameHost(A, '舊電腦');
+
+    const withMemory = store as any;
+    withMemory.deps.openMemoryDb = async () => memoryDb();
+    await store.restoreFromBackup(otherDb);
+    expect(store.getState().messages[0].content).toBe('備份裡的對話');
+    expect(store.getState().hosts.map((h) => h.label)).toEqual(['舊電腦']);
+    expect(store.getState().undo?.message).toBe('已從備份還原');
+    await store.undoLast();
+    expect(store.getState().messages[0].content).toBe('現在的對話');
+    expect(store.getState().hosts.map((h) => h.label)).toEqual(['192.168.1.20']);
+  });
+
+  test('從備份還原：不是備份檔就報錯，資料不動', async () => {
+    const { store } = await ready();
+    await store.send('現在的對話');
+    const bad = memoryDb();
+    await bad.exec('CREATE TABLE notes (id INTEGER)');
+    await expect(store.restoreFromBackup(bad)).rejects.toThrow('這個檔案不是這個 App 的備份。');
+    expect(store.getState().messages[0].content).toBe('現在的對話');
+  });
+});

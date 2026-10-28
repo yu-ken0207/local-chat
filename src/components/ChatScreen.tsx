@@ -10,6 +10,7 @@ import type { NewPhoto } from '../lib/photos';
 import { plainText } from '../lib/plainText';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
+import type { Db } from '../store/db';
 import type { Attachment, Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
@@ -27,6 +28,8 @@ export type ChatScreenProps = {
   store: ChatStore;
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   copyText: (text: string) => void;
+  /** 選一個備份檔並載入（設定 > 從備份還原） */
+  pickBackup?: () => Promise<Db | null>;
 };
 
 export function ChatScreen(p: ChatScreenProps) {
@@ -295,7 +298,7 @@ export function ChatScreen(p: ChatScreenProps) {
         <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
       </Modal>
       <Modal visible={listOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setListOpen(false)}>
-        <SessionList store={store} currentId={session?.id ?? null} onClose={() => setListOpen(false)} />
+        <SessionList store={store} currentId={session?.id ?? null} copyText={copy} pickBackup={p.pickBackup} onClose={() => setListOpen(false)} />
       </Modal>
       <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}

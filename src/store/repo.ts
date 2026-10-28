@@ -138,6 +138,27 @@ export const DEFAULT_TEMPLATES: { title: string; content: string }[] = [
   { title: '照片裡的文字', content: '把這張照片裡的文字完整抄下來。' },
 ]
 
+/** 備份會帶走的資料表（照這個順序放回去，先放被參照的） */
+const BACKUP_TABLES = ['hosts', 'sessions', 'messages', 'attachments', 'templates', 'settings'] as const;
+
+export class NotBackupError extends Error {
+  constructor() {
+    super('這個檔案不是這個 App 的備份。');
+    this.name = 'NotBackupError';
+  }
+}
+
+/** 確認是這個 App 的資料庫：要有對話與訊息兩張表 */
+async function assertBackup(db: Db): Promise<void> {
+  try {
+    const rows = await db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
+    const names = new Set(rows.map((r) => r.name));
+    if (!names.has('sessions') || !names.has('messages')) throw new NotBackupError();
+  } catch (e) {
+    throw e instanceof NotBackupError ? e : new NotBackupError();
+  }
+}
+
 /** 看得到的訊息：沒被刪除、也不是收起來的舊版本 */
 const VISIBLE = 'm.deleted_at IS NULL AND m.hidden = 0';
 /** 對話預覽：最後一則看得到的使用者或 AI 訊息 */
@@ -564,6 +585,42 @@ export class Repo {
 
   async deleteTemplate(id: string): Promise<void> {
     await this.db.run('DELETE FROM templates WHERE id = ?', [id]);
+  }
+
+  // ---- 備份與還原 ----
+
+  /**
+   * 用另一個資料庫（備份檔）的內容取代目前全部的資料。
+   * 備份檔先升級到目前的版本；不是這個 App 的備份就丟錯，目前的資料不會被動到。
+   */
+  async replaceWith(source: Db): Promise<void> {
+    await assertBackup(source);
+    await new Repo(source).migrate();
+    await this.db.exec('PRAGMA foreign_keys = OFF; BEGIN;');
+    try {
+      for (const table of [...BACKUP_TABLES].reverse()) await this.db.run(`DELETE FROM ${table}`);
+      for (const table of BACKUP_TABLES) {
+        const rows = await source.all<Record<string, SqlValue>>(`SELECT * FROM ${table}`);
+        for (const row of rows) {
+          const cols = Object.keys(row);
+          await this.db.run(
+            `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+            cols.map((c) => row[c])
+          );
+        }
+      }
+      await this.db.exec('COMMIT; PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      await this.db.exec('ROLLBACK; PRAGMA foreign_keys = ON;');
+      throw e;
+    }
+  }
+
+  /** 把目前全部的資料複製到另一個（空的）資料庫 */
+  async copyTo(target: Db): Promise<void> {
+    const copy = new Repo(target, this.now);
+    await copy.migrate();
+    await copy.replaceWith(this.db);
   }
 
   // ---- 資料庫檔案 ----

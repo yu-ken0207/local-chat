@@ -13,15 +13,32 @@ export interface Db {
   get<T>(sql: string, params?: SqlValue[]): Promise<T | null>;
 }
 
-/** 手機上的資料庫（expo-sqlite） */
-export async function openPhoneDb(name = 'local-chat.db'): Promise<Db> {
-  const db = await SQLite.openDatabaseAsync(name);
-  await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+function wrap(db: SQLite.SQLiteDatabase, path?: string): Db {
   return {
-    path: db.databasePath,
+    path,
     exec: (sql) => db.execAsync(sql),
     run: async (sql, params = []) => ({ changes: (await db.runAsync(sql, params)).changes }),
     all: (sql, params = []) => db.getAllAsync(sql, params),
     get: (sql, params = []) => db.getFirstAsync(sql, params),
   };
+}
+
+/** 手機上的資料庫（expo-sqlite） */
+export async function openPhoneDb(name = 'local-chat.db'): Promise<Db> {
+  const db = await SQLite.openDatabaseAsync(name);
+  await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  return wrap(db, db.databasePath);
+}
+
+/** 暫時的記憶體資料庫（還原前先把目前的資料存一份，給「復原」用） */
+export async function openMemoryDb(): Promise<Db> {
+  const db = await SQLite.openDatabaseAsync(':memory:');
+  await db.execAsync('PRAGMA foreign_keys = ON;');
+  return wrap(db);
+}
+
+/** 把備份檔的內容載入成記憶體資料庫（不會動到手機上的資料） */
+export async function openBackupBytes(bytes: Uint8Array): Promise<Db> {
+  const db = await SQLite.deserializeDatabaseAsync(bytes);
+  return wrap(db);
 }

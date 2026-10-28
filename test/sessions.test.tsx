@@ -36,6 +36,11 @@ const confirm = () => jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, but
 
 afterEach(() => jest.restoreAllMocks());
 
+async function openSettings() {
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  await fireEvent.press(await screen.findByText('設定'));
+}
+
 test('標題列顯示自動取的標題；對話清單列出所有對話，目前這段在最上面', async () => {
   await setup();
   expect(screen.getByLabelText('午餐，點一下打開對話設定')).toBeTruthy();
@@ -107,7 +112,7 @@ test('最近刪除：可以救回、永久刪除（先確認）、全部清空�
   await store.deleteSession(ids[0]);
   await store.deleteSession(ids[1]);
   await store.dismissUndo();
-  await fireEvent.press(screen.getByLabelText('對話清單'));
+  await openSettings();
   await fireEvent.press(await screen.findByLabelText('最近刪除，2 段'));
   expect(await screen.findByLabelText('已刪除的對話 天氣')).toBeTruthy();
   expect(screen.getAllByText('還會保留 30 天')).toHaveLength(2);
@@ -123,7 +128,8 @@ test('最近刪除：可以救回、永久刪除（先確認）、全部清空�
   expect(alert.mock.calls[0][0]).toBe('永久刪除「午餐」？');
   await waitFor(() => expect(screen.getByText(/最近刪除是空的/)).toBeTruthy());
 
-  await fireEvent.press(screen.getByLabelText('返回對話清單'));
+  await fireEvent.press(screen.getByLabelText('返回設定'));
+  await fireEvent.press(await screen.findByLabelText('返回對話清單'));
   expect(await screen.findByLabelText('對話 天氣')).toBeTruthy();
 });
 
@@ -165,40 +171,40 @@ test('對話設定：刪除這段對話後切到另一段', async () => {
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));
 });
 
-test('對話清單最下面顯示資料庫位置與大小，可以匯出整個資料庫', async () => {
+test('設定 > 進階：資料庫位置與大小；資料 > 備份所有對話', async () => {
   const net = new FakeOllamaNet();
   net.addHost(A, { models: [{ name: 'gemma4:31b' }] });
   const db = Object.assign(memoryDb(), { path: '/var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db' });
   const store = new ChatStore({ repo: new Repo(db), client: net.client, wifiIp: async () => null, autoScan: false });
   await store.init();
   await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
-  await fireEvent.press(screen.getByLabelText('對話清單'));
-  expect(await screen.findByText(/^local-chat\.db · \d+ KB$/)).toBeTruthy();
+  await openSettings();
+  expect(await screen.findByText(/^資料庫：local-chat\.db · \d+ KB$/)).toBeTruthy();
   expect(screen.getByLabelText('資料庫位置').props.children).toBe('/var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db');
-  await fireEvent.press(screen.getByText('匯出資料庫'));
+  await fireEvent.press(screen.getByText('備份所有對話'));
   const Sharing = require('expo-sharing');
   await waitFor(() =>
-    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db', { dialogTitle: '匯出資料庫' })
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db', { dialogTitle: '備份所有對話' })
   );
 });
 
 describe('使用者自己移除資料', () => {
   test('刪除所有對話：不用先確認；只剩一段新對話，主機保留；可以復原', async () => {
     const { store } = await setup();
-    await fireEvent.press(screen.getByLabelText('對話清單'));
+    await openSettings();
     const alert = jest.spyOn(Alert, 'alert');
     await fireEvent.press(await screen.findByText('刪除所有對話'));
     expect(alert).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getAllByLabelText(/^對話 /).map((r) => r.props.accessibilityLabel)).toEqual(['對話 新對話']));
+    await waitFor(async () => expect((await store.listSessions()).map((s) => s.title)).toEqual(['']));
     expect(store.getState().hosts).toHaveLength(1);
     expect(screen.getByText('已刪除 2 段對話')).toBeTruthy();
     await fireEvent.press(screen.getByText('復原'));
-    await waitFor(() => expect(screen.getAllByLabelText(/^對話 /).map((r) => r.props.accessibilityLabel).sort()).toEqual(['對話 午餐', '對話 天氣']));
+    await waitFor(async () => expect((await store.listSessions()).map((s) => s.title).sort()).toEqual(['午餐', '天氣']));
   });
 
   test('清除全部資料：先確認；之後幾秒內可以復原', async () => {
     const { store } = await setup();
-    await fireEvent.press(screen.getByLabelText('對話清單'));
+    await openSettings();
     const alert = confirm();
     await fireEvent.press(await screen.findByText('清除全部資料'));
     expect(alert.mock.calls[0][0]).toBe('清除全部資料？');
@@ -207,7 +213,8 @@ describe('使用者自己移除資料', () => {
     await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
     await store.resetAll();
     await store.dismissUndo();
-    await fireEvent.press(screen.getByText('完成'));
+    await fireEvent.press(screen.getByLabelText('返回對話清單'));
+    await fireEvent.press(await screen.findByText('完成'));
     expect(screen.getByText('連接你的電腦')).toBeTruthy();
   });
 });

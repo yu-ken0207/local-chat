@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { BASE_SCHEMA, DEFAULT_TEMPLATES, Repo, likePattern } from '../src/store/repo';
+import { BASE_SCHEMA, DEFAULT_TEMPLATES, NotBackupError, Repo, likePattern } from '../src/store/repo';
 import { memoryDb } from './helpers/nodeDb';
 
 /** 每次呼叫時間加 1，方便檢查排序 */
@@ -280,5 +280,43 @@ describe('資料庫升級', () => {
     expect(msgs.map((m) => [m.content, m.detail])).toEqual([['舊訊息', '']]);
     await v1.addMessage('s1', { role: 'error', content: '連不到', detail: 'Network request failed' });
     expect((await v1.listMessages('s1'))[1].detail).toBe('Network request failed');
+  });
+});
+
+describe('備份與還原', () => {
+  test('用備份取代目前的資料；舊版本的備份會先升級', async () => {
+    const { repo } = await freshRepo();
+    await repo.saveHost({ url: 'http://now:11434', label: '現在的', source: 'manual' });
+    const backup = memoryDb();
+    await backup.exec(BASE_SCHEMA);
+    await backup.exec(`INSERT INTO hosts VALUES ('http://old:11434', '備份的電腦', 'manual', '0.40.0', NULL, 1);
+      INSERT INTO sessions VALUES ('s1', '備份的對話', NULL, NULL, NULL, '', 1, 1);
+      INSERT INTO messages VALUES ('m1', 's1', 1, 'user', '備份裡的話', '', NULL, NULL, NULL, 1);
+      INSERT INTO templates VALUES ('t1', '備份範本', '內容', 0);
+      PRAGMA user_version = 1;`);
+    await repo.replaceWith(backup);
+    expect((await repo.listHosts()).map((h) => h.label)).toEqual(['備份的電腦']);
+    expect((await repo.listSessions()).map((s) => s.title)).toEqual(['備份的對話']);
+    expect((await repo.listMessages('s1')).map((m) => [m.content, m.detail, m.versions])).toEqual([['備份裡的話', '', null]]);
+    expect((await repo.listTemplates()).map((t) => t.title)).toEqual(['備份範本']);
+  });
+
+  test('不是這個 App 的檔案：丟錯，目前的資料不動', async () => {
+    const { repo } = await freshRepo();
+    await repo.saveHost({ url: 'http://now:11434', label: '現在的', source: 'manual' });
+    const other = memoryDb();
+    await other.exec('CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)');
+    await expect(repo.replaceWith(other)).rejects.toBeInstanceOf(NotBackupError);
+    expect((await repo.listHosts()).map((h) => h.label)).toEqual(['現在的']);
+  });
+
+  test('複製到另一個資料庫：內容一樣（給還原前的「復原」用）', async () => {
+    const { repo } = await freshRepo();
+    const s = await repo.createSession();
+    await repo.addMessage(s.id, { role: 'user', content: 'hi', attachments: [{ base64: 'IMG', width: 2, height: 3 }] });
+    const target = memoryDb();
+    await repo.copyTo(target);
+    const copy = new Repo(target);
+    expect((await copy.listMessages(s.id)).map((m) => [m.content, m.attachments.map((a) => a.base64)])).toEqual([['hi', ['IMG']]]);
   });
 });

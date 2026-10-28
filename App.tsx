@@ -1,5 +1,8 @@
 import * as Clipboard from 'expo-clipboard';
+import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
+import { getLocales } from 'expo-localization';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -9,8 +12,8 @@ import { ChatScreen } from './src/components/ChatScreen';
 import { wifiIp } from './src/lib/network';
 import { OllamaClient } from './src/lib/ollama';
 import { pickPhotos } from './src/lib/photos';
-import { ChatStore, type ChatEvent } from './src/state/chatStore';
-import { openPhoneDb } from './src/store/db';
+import { ChatStore, type AppLanguage, type ChatEvent } from './src/state/chatStore';
+import { openBackupBytes, openMemoryDb, openPhoneDb, type Db } from './src/store/db';
 import { Repo } from './src/store/repo';
 import { C, TEXT } from './src/ui/theme';
 
@@ -18,6 +21,19 @@ function haptic(event: ChatEvent) {
   if (event === 'answered') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   if (event === 'failed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   if (event === 'stopped') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+}
+
+/** 手機系統語言：中文（不分繁簡）用繁體中文，其他用英文 */
+function deviceLanguage(): AppLanguage {
+  return getLocales()[0]?.languageCode === 'zh' ? 'zh-Hant' : 'en';
+}
+
+/** 設定 > 從備份還原：選一個備份檔，載入成暫時的資料庫（不會動到手機上的資料） */
+async function pickBackup(): Promise<Db | null> {
+  const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+  if (result.canceled || !result.assets?.[0]) return null;
+  const bytes = await new File(result.assets[0].uri).bytes();
+  return openBackupBytes(bytes);
 }
 
 function copyText(text: string) {
@@ -32,7 +48,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const repo = new Repo(await openPhoneDb());
-      const s = new ChatStore({ repo, client: (url) => new OllamaClient(url), wifiIp, onEvent: haptic });
+      const s = new ChatStore({ repo, client: (url) => new OllamaClient(url), wifiIp, onEvent: haptic, deviceLanguage, openMemoryDb });
       await s.init();
       setStore(s);
     })().catch((e) => setError(e instanceof Error ? e.message : String(e)));
@@ -42,7 +58,7 @@ export default function App() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       {store ? (
-        <ChatScreen store={store} pickPhotos={pickPhotos} copyText={copyText} />
+        <ChatScreen store={store} pickPhotos={pickPhotos} copyText={copyText} pickBackup={pickBackup} />
       ) : (
         <View style={styles.center}>
           {error ? <Text style={styles.error}>開啟失敗：{error}</Text> : <ActivityIndicator />}

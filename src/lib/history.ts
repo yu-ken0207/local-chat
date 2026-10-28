@@ -1,8 +1,9 @@
 import type { Message } from '../store/repo';
 import type { ChatMessage } from './ollama';
 
-/** 沒設角色時的系統提示詞 */
+/** 沒設自訂指示時的系統提示詞（依「AI 回答的語言」） */
 export const DEFAULT_SYSTEM_PROMPT = '請用繁體中文（台灣用語）回答。';
+export const REPLY_PROMPTS = { 'zh-Hant': DEFAULT_SYSTEM_PROMPT, en: 'Please reply in English.' } as const;
 /** 只附照片沒打字時，代替使用者問的問題 */
 export const DEFAULT_IMAGE_QUESTION = '這張照片裡有什麼？';
 
@@ -14,9 +15,11 @@ export const DEFAULT_IMAGE_QUESTION = '這張照片裡有什麼？';
  */
 export function buildChatMessages(
   messages: Message[],
-  options: { systemPrompt: string; vision: boolean }
+  options: { systemPrompt: string; vision: boolean; defaultSystemPrompt?: string }
 ): { messages: ChatMessage[]; droppedImages: number } {
-  const out: ChatMessage[] = [{ role: 'system', content: options.systemPrompt.trim() || DEFAULT_SYSTEM_PROMPT }];
+  // 自訂指示優先；沒有就用預設（依回答語言）；「不指定語言」時不送系統提示詞
+  const system = options.systemPrompt.trim() || (options.defaultSystemPrompt ?? DEFAULT_SYSTEM_PROMPT);
+  const out: ChatMessage[] = system ? [{ role: 'system', content: system }] : [];
   let droppedImages = 0;
   for (const m of messages) {
     if (m.role === 'user') {
