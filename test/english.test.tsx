@@ -30,7 +30,7 @@ afterEach(() => {
 
 test('英文手機：第一次打開就是英文', async () => {
   await setup();
-  expect(screen.getByText(/Local AI/)).toBeTruthy();
+  expect(screen.getAllByText(/Local AI/).length).toBeGreaterThan(0);
   expect(screen.getByText('Connect your computer')).toBeTruthy();
   expect(screen.getByText('Chats')).toBeTruthy();
   expect(screen.getAllByText('New chat')).toHaveLength(2); // 標題與右上角按鈕

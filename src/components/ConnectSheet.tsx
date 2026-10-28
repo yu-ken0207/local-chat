@@ -3,9 +3,10 @@ import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { HostOfflineError, type ChatState, type ChatStore } from '../state/chatStore';
+import { HostOfflineError, NeedsPairingError, PairError, type ChatState, type ChatStore } from '../state/chatStore';
 import { C, MONO, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
+import { QrScanner } from './QrScanner';
 import { SwipeRow } from './SwipeRow';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
@@ -24,6 +25,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   const [helpOpen, setHelpOpen] = useState(!!showHelp);
   /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
   const [adding, setAdding] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const scan = state.scan;
   const failed = !!scan && !scan.running && (!!scan.error || (scan.total > 0 && scan.found === 0));
   const current = state.session?.hostUrl;
@@ -39,6 +41,46 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
     }
   }
 
+  /** 配對成功：選好模型就關掉面板，可以直接聊天 */
+  function paired() {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (store.getState().session?.model) onClose();
+  }
+
+  /** 掃到 QR code：配對成功回 null，失敗回說明（掃描畫面會顯示） */
+  async function scanned(data: string): Promise<string | null> {
+    try {
+      await store.pairFromQr(data);
+      setScannerOpen(false);
+      paired();
+      return null;
+    } catch (e) {
+      return e instanceof PairError ? e.message : String(e instanceof Error ? e.message : e);
+    }
+  }
+
+  /** 輸入電腦上小幫手顯示的 6 位數配對碼 */
+  function enterCode(url: string, name: string) {
+    Alert.prompt(
+      t('輸入配對碼'),
+      t('在「{p0}」的小幫手按「配對新手機」，輸入畫面上的 6 位數字。', { p0: name || t('這台電腦') }),
+      async (code) => {
+        setAdding(name || url);
+        try {
+          await store.pairHelper(url, code);
+          paired();
+        } catch (e) {
+          Alert.alert(t('沒有配對成功'), e instanceof Error ? e.message : String(e));
+        } finally {
+          setAdding(null);
+        }
+      },
+      'plain-text',
+      '',
+      'number-pad'
+    );
+  }
+
   function manual() {
     Alert.prompt(
       t('手動輸入位址'),
@@ -50,7 +92,10 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           if (store.getState().session?.model) onClose();
         } catch (e) {
-          if (e instanceof HostOfflineError) {
+          if (e instanceof NeedsPairingError) {
+            setAdding(null);
+            enterCode(e.url, e.name);
+          } else if (e instanceof HostOfflineError) {
             setHelpOpen(true);
             Alert.alert(t('連不到這個位址'), t('請看下方「連不上嗎？」的檢查項目。\n\n也可以先加入，等電腦準備好再連。'), [
               { text: t('取消'), style: 'cancel' },
@@ -76,6 +121,10 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   /** 改用這台電腦；連不到就直接說，並打開「連不上嗎？」 */
   async function use(url: string, label: string) {
     Haptics.selectionAsync();
+    if (store.needsPairing(url)) {
+      chooseOption(t('「{p0}」要重新配對', { p0: label }), [t('掃描 QR code'), t('輸入配對碼')], (i) => (i === 0 ? setScannerOpen(true) : enterCode(url, label)));
+      return;
+    }
     const model = await store.connectHost(url);
     if (model) return onClose();
     if (store.getState().models[url]?.error) {
@@ -93,23 +142,27 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.lead}>{t('在電腦上打開 Ollama，讓手機和電腦連同一個 Wi-Fi，再按「自動尋找」。')}</Text>
+        <Text style={styles.lead}>{t('在電腦上打開 Local AI 小幫手，按「配對新手機」，再用手機掃描電腦畫面上的 QR code。')}</Text>
+
+        <Pressable onPress={() => setScannerOpen(true)} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
+          <SymbolView name="qrcode.viewfinder" size={20} tintColor="#ffffff" />
+          <Text style={styles.primaryText}>{t('掃描 QR code')}</Text>
+        </Pressable>
 
         {scan?.running ? (
-          <View style={[styles.primary, styles.primaryBusy]} accessibilityLiveRegion="polite">
-            <ActivityIndicator color="#ffffff" />
-            <Text style={styles.primaryText}>{scan.total === 0 ? t('檢查網路中…') : t('尋找中… {p0} / {p1}', { p0: scan.done, p1: scan.total })}</Text>
+          <View style={styles.secondary} accessibilityLiveRegion="polite">
+            <ActivityIndicator />
+            <Text style={styles.secondaryText}>{scan.total === 0 ? t('檢查網路中…') : t('尋找中… {p0} / {p1}', { p0: scan.done, p1: scan.total })}</Text>
             <Pressable onPress={() => store.stopScan()} hitSlop={10} accessibilityRole="button">
-              <Text style={styles.stop}>{t('停止')}</Text>
+              <Text style={styles.stopSecondary}>{t('停止')}</Text>
             </Pressable>
           </View>
         ) : (
-          <Pressable onPress={find} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
-            <SymbolView name="wifi" size={18} tintColor="#ffffff" />
-            <Text style={styles.primaryText}>{t('自動尋找')}</Text>
+          <Pressable onPress={find} accessibilityRole="button" style={({ pressed }) => [styles.secondary, pressed && styles.pressedButton]}>
+            <SymbolView name="wifi" size={17} tintColor={C.accent} />
+            <Text style={styles.secondaryText}>{t('自動尋找')}</Text>
           </Pressable>
         )}
-        <Text style={styles.footnote}>{t('第一次尋找時，iPhone 會問是否允許「尋找區域網路上的裝置」，請選「允許」。')}</Text>
 
         {adding ? (
           <View style={styles.secondary} accessibilityLiveRegion="polite">
@@ -125,8 +178,32 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
 
         {scan && !scan.running && (scan.error || scan.total > 0) ? (
           <Text style={[styles.result, failed && { color: C.orange }]} accessibilityLiveRegion="polite">
-            {scan.error || (scan.found > 0 ? t('找到 {p0} 台電腦。', { p0: scan.found }) : t('這個 Wi-Fi 裡沒有找到開著 Ollama 的電腦。'))}
+            {scan.error || (scan.found > 0 ? t('找到 {p0} 台電腦。', { p0: scan.found }) : t('這個 Wi-Fi 裡沒有找到開著小幫手或 Ollama 的電腦。'))}
           </Text>
+        ) : null}
+        <Text style={styles.footnote}>{t('第一次尋找時，iPhone 會問是否允許「尋找區域網路上的裝置」，請選「允許」。')}</Text>
+
+        {(scan?.helpers ?? []).length > 0 ? (
+          <>
+            <Text style={styles.section}>{t('找到的小幫手')}</Text>
+            <View style={styles.card}>
+              {scan!.helpers!.map((h, i) => (
+                <Pressable
+                  key={h.id}
+                  onPress={() => enterCode(h.url, h.name)}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('小幫手 {p0}，點一下輸入配對碼', { p0: h.name })}
+                  style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+                  <View style={styles.row}>
+                    <SymbolView name="desktopcomputer" size={18} tintColor={C.secondary} />
+                    <Text style={[styles.rowTitle, styles.flex]}>{h.name}</Text>
+                    <Text style={styles.using}>{t('輸入配對碼')}</Text>
+                  </View>
+                  {i < scan!.helpers!.length - 1 ? <View style={styles.separator} /> : null}
+                </Pressable>
+              ))}
+            </View>
+          </>
         ) : null}
 
         {state.hosts.length > 0 ? (
@@ -172,6 +249,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         {helpOpen ? <ConnectHelp copyText={copyText} /> : null}
       </ScrollView>
       <UndoToast store={store} />
+      <QrScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={scanned} />
     </View>
   );
 }
@@ -202,6 +280,11 @@ export function ConnectHelp({ copyText }: { copyText: (text: string) => void }) 
   const c = commands()[os];
   return (
     <View style={styles.help} accessibilityLabel={t('連線說明')}>
+      <Text style={styles.helpHeading}>{t('用 Local AI 小幫手（建議）')}</Text>
+      <Step n={1} text={t('在電腦上安裝並打開 Local AI 小幫手。')} />
+      <Step n={2} text={t('在小幫手按「配對新手機」，手機按「掃描 QR code」。')} />
+      <Step n={3} text={t('手機和電腦要連同一個 Wi-Fi。電腦問要不要允許小幫手連線時，請選「允許」。')} />
+      <Text style={[styles.helpHeading, styles.helpHeadingGap]}>{t('沒有小幫手：直接連 Ollama（進階）')}</Text>
       <Step n={1} text={t('電腦上的 Ollama 要開著。')} />
       <Step n={2} text={t('手機和電腦要連同一個 Wi-Fi。')} />
       <Step n={3} text={t('讓 Ollama 接受其他裝置連線（Ollama 剛裝好時只接受電腦自己）：')} />
@@ -279,6 +362,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryText: { ...TEXT.body, fontWeight: '600', color: C.accent },
+  helpHeading: { ...TEXT.small, fontWeight: '700', color: C.label },
+  helpHeadingGap: { marginTop: 10 },
+  stopSecondary: { ...TEXT.small, color: C.accent, textDecorationLine: 'underline', marginLeft: 6 },
   result: { ...TEXT.small, color: C.secondary },
   section: { fontSize: 13, color: C.secondary, marginHorizontal: 4, marginTop: 8 },
   card: { backgroundColor: C.groupedCard, borderRadius: 12, overflow: 'hidden' },

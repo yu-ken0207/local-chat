@@ -7,7 +7,10 @@ import { t } from '../i18n';
 export type Host = {
   url: string;
   label: string;
-  source: 'scan' | 'manual';
+  /** helper：透過 Local AI 小幫手（配對過，權杖存在安全儲存區） */
+  source: 'scan' | 'manual' | 'helper';
+  /** 小幫手的識別碼（位址變了也認得出是同一台） */
+  helperId: string | null;
   version: string;
   lastSeenAt: number | null;
   createdAt: number;
@@ -58,7 +61,7 @@ export type Message = {
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
@@ -68,6 +71,8 @@ const MIGRATIONS: Record<number, string> = {
       ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
       ALTER TABLE messages ADD COLUMN alt_group TEXT;
       ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;`,
+  // 透過小幫手連線的電腦
+  4: 'ALTER TABLE hosts ADD COLUMN helper_id TEXT',
 };
 
 /** 最近刪除保留幾天 */
@@ -239,17 +244,33 @@ export class Repo {
   // ---- 主機 ----
 
   /** 新增或更新主機；手動加的不會被掃描結果改成 scan */
-  async saveHost(host: { url: string; label: string; source: 'scan' | 'manual'; version?: string }): Promise<void> {
+  async saveHost(host: { url: string; label: string; source: Host['source']; version?: string; helperId?: string | null }): Promise<void> {
     const now = this.now();
     await this.db.run(
-      `INSERT INTO hosts (url, label, source, version, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?)
+      `INSERT INTO hosts (url, label, source, version, last_seen_at, created_at, helper_id) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(url) DO UPDATE SET
          label = CASE WHEN hosts.source = 'manual' AND excluded.source = 'scan' THEN hosts.label ELSE excluded.label END,
-         source = CASE WHEN hosts.source = 'manual' THEN 'manual' ELSE excluded.source END,
+         source = CASE WHEN excluded.source = 'helper' THEN 'helper' WHEN hosts.source = 'manual' THEN 'manual' ELSE excluded.source END,
          version = CASE WHEN excluded.version = '' THEN hosts.version ELSE excluded.version END,
-         last_seen_at = COALESCE(excluded.last_seen_at, hosts.last_seen_at)`,
-      [host.url, host.label, host.source, host.version ?? '', host.version ? now : null, now]
+         last_seen_at = COALESCE(excluded.last_seen_at, hosts.last_seen_at),
+         helper_id = COALESCE(excluded.helper_id, hosts.helper_id)`,
+      [host.url, host.label, host.source, host.version ?? '', host.version ? now : null, now, host.helperId ?? null]
     );
+  }
+
+  /** 小幫手換了位址：電腦紀錄和用到它的對話都改成新位址 */
+  async moveHost(from: string, to: string): Promise<void> {
+    if (from === to) return;
+    await this.db.exec('BEGIN');
+    try {
+      await this.db.run('DELETE FROM hosts WHERE url = ?', [to]);
+      await this.db.run('UPDATE hosts SET url = ? WHERE url = ?', [to, from]);
+      await this.db.run('UPDATE sessions SET host_url = ? WHERE host_url = ?', [to, from]);
+      await this.db.exec('COMMIT');
+    } catch (e) {
+      await this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
 
   async markHostSeen(url: string, version: string): Promise<void> {
@@ -262,6 +283,7 @@ export class Repo {
       url: r.url,
       label: r.label,
       source: r.source,
+      helperId: r.helper_id ?? null,
       version: r.version,
       lastSeenAt: r.last_seen_at,
       createdAt: r.created_at,
@@ -271,8 +293,8 @@ export class Repo {
   /** 把移除的電腦原樣加回去（復原用） */
   async restoreHost(h: Host): Promise<void> {
     await this.db.run(
-      'INSERT OR REPLACE INTO hosts (url, label, source, version, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [h.url, h.label, h.source, h.version, h.lastSeenAt, h.createdAt]
+      'INSERT OR REPLACE INTO hosts (url, label, source, version, last_seen_at, created_at, helper_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [h.url, h.label, h.source, h.version, h.lastSeenAt, h.createdAt, h.helperId]
     );
   }
 

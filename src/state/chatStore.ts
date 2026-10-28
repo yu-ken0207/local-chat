@@ -1,9 +1,10 @@
 import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/discovery';
+import { HELPER_PORT, pairErrorMessage, parsePairingPayload } from '../lib/helper';
 import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
-import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import { OllamaError, type HelperHello, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
@@ -25,7 +26,41 @@ export type Streaming = {
 
 export type ContextInfo = { used: number; limit: number | null; level: ContextLevel };
 
-export type ScanState = { running: boolean; done: number; total: number; found: number; error: string };
+/** 掃描時找到、還沒配對的小幫手（要輸入配對碼） */
+export type FoundHelper = { url: string; id: string; name: string; pairing: boolean };
+
+export type ScanState = { running: boolean; done: number; total: number; found: number; error: string; helpers?: FoundHelper[] };
+
+/** 存權杖的安全儲存區（手機上是 iOS 鑰匙圈；權杖不放資料庫，備份檔裡就不會有） */
+export type SecretStore = {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<void>;
+  remove(key: string): Promise<void>;
+};
+
+export function memorySecrets(): SecretStore {
+  const map = new Map<string, string>();
+  return {
+    get: async (k) => map.get(k) ?? null,
+    set: async (k, v) => void map.set(k, v),
+    remove: async (k) => void map.delete(k),
+  };
+}
+
+const tokenKey = (helperId: string) => `helper-token.${helperId}`;
+
+/** 手動輸入的位址是小幫手：要輸入配對碼 */
+export class NeedsPairingError extends Error {
+  constructor(
+    readonly url: string,
+    readonly name: string
+  ) {
+    super(t('這台電腦用的是 Local AI 小幫手，要輸入配對碼。'));
+  }
+}
+
+/** 配對失敗（訊息已經是白話） */
+export class PairError extends Error {}
 
 export type ChatState = {
   ready: boolean;
@@ -60,7 +95,12 @@ export type ChatEvent = 'answered' | 'failed' | 'stopped';
 
 export type ChatDeps = {
   repo: Repo;
-  client: (url: string) => OllamaClient;
+  /** token：透過小幫手連線時配對拿到的權杖 */
+  client: (url: string, token?: string) => OllamaClient;
+  /** 存小幫手權杖的地方（沒給就放記憶體，測試用） */
+  secrets?: SecretStore;
+  /** 配對時告訴電腦這支手機叫什麼 */
+  deviceName?: () => string;
   /** 手機目前的 Wi-Fi 位址；沒連 Wi-Fi 回 null（不掃描） */
   wifiIp: () => Promise<string | null>;
   now?: () => number;
@@ -110,6 +150,7 @@ export function describeError(e: unknown): string {
     if (e.kind === 'network') return t('連不到你的電腦。');
     if (e.kind === 'timeout') return t('電腦太久沒有回應。');
     if (e.kind === 'cancelled') return t('已取消。');
+    if (e.kind === 'unpaired') return e.message;
     if (e.kind === 'http' && /not found/i.test(e.message)) return t('電腦上找不到這個模型，可能已經被刪除，請換一個模型。');
     if (e.kind === 'http') return t('電腦拒絕了這次請求。');
     return t('電腦回報錯誤：{p0}', { p0: e.message });
@@ -263,6 +304,7 @@ export class ChatStore {
       await repo.clearSettings();
     }
     const hosts = await repo.listHosts();
+    await this.loadTokens(hosts);
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
     const prefs = await this.loadPrefs();
@@ -303,7 +345,7 @@ export class ChatStore {
 
   /** 問每台主機在不在線、回應多快 */
   async refreshHosts(): Promise<void> {
-    const { repo, client } = this.deps;
+    const { repo } = this.deps;
     const hosts = this.state.hosts;
     this.set({
       hostStatus: Object.fromEntries(hosts.map((h) => [h.url, { state: 'checking', latencyMs: null, version: h.version } as HostStatus])),
@@ -312,7 +354,7 @@ export class ChatStore {
       hosts.map(async (h) => {
         let status: HostStatus;
         try {
-          const v = await client(h.url).version(PROBE_TIMEOUT_MS);
+          const v = await this.clientFor(h.url).version(PROBE_TIMEOUT_MS);
           status = { state: 'online', latencyMs: v.latencyMs, version: v.version };
           await repo.markHostSeen(h.url, v.version);
         } catch {
@@ -364,24 +406,132 @@ export class ChatStore {
     }
     this.scanAbort = new AbortController();
     this.set({ scan: { running: true, done: 0, total: candidates.length, found: 0, error: '' } });
+    const helpers = new Map<string, HelperHello & { url: string }>();
     const found = await scanHosts(
-      candidates.map((c) => hostUrl(c)),
-      async (url) => (await client(url).version(SCAN_TIMEOUT_MS)).version,
+      candidates,
+      async (ip) => {
+        const helperUrl = hostUrl(ip, HELPER_PORT);
+        const hello = await client(helperUrl).helperHello(SCAN_TIMEOUT_MS);
+        if (hello) {
+          helpers.set(ip, { ...hello, url: helperUrl });
+          return hello.version || 'helper';
+        }
+        return (await client(hostUrl(ip)).version(SCAN_TIMEOUT_MS)).version;
+      },
       {
         signal: this.scanAbort.signal,
         onProgress: (done) => this.set({ scan: { ...this.state.scan!, done } }),
         onFound: () => this.set({ scan: { ...this.state.scan!, found: this.state.scan!.found + 1 } }),
       }
     );
-    for (const f of found) {
-      await repo.saveHost({ url: f.url, label: f.url.replace(/^http:\/\//, '').replace(/:11434$/, ''), source: 'scan', version: f.version });
-    }
     const hostStatus = { ...this.state.hostStatus };
-    for (const f of found) hostStatus[f.url] = { state: 'online', latencyMs: null, version: f.version };
-    this.set({ hosts: await repo.listHosts(), hostStatus, scan: { ...this.state.scan!, running: false } });
+    const unpaired: FoundHelper[] = [];
+    let firstUsable: string | null = null;
+    for (const f of found) {
+      const helper = helpers.get(f.url);
+      if (helper) {
+        // 配對過的小幫手：位址變了就跟著改；沒配對過的列出來讓使用者輸入配對碼
+        const known = this.state.hosts.find((h) => h.helperId === helper.id);
+        if (known && this.tokens.has(helper.id)) {
+          await repo.moveHost(known.url, helper.url);
+          await repo.saveHost({ url: helper.url, label: helper.name || known.label, source: 'helper', helperId: helper.id, version: helper.version });
+          hostStatus[helper.url] = { state: 'online', latencyMs: null, version: helper.version };
+          firstUsable ??= helper.url;
+        } else {
+          unpaired.push({ url: helper.url, id: helper.id, name: helper.name, pairing: helper.pairing });
+        }
+        continue;
+      }
+      const url = hostUrl(f.url);
+      await repo.saveHost({ url, label: f.url, source: 'scan', version: f.version });
+      hostStatus[url] = { state: 'online', latencyMs: null, version: f.version };
+      firstUsable ??= url;
+    }
+    this.set({ hosts: await repo.listHosts(), hostStatus, scan: { ...this.state.scan!, running: false, helpers: unpaired } });
+    if (this.state.session) this.set({ session: (await repo.getSession(this.state.session.id)) ?? this.state.session });
     this.scanAbort = null;
-    if (found.length > 0 && !this.state.session?.model) await this.connectHost(found[0].url);
+    if (firstUsable && !this.state.session?.model) await this.connectHost(firstUsable);
     return found.length;
+  }
+
+  // ---- Local AI 小幫手 ----
+
+  /** 小幫手的權杖：helperId 對到權杖（開 App 時從安全儲存區讀進來） */
+  private tokens = new Map<string, string>();
+
+  private get secrets(): SecretStore {
+    this.deps.secrets ??= memorySecrets();
+    return this.deps.secrets;
+  }
+
+  private async forgetToken(helperId: string): Promise<void> {
+    this.tokens.delete(helperId);
+    await this.secrets.remove(tokenKey(helperId)).catch(() => {});
+  }
+
+  private async loadTokens(hosts: Host[]): Promise<void> {
+    for (const h of hosts) {
+      if (!h.helperId || this.tokens.has(h.helperId)) continue;
+      const token = await this.secrets.get(tokenKey(h.helperId)).catch(() => null);
+      if (token) this.tokens.set(h.helperId, token);
+    }
+  }
+
+  /** 連某台電腦用的連線（小幫手會帶上權杖） */
+  private clientFor(url: string): OllamaClient {
+    const helperId = this.state.hosts.find((h) => h.url === url)?.helperId;
+    return this.deps.client(url, helperId ? this.tokens.get(helperId) : undefined);
+  }
+
+  /** 這台電腦是不是透過小幫手、而且這支手機還沒配對（或配對被移除） */
+  needsPairing(url: string): boolean {
+    const helperId = this.state.hosts.find((h) => h.url === url)?.helperId;
+    return !!helperId && !this.tokens.has(helperId);
+  }
+
+  /**
+   * 掃電腦上小幫手的 QR code 配對：依序試 QR code 裡的位址，找到同一台小幫手就配對。
+   * 失敗丟 PairError（訊息是白話）。回傳電腦的位址。
+   */
+  async pairFromQr(text: string): Promise<string> {
+    const payload = parsePairingPayload(text);
+    if (!payload) throw new PairError(t('這不是 Local AI 小幫手的 QR code。請掃描電腦上小幫手畫面裡的 QR code。'));
+    for (const ip of payload.ips) {
+      const url = hostUrl(ip, payload.port);
+      const hello = await this.deps.client(url).helperHello(PROBE_TIMEOUT_MS);
+      if (hello?.id === payload.id) return this.pairHelper(url, payload.code, hello);
+    }
+    throw new PairError(t('掃到了，但手機連不到「{p0}」。請確認手機和電腦連同一個 Wi-Fi。', { p0: payload.name || t('這台電腦') }));
+  }
+
+  /** 用配對碼跟小幫手配對；成功就存起來、連上，回傳位址。失敗丟 PairError */
+  async pairHelper(url: string, code: string, known?: HelperHello): Promise<string> {
+    const { repo } = this.deps;
+    const hello = known ?? (await this.deps.client(url).helperHello(PROBE_TIMEOUT_MS));
+    if (!hello) throw new PairError(t('連不到這台電腦。請確認手機和電腦連同一個 Wi-Fi，而且小幫手開著。'));
+    let paired: { token: string; helperId: string; name: string };
+    try {
+      paired = await this.deps.client(url).pair(code, this.deps.deviceName?.() ?? 'iPhone');
+    } catch (e) {
+      throw new PairError(pairErrorMessage(e));
+    }
+    const helperId = paired.helperId || hello.id;
+    await this.secrets.set(tokenKey(helperId), paired.token);
+    this.tokens.set(helperId, paired.token);
+    // 同一台小幫手以前用別的位址配對過：換成新位址（對話跟著走）
+    const old = this.state.hosts.find((h) => h.helperId === helperId && h.url !== url);
+    if (old) await repo.moveHost(old.url, url);
+    await repo.saveHost({ url, label: paired.name || hello.name || url, source: 'helper', helperId, version: hello.version });
+    const helpers = (this.state.scan?.helpers ?? []).filter((h) => h.id !== helperId);
+    this.set({
+      hosts: await repo.listHosts(),
+      hostStatus: { ...this.state.hostStatus, [url]: { state: 'online', latencyMs: null, version: hello.version } },
+      ...(this.state.scan ? { scan: { ...this.state.scan, helpers } } : {}),
+    });
+    if (this.state.session) this.set({ session: (await repo.getSession(this.state.session.id)) ?? this.state.session });
+    await this.connectHost(url);
+    this.deps.onEvent?.('answered');
+    return url;
   }
 
   stopScan(): void {
@@ -396,6 +546,11 @@ export class ChatStore {
     const { repo, client } = this.deps;
     const parsed = parseHostInput(input);
     if ('error' in parsed) throw new Error(parsed.error);
+    // 是小幫手就要輸入配對碼（沒寫連接埠時試小幫手的連接埠）
+    const portGiven = /:\d+\/?$/.test(input.trim().replace(/\/+$/, ''));
+    const helperUrl = portGiven ? parsed.url : parsed.url.replace(/:\d+$/, `:${HELPER_PORT}`);
+    const hello = await client(helperUrl).helperHello(PROBE_TIMEOUT_MS);
+    if (hello) throw new NeedsPairingError(helperUrl, hello.name);
     const label = options.label?.trim() || parsed.label;
     let version = '';
     let status: HostStatus = { state: 'offline', latencyMs: null, version: '' };
@@ -445,6 +600,9 @@ export class ChatStore {
         hostStatus: status ? { ...this.state.hostStatus, [url]: status } : this.state.hostStatus,
         models: modelsEntry ? { ...this.state.models, [url]: modelsEntry } : this.state.models,
       });
+    }, async () => {
+      // 確定移除：這支手機也忘掉權杖
+      if (host.helperId) await this.forgetToken(host.helperId);
     });
   }
 
@@ -452,7 +610,7 @@ export class ChatStore {
 
   /** 抓主機的模型清單與已載入的模型 */
   async loadModels(url: string): Promise<void> {
-    const c = this.deps.client(url);
+    const c = this.clientFor(url);
     this.set({ models: { ...this.state.models, [url]: { list: this.state.models[url]?.list ?? [], loading: true, error: '' } } });
     try {
       const [list, loaded] = await Promise.all([c.listModels(), c.loaded().catch(() => [] as LoadedModel[])]);
@@ -467,13 +625,21 @@ export class ChatStore {
         if (info?.think) await this.setThink(defaultThink(info));
       }
     } catch (e) {
+      await this.notePairingLost(url, e);
       this.set({ models: { ...this.state.models, [url]: { list: [], loading: false, error: describeError(e) } } });
     }
   }
 
+  /** 小幫手說這支手機沒配對（被移除了）：忘掉權杖，畫面會改成「要重新配對」 */
+  private async notePairingLost(url: string, e: unknown): Promise<void> {
+    if (!(e instanceof OllamaError) || e.kind !== 'unpaired') return;
+    const helperId = this.state.hosts.find((h) => h.url === url)?.helperId;
+    if (helperId) await this.forgetToken(helperId);
+  }
+
   async refreshLoaded(url: string): Promise<void> {
     try {
-      const loaded = await this.deps.client(url).loaded();
+      const loaded = await this.clientFor(url).loaded();
       this.set({ loaded: { ...this.state.loaded, [url]: loaded } });
     } catch {
       // 查不到就維持原狀
@@ -501,12 +667,12 @@ export class ChatStore {
   }
 
   async preload(url: string, model: string): Promise<void> {
-    await this.deps.client(url).preload(model);
+    await this.clientFor(url).preload(model);
     await this.refreshLoaded(url);
   }
 
   async unload(url: string, model: string): Promise<void> {
-    await this.deps.client(url).unload(model);
+    await this.clientFor(url).unload(model);
     await this.refreshLoaded(url);
   }
 
@@ -706,7 +872,7 @@ export class ChatStore {
 
   /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
   private async answer(options: { altGroup?: string } = {}): Promise<void> {
-    const { repo, client } = this.deps;
+    const { repo } = this.deps;
     const s = this.state.session!;
     const url = s.hostUrl!;
     const model = s.model!;
@@ -737,7 +903,7 @@ export class ChatStore {
     this.abort = new AbortController();
     const signal = this.abort.signal;
     try {
-      const result = await client(url).chat(
+      const result = await this.clientFor(url).chat(
         { model, messages: history, think: info?.think ? (s.think ?? defaultThink(info) ?? undefined) : undefined },
         (d) => {
           if (d.thinking) thinking += d.thinking;
@@ -761,6 +927,7 @@ export class ChatStore {
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
       if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
+      await this.notePairingLost(url, e);
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
       if (content || thinking) {
         await repo.updateMessage(placeholder.id, { content, thinking });
@@ -782,7 +949,7 @@ export class ChatStore {
 
   /** 請模型取標題；失敗就用第一句話的開頭。使用者這段時間自己改了標題就不蓋掉 */
   private async autoTitle(sessionId: string, url: string, model: string, info: ModelInfo | undefined): Promise<void> {
-    const { repo, client } = this.deps;
+    const { repo } = this.deps;
     const msgs = await repo.listMessages(sessionId);
     const question = msgs.find((m) => m.role === 'user')?.content ?? '';
     const answer = msgs.find((m) => m.role === 'assistant' && m.content.trim())?.content ?? '';
@@ -790,7 +957,7 @@ export class ChatStore {
     try {
       let text = '';
       const think = info?.think ? (info.think.kind === 'toggle' ? false : info.think.levels[0]) : undefined;
-      await client(url).chat(
+      await this.clientFor(url).chat(
         {
           model,
           think,
@@ -862,6 +1029,7 @@ export class ChatStore {
         for (const id of ids) await repo.deleteSession(id);
         await repo.setSetting(SETTING_PENDING_WIPE, '');
         await repo.resetAll();
+        for (const h of saved.hosts) if (h.helperId) await this.forgetToken(h.helperId);
         this.set({ session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
       }
     );
@@ -894,8 +1062,10 @@ export class ChatStore {
     await repo.migrate();
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
+    const hosts = await repo.listHosts();
+    await this.loadTokens(hosts);
     this.set({
-      hosts: await repo.listHosts(),
+      hosts,
       hostStatus: {},
       scan: null,
       models: {},
@@ -930,7 +1100,7 @@ export class ChatStore {
   /** 模型實際執行時的上下文上限：優先看已載入模型的設定，查不到才用模型本身的最大值 */
   private async contextLimit(url: string, model: string): Promise<number | null> {
     try {
-      const loaded = await this.deps.client(url).loaded();
+      const loaded = await this.clientFor(url).loaded();
       this.set({ loaded: { ...this.state.loaded, [url]: loaded } });
       const hit = loaded.find((m) => m.name === model);
       if (hit?.contextLength) return hit.contextLength;

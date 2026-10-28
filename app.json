@@ -31,7 +31,8 @@
           "cameraPermission": "拍照後傳給模型看",
           "photosPermission": "從相簿選照片傳給模型看"
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

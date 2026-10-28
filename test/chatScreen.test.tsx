@@ -108,7 +108,7 @@ describe('第一次使用', () => {
     await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
     await fireEvent.press(screen.getByText('連接你的電腦'));
     await fireEvent.press(await screen.findByText('自動尋找'));
-    expect(await screen.findByText('這個 Wi-Fi 裡沒有找到開著 Ollama 的電腦。')).toBeTruthy();
+    expect(await screen.findByText('這個 Wi-Fi 裡沒有找到開著小幫手或 Ollama 的電腦。')).toBeTruthy();
     expect(screen.getByLabelText('連線說明')).toBeTruthy();
   });
 

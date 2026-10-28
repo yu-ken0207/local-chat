@@ -327,7 +327,7 @@ function EmptyState({
       {phase === 'noComputer' ? (
         <>
           <PrimaryButton text={t('連接你的電腦')} onPress={onConnect} />
-          <Text style={styles.hint}>{t('需要一台開著 Ollama 的電腦，跟手機連同一個 Wi-Fi。')}</Text>
+          <Text style={styles.hint}>{t('需要一台開著 Local AI 小幫手的電腦，跟手機連同一個 Wi-Fi。')}</Text>
         </>
       ) : phase === 'noModel' ? (
         <>

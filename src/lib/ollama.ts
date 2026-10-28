@@ -36,16 +36,34 @@ export type ChatResult = {
   loadDurationNs: number;
 };
 
-export type OllamaErrorKind = 'http' | 'network' | 'timeout' | 'cancelled' | 'server';
+export type OllamaErrorKind = 'http' | 'network' | 'timeout' | 'cancelled' | 'server' | 'unpaired';
 
 export class OllamaError extends Error {
   constructor(
     readonly kind: OllamaErrorKind,
-    message: string
+    message: string,
+    /** 小幫手回的錯誤代碼（bad_code、not_pairing…） */
+    readonly code: string = ''
   ) {
     super(message);
     this.name = 'OllamaError';
   }
+}
+
+/** 小幫手的 hello：用來認出這是 Local AI 小幫手、是哪一台 */
+export type HelperHello = { id: string; name: string; version: string; pairing: boolean };
+
+/** 錯誤回應：小幫手是 {error, code}，Ollama 是 {error}；401 代表這支手機沒配對（或被移除） */
+async function httpError(res: ResponseLike): Promise<OllamaError> {
+  const text = await res.text();
+  let code = '';
+  try {
+    code = String(JSON.parse(text)?.code ?? '');
+  } catch {
+    // 不是 JSON
+  }
+  if (res.status === 401) return new OllamaError('unpaired', t('這支手機的配對已經被移除，請在電腦的小幫手重新配對。'), code || 'not_paired');
+  return new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: text.slice(0, 200) }), code);
 }
 
 type ResponseLike = {
@@ -152,6 +170,8 @@ export const IDLE_TIMEOUT_MS = 60_000;
 
 export type ClientOptions = {
   fetch?: FetchLike;
+  /** 透過小幫手連線時，配對拿到的權杖 */
+  token?: string;
   /** 一般請求、等第一個字、回答中途沒有新字的逾時（毫秒） */
   timeouts?: { request?: number; firstToken?: number; idle?: number };
 };
@@ -159,6 +179,7 @@ export type ClientOptions = {
 export class OllamaClient {
   readonly baseUrl: string;
   private readonly fetchImpl: FetchLike;
+  private readonly headers: Record<string, string>;
   private readonly requestTimeout: number;
   private readonly firstTokenTimeout: number;
   private readonly idleTimeout: number;
@@ -166,6 +187,7 @@ export class OllamaClient {
   constructor(baseUrl: string, options: ClientOptions = {}) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.fetchImpl = options.fetch ?? (expoFetch as unknown as FetchLike);
+    this.headers = { 'Content-Type': 'application/json', ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) };
     this.requestTimeout = options.timeouts?.request ?? DEFAULT_TIMEOUT_MS;
     this.firstTokenTimeout = options.timeouts?.firstToken ?? FIRST_TOKEN_TIMEOUT_MS;
     this.idleTimeout = options.timeouts?.idle ?? IDLE_TIMEOUT_MS;
@@ -176,17 +198,36 @@ export class OllamaClient {
     try {
       const res = await this.fetchImpl(this.baseUrl + path, {
         method: body === undefined ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: abort.signal,
       });
-      if (!res.ok) throw new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: (await res.text()).slice(0, 200) }));
+      if (!res.ok) throw await httpError(res);
       return await res.json();
     } catch (e) {
       throw toOllamaError(e, abort, timeoutMs);
     } finally {
       abort.done();
     }
+  }
+
+  /** 問問看是不是 Local AI 小幫手；不是（或連不到）回 null */
+  async helperHello(timeoutMs = this.requestTimeout, signal?: AbortSignal): Promise<HelperHello | null> {
+    try {
+      const data = await this.json('/helper/v1/hello', undefined, timeoutMs, signal);
+      if (data?.app !== 'local-ai-helper' || typeof data.id !== 'string') return null;
+      return { id: data.id, name: String(data.name ?? ''), version: String(data.version ?? ''), pairing: !!data.pairing };
+    } catch (e) {
+      if (e instanceof OllamaError && e.kind === 'cancelled') throw e;
+      return null;
+    }
+  }
+
+  /** 用電腦上顯示的配對碼換權杖 */
+  async pair(code: string, deviceName: string): Promise<{ token: string; helperId: string; name: string }> {
+    const data = await this.json('/helper/v1/pair', { code: code.replace(/\s+/g, ''), deviceName });
+    if (typeof data?.token !== 'string') throw new OllamaError('server', t('小幫手沒有回傳權杖'));
+    return { token: data.token, helperId: String(data.helper?.id ?? ''), name: String(data.helper?.name ?? '') };
   }
 
   /** 確認是不是 Ollama，並量回應時間 */
@@ -250,11 +291,11 @@ export class OllamaClient {
     try {
       const res = await this.fetchImpl(this.baseUrl + '/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.headers,
         body: JSON.stringify(body),
         signal: abort.signal,
       });
-      if (!res.ok) throw new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: (await res.text()).slice(0, 200) }));
+      if (!res.ok) throw await httpError(res);
       if (!res.body) throw new OllamaError('server', t('主機沒有回傳串流資料'));
 
       const reader = res.body.getReader();

@@ -16,6 +16,19 @@ export type FakeHost = {
   reply?: (body: any) => { lines: unknown[]; hang?: boolean };
   /** 自動取標題的回答；沒設定時固定回「測試對話」 */
   titleReply?: (body: any) => { lines: unknown[] };
+  /** 這個位址是 Local AI 小幫手（後面接這台假 Ollama） */
+  helper?: FakeHelper;
+};
+
+export type FakeHelper = {
+  id: string;
+  name: string;
+  /** 電腦上按了「配對新手機」時的配對碼；null 代表沒在配對 */
+  code: string | null;
+  /** 發出去還有效的權杖 */
+  tokens: string[];
+  /** 配對時手機報的名字 */
+  devices: string[];
 };
 
 /**
@@ -42,7 +55,12 @@ export class FakeOllamaNet {
     return this.calls.filter((c) => c.path === '/api/chat' && isTitlePrompt(c.body.messages[0]?.content)).map((c) => c.body);
   }
 
-  client = (url: string) => new OllamaClient(url, { fetch: this.fetch, timeouts: { request: 200, firstToken: 2000, idle: 2000 } });
+  /** 小幫手：url 是小幫手的位址（:11480），後面接一台假 Ollama */
+  addHelper(url: string, helper: Partial<FakeHelper> & { id: string; name: string }, host: Partial<FakeHost> = {}): FakeHost {
+    return this.addHost(url, { ...host, helper: { code: null, tokens: [], devices: [], ...helper } });
+  }
+
+  client = (url: string, token?: string) => new OllamaClient(url, { fetch: this.fetch, token, timeouts: { request: 200, firstToken: 2000, idle: 2000 } });
 
   fetch: FetchLike = async (url, init) => {
     const m = /^(https?:\/\/[^/]+)(\/.*)$/.exec(url)!;
@@ -52,6 +70,24 @@ export class FakeOllamaNet {
     const host = this.hosts.get(base);
     if (!host || !host.online) throw new TypeError('Network request failed');
     const json = (data: unknown, status = 200) => respond(status, [JSON.stringify(data)], init.signal);
+
+    const helper = host.helper;
+    if (helper) {
+      if (path === '/helper/v1/hello') return json({ app: 'local-ai-helper', id: helper.id, name: helper.name, version: '0.2.0', pairing: helper.code !== null });
+      if (path === '/helper/v1/pair') {
+        if (helper.code === null) return json({ error: 'pairing is not open', code: 'not_pairing' }, 409);
+        if (body.code !== helper.code) return json({ error: 'wrong pairing code', code: 'bad_code' }, 403);
+        const token = `token-${helper.tokens.length + 1}`;
+        helper.tokens.push(token);
+        helper.devices.push(body.deviceName);
+        helper.code = null;
+        return json({ token, deviceId: `d${helper.tokens.length}`, helper: { id: helper.id, name: helper.name } });
+      }
+      const auth = init.headers?.Authorization ?? '';
+      if (!helper.tokens.some((tk) => auth === `Bearer ${tk}`)) return json({ error: 'pair this phone first', code: 'not_paired' }, 401);
+    } else if (path.startsWith('/helper/')) {
+      return json({ error: 'not found' }, 404);
+    }
 
     switch (path) {
       case '/api/version':
