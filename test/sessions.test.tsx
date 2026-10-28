@@ -179,6 +179,6 @@ describe('使用者自己移除資料', () => {
     expect(alert.mock.calls[0][0]).toBe('清除全部資料？');
     await waitFor(() => expect(store.getState().hosts).toEqual([]));
     await fireEvent.press(screen.getByText('完成'));
-    expect(screen.getByText(/還沒有主機/)).toBeTruthy();
+    expect(screen.getByText('連接你的電腦')).toBeTruthy();
   });
 });

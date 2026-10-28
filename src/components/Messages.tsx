@@ -12,6 +12,10 @@ type Handlers = {
   onOpenImage: (images: Attachment[], index: number) => void;
   onCopyCode: (code: string) => void;
   onLongPress?: (message: Message) => void;
+  /** 最後一則是錯誤時的「重試」「連線說明」 */
+  onRetry?: () => void;
+  onHelp?: () => void;
+  isLast?: boolean;
 };
 
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
@@ -54,10 +58,49 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     <Pressable onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]}>■</Text>
-        <Text style={[styles.text, styles.body, m.role === 'error' ? styles.red : styles.dim]} selectable>
-          {m.content}
-        </Text>
+        <View style={styles.body}>
+          <Text style={[styles.text, m.role === 'error' ? styles.red : styles.dim]} selectable>
+            {m.content}
+          </Text>
+          {h.isLast && m.role === 'error' ? <ErrorActions detail={m.detail} onRetry={h.onRetry} onHelp={h.onHelp} /> : null}
+          {h.isLast && m.role === 'note' && h.onRetry ? (
+            <View style={styles.actions}>
+              <ActionButton text="重新回答" onPress={h.onRetry} />
+            </View>
+          ) : null}
+        </View>
       </View>
+    </Pressable>
+  );
+}
+
+/** 錯誤下方：重試、連線說明、詳細資訊（技術細節預設收起） */
+function ErrorActions({ detail, onRetry, onHelp }: { detail: string; onRetry?: () => void; onHelp?: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.errorActions}>
+      <View style={styles.actions}>
+        {onRetry ? <ActionButton text="重試" onPress={onRetry} primary /> : null}
+        {onHelp ? <ActionButton text="連線說明" onPress={onHelp} /> : null}
+        {detail ? <ActionButton text={open ? '收起詳細資訊' : '詳細資訊'} onPress={() => setOpen((v) => !v)} /> : null}
+      </View>
+      {open ? (
+        <Text style={[styles.meta, styles.detail]} selectable>
+          {detail}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+export function ActionButton({ text, onPress, primary }: { text: string; onPress: () => void; primary?: boolean }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.actionButton, primary && styles.actionPrimary, pressed && styles.pressed]}>
+      <Text style={[styles.actionText, primary && styles.actionTextPrimary]}>{text}</Text>
     </Pressable>
   );
 }
@@ -184,4 +227,11 @@ const styles = StyleSheet.create({
   thinkingHeader: { ...TEXT.small, color: C.secondary, fontWeight: '600' },
   working: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
   shimmer: { ...TEXT.body, fontWeight: '700' },
+  errorActions: { gap: 8 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  actionButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  actionPrimary: { backgroundColor: C.accent, borderColor: C.accent },
+  actionText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
+  actionTextPrimary: { color: '#ffffff' },
+  detail: { backgroundColor: C.surface, borderRadius: 6, padding: 8 },
 });

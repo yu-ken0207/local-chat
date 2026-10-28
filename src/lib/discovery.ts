@@ -34,13 +34,13 @@ export function hostUrl(host: string, port = OLLAMA_PORT): string {
 
 /**
  * 解析使用者輸入的主機位址。可以輸入：
- * 192.168.1.5、192.168.1.5:11434、http://192.168.1.5:11434/、my-pc（Tailscale 名稱）、my-pc.tail1234.ts.net
+ * 192.168.1.5、192.168.1.5:11434、http://192.168.1.5:11434/、my-pc（電腦名稱）、my-pc.example.net
  */
 export function parseHostInput(input: string): { url: string; label: string } | { error: string } {
   const text = input.trim().replace(/\/+$/, '');
-  if (!text) return { error: '請輸入主機位址' };
+  if (!text) return { error: '請輸入位址' };
   const m = /^(?:(https?):\/\/)?([a-z0-9.-]+|\[[0-9a-f:]+\])(?::(\d{1,5}))?$/i.exec(text);
-  if (!m) return { error: '位址格式不對，例如 192.168.1.5 或 192.168.1.5:11434' };
+  if (!m) return { error: '位址格式不對，例如 192.168.1.20' };
   const scheme = (m[1] ?? 'http').toLowerCase();
   const host = m[2].toLowerCase();
   const port = m[3] ? Number(m[3]) : OLLAMA_PORT;

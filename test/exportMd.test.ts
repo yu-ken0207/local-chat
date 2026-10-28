@@ -24,6 +24,7 @@ const msg = (role: Role, content: string, extra: Partial<Message> = {}): Message
   model: role === 'assistant' ? 'gemma4:31b' : null,
   hostLabel: null,
   stats: null,
+  detail: '',
   createdAt: n,
   attachments: [],
   ...extra,

@@ -44,6 +44,8 @@ export type Message = {
   model: string | null;
   hostLabel: string | null;
   stats: MessageStats | null;
+  /** 錯誤的技術細節（畫面上預設收起來） */
+  detail: string;
   createdAt: number;
   attachments: Attachment[];
 };
@@ -52,9 +54,15 @@ export type Template = { id: string; title: string; content: string; position: n
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
-const SCHEMA = `
+/** 每一版要做的改變（舊版資料庫照順序補上） */
+const MIGRATIONS: Record<number, string> = {
+  2: "ALTER TABLE messages ADD COLUMN detail TEXT NOT NULL DEFAULT ''",
+};
+
+/** 第 1 版的資料表（之後的改變在 MIGRATIONS） */
+export const BASE_SCHEMA = `
 CREATE TABLE IF NOT EXISTS hosts (
   url TEXT PRIMARY KEY,
   label TEXT NOT NULL,
@@ -164,6 +172,7 @@ type MessageRow = {
   model: string | null;
   host_label: string | null;
   stats: string | null;
+  detail: string;
   created_at: number;
 };
 
@@ -189,8 +198,11 @@ export class Repo {
     const row = await this.db.get<{ user_version: number }>('PRAGMA user_version');
     const version = row?.user_version ?? 0;
     if (version >= SCHEMA_VERSION) return;
-    await this.db.exec(SCHEMA);
-    if (version === 0) await this.seedTemplates();
+    if (version === 0) {
+      await this.db.exec(BASE_SCHEMA);
+      await this.seedTemplates();
+    }
+    for (let v = Math.max(version, 1) + 1; v <= SCHEMA_VERSION; v++) await this.db.exec(MIGRATIONS[v]);
     await this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 
@@ -321,6 +333,7 @@ export class Repo {
       model?: string | null;
       hostLabel?: string | null;
       stats?: MessageStats | null;
+      detail?: string;
       attachments?: Omit<Attachment, 'id'>[];
     }
   ): Promise<Message> {
@@ -337,12 +350,13 @@ export class Repo {
       model: m.model ?? null,
       hostLabel: m.hostLabel ?? null,
       stats: m.stats ?? null,
+      detail: m.detail ?? '',
       createdAt: now,
       attachments: (m.attachments ?? []).map((a) => ({ ...a, id: newId() })),
     };
     await this.db.run(
-      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [msg.id, sessionId, seq, msg.role, msg.content, msg.thinking, msg.model, msg.hostLabel, msg.stats ? JSON.stringify(msg.stats) : null, now]
+      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, detail, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [msg.id, sessionId, seq, msg.role, msg.content, msg.thinking, msg.model, msg.hostLabel, msg.stats ? JSON.stringify(msg.stats) : null, msg.detail, now]
     );
     for (const [i, a] of msg.attachments.entries()) {
       await this.db.run('INSERT INTO attachments (id, message_id, seq, base64, width, height) VALUES (?, ?, ?, ?, ?, ?)', [
@@ -404,6 +418,7 @@ export class Repo {
       model: r.model,
       hostLabel: r.host_label,
       stats: r.stats ? (JSON.parse(r.stats) as MessageStats) : null,
+      detail: r.detail ?? '',
       createdAt: r.created_at,
       attachments: byMessage.get(r.id) ?? [],
     }));

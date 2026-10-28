@@ -14,6 +14,7 @@ function msg(role: Role, content: string, images: string[] = []): Message {
     model: null,
     hostLabel: null,
     stats: null,
+    detail: '',
     createdAt: seq,
     attachments: images.map((b, i) => ({ id: `a${seq}-${i}`, base64: b, width: 1, height: 1 })),
   };

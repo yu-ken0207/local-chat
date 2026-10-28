@@ -2,6 +2,7 @@ import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/dis
 import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, exportMarkdown, fallbackTitle } from '../lib/exportMd';
 import { DEFAULT_IMAGE_QUESTION, buildChatMessages } from '../lib/history';
+import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Attachment, Host, Message, Repo, Session, Template } from '../store/repo';
 
@@ -70,18 +71,28 @@ export class HostOfflineError extends Error {
 export const TITLE_PROMPT = '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。';
 
 const SETTING_LAST_HOST = 'lastHost';
+/** 使用者自己按過「自動尋找」（iPhone 的區域網路權限已經問過），之後開 App 才自動找 */
+const SETTING_SCAN_CONSENTED = 'scanConsented';
 const SETTING_LAST_MODEL = 'lastModel';
 const PROBE_TIMEOUT_MS = 2500;
 const SCAN_TIMEOUT_MS = 800;
 const WIFI_TIMEOUT_MS = 3000;
 
-/** 錯誤翻成看得懂的話 */
+/** 錯誤翻成一般人看得懂的一句話（技術細節另外用 errorDetail 取） */
 export function describeError(e: unknown): string {
   if (e instanceof OllamaError) {
-    if (e.kind === 'network') return `連不到主機。請確認手機和主機在同一個網路（Wi-Fi 或 Tailscale）。\n${e.message}`;
-    if (e.kind === 'timeout') return `主機太久沒回應：${e.message}`;
-    return e.message;
+    if (e.kind === 'network') return '連不到你的電腦。';
+    if (e.kind === 'timeout') return '電腦太久沒有回應。';
+    if (e.kind === 'cancelled') return '已取消。';
+    if (e.kind === 'http' && /not found/i.test(e.message)) return '電腦上找不到這個模型，可能已經被刪除，請換一個模型。';
+    if (e.kind === 'http') return '電腦拒絕了這次請求。';
+    return `電腦回報錯誤：${e.message}`;
   }
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** 原始的錯誤內容，給「詳細資訊」用 */
+export function errorDetail(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
@@ -162,14 +173,16 @@ export class ChatStore {
     this.startupTask = this.refreshHosts().then(() => this.autoScan());
   }
 
-  /** 沒有在線的主機、而且手機連著 Wi-Fi 時，自動掃描區網；找到後先把第一台的模型清單抓好 */
+  /**
+   * 開 App 時：沒有在線的電腦、手機連著 Wi-Fi、而且使用者以前自己按過「自動尋找」，就自動找一次。
+   * 第一次一定要使用者自己按，iPhone 才會在有前後文的時候問區域網路權限。
+   */
   private async autoScan(): Promise<void> {
     if (this.deps.autoScan === false) return;
+    if ((await this.deps.repo.getSetting(SETTING_SCAN_CONSENTED)) !== '1') return;
     const online = Object.values(this.state.hostStatus).some((st) => st.state === 'online');
     if (online || !(await this.deps.wifiIp())) return;
-    const found = await this.scanLan();
-    const first = this.state.hosts.find((h) => this.state.hostStatus[h.url]?.state === 'online');
-    if (found > 0 && first && !this.state.session?.hostUrl) await this.loadModels(first.url);
+    await this.scanLan();
   }
 
   private async createSessionFromLast(): Promise<Session> {
@@ -205,22 +218,29 @@ export class ChatStore {
     this.set({ hosts: await repo.listHosts() });
   }
 
-  /** 掃描手機所在的 Wi-Fi 網段，找到的主機記起來。回傳找到幾台；不能掃時 scan.error 會寫原因 */
-  async scanLan(): Promise<number> {
+  /**
+   * 自動尋找：掃描手機所在的 Wi-Fi 網段，找到的電腦記起來；還沒選模型的話直接連上第一台並選好模型。
+   * 回傳找到幾台；不能找時 scan.error 會寫原因。userInitiated 代表使用者自己按的。
+   */
+  async scanLan(options: { userInitiated?: boolean } = {}): Promise<number> {
     const { repo, client, wifiIp } = this.deps;
     if (this.state.scan?.running) return 0;
+    if (options.userInitiated) await repo.setSetting(SETTING_SCAN_CONSENTED, '1');
     // 先顯示「檢查網路中」，讓使用者知道有在動
     this.set({ scan: { running: true, done: 0, total: 0, found: 0, error: '' } });
     let ip: string | null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       ip = await Promise.race([
         wifiIp(),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('等了 3 秒沒有回應')), WIFI_TIMEOUT_MS)),
+        new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error('等了 3 秒沒有回應')), WIFI_TIMEOUT_MS))),
       ]);
     } catch (e) {
-      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: `取不到手機的網路狀態：${describeError(e)}` } });
+      clearTimeout(timer);
+      this.set({ scan: { running: false, done: 0, total: 0, found: 0, error: `沒辦法確認手機的網路（${errorDetail(e)}）。請改用「手動輸入位址」。` } });
       return 0;
     }
+    clearTimeout(timer);
     const candidates = ip ? subnetCandidates(ip) : [];
     if (candidates.length === 0) {
       this.set({
@@ -230,8 +250,8 @@ export class ChatStore {
           total: 0,
           found: 0,
           error: ip
-            ? `手機的位址 ${ip} 不是一般區網，沒辦法掃描。請按「新增」輸入主機位址。`
-            : '手機目前沒有連 Wi-Fi（用 4G 時掃不到區網）。請按「新增」輸入主機位址，例如 Tailscale 的 100.x.x.x。',
+            ? '這個 Wi-Fi 沒辦法自動尋找。請改用「手動輸入位址」。'
+            : '手機目前沒有連 Wi-Fi，沒辦法自動尋找。請連上跟電腦同一個 Wi-Fi，或改用「手動輸入位址」。',
         },
       });
       return 0;
@@ -254,6 +274,7 @@ export class ChatStore {
     for (const f of found) hostStatus[f.url] = { state: 'online', latencyMs: null, version: f.version };
     this.set({ hosts: await repo.listHosts(), hostStatus, scan: { ...this.state.scan!, running: false } });
     this.scanAbort = null;
+    if (found.length > 0 && !this.state.session?.model) await this.connectHost(found[0].url);
     return found.length;
   }
 
@@ -277,12 +298,27 @@ export class ChatStore {
       version = v.version;
       status = { state: 'online', latencyMs: v.latencyMs, version };
     } catch (e) {
-      if (!options.force) throw new HostOfflineError(parsed.url, label, describeError(e));
+      if (!options.force) throw new HostOfflineError(parsed.url, label, '連不到這個位址。');
     }
     await repo.saveHost({ url: parsed.url, label, source: 'manual', version });
     const hosts = await repo.listHosts();
     this.set({ hosts, hostStatus: { ...this.state.hostStatus, [parsed.url]: status } });
+    if (version && !this.state.session?.model) await this.connectHost(parsed.url);
     return hosts.find((h) => h.url === parsed.url)!;
+  }
+
+  /**
+   * 改用某台電腦：抓模型清單；如果目前的模型不在這台電腦上（或還沒選），自動選一個。
+   * 回傳選到的模型名稱（沒有可用的模型回 null）。
+   */
+  async connectHost(url: string): Promise<string | null> {
+    await this.loadModels(url);
+    const s = this.state.session;
+    const list = this.state.models[url]?.list ?? [];
+    if (s?.hostUrl === url && s.model && list.some((m) => m.name === s.model)) return s.model;
+    const pick = pickDefaultModel(list, this.state.loaded[url] ?? []);
+    if (pick) await this.selectModel(url, pick);
+    return pick;
   }
 
   async renameHost(url: string, label: string): Promise<void> {
@@ -469,6 +505,21 @@ export class ChatStore {
     await this.send(text, images);
   }
 
+  /** 最後一則是錯誤或「已停止」時，拿掉它（停止的話連半截回答一起拿掉）再問一次 */
+  async retry(): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    const msgs = this.state.messages;
+    const last = msgs.at(-1);
+    if (!s || !last || this.state.streaming || (last.role !== 'error' && last.role !== 'note')) return;
+    if (!msgs.some((m) => m.role === 'user')) return;
+    await repo.deleteMessage(last.id);
+    const before = msgs.at(-2);
+    if (last.role === 'note' && before?.role === 'assistant') await repo.deleteMessage(before.id);
+    this.set({ messages: await repo.listMessages(s.id), notice: '' });
+    await this.answer();
+  }
+
   /** 某則訊息之後還有幾則（重新產生、編輯前提醒用） */
   laterCount(messageId: string): number {
     const i = this.state.messages.findIndex((m) => m.id === messageId);
@@ -567,7 +618,10 @@ export class ChatStore {
       } else {
         await repo.deleteMessage(placeholder.id);
       }
-      await repo.addMessage(s.id, cancelled ? { role: 'note', content: '已停止' } : { role: 'error', content: `沒有得到回答：${describeError(e)}` });
+      await repo.addMessage(
+        s.id,
+        cancelled ? { role: 'note', content: '已停止' } : { role: 'error', content: `沒有得到回答：${describeError(e)}`, detail: errorDetail(e) }
+      );
       this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
     } finally {
       if (timer) clearTimeout(timer);

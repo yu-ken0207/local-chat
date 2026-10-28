@@ -85,25 +85,31 @@ describe('啟動與主機', () => {
     expect(s.hostStatus[B]).toMatchObject({ state: 'online', version: '0.31.1' });
   });
 
-  test('開 App 時在 Wi-Fi 上又沒有主機：自動掃描，並先抓好第一台的模型', async () => {
-    const { store } = await setup({ autoScan: true });
+  test('第一次開 App 不會自己掃描（要等使用者按，iPhone 才在有前後文時問權限）', async () => {
+    const { net, store } = await setup({ autoScan: true });
     await store.startupTask;
-    expect(store.getState().hosts.map((h) => h.url)).toEqual([A]);
-    expect(store.getState().models[A].list.map((m) => m.name)).toContain('gemma4:31b');
+    expect(net.calls).toHaveLength(0);
+    expect(store.getState().hosts).toEqual([]);
   });
 
-  test('已經有在線的主機就不自動掃描；沒連 Wi-Fi 也不掃', async () => {
+  test('使用者按過自動尋找之後，下次開 App 沒有在線的電腦就自動找', async () => {
     const first = await setup({ autoScan: true });
-    await first.store.startupTask;
+    await first.store.scanLan({ userInitiated: true });
+    await first.repo.removeHost(A);
+    const again = new ChatStore({ repo: first.repo, client: first.net.client, wifiIp: async () => '192.168.1.10', throttleMs: 5 });
+    await again.init();
+    await again.startupTask;
+    expect(again.getState().hosts.map((h) => h.url)).toEqual([A]);
+  });
+
+  test('已經有在線的電腦就不自動找', async () => {
+    const first = await setup({ autoScan: true });
+    await first.store.scanLan({ userInitiated: true });
     const calls = first.net.calls.length;
     const again = new ChatStore({ repo: first.repo, client: first.net.client, wifiIp: async () => '192.168.1.10', throttleMs: 5 });
     await again.init();
     await again.startupTask;
-    expect(first.net.calls.length - calls).toBeLessThan(5); // 只問了一次在線狀態，沒有掃 253 個位址
-
-    const offline = await setup({ autoScan: true, wifi: null });
-    await offline.store.startupTask;
-    expect(offline.store.getState().hosts).toEqual([]);
+    expect(first.net.calls.length - calls).toBeLessThan(10); // 只問了在線狀態與模型，沒有掃 253 個位址
   });
 
   test('沒連 Wi-Fi 不掃描，給提示', async () => {
@@ -159,7 +165,7 @@ describe('模型', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.online = false;
     await store.loadModels(A);
-    expect(store.getState().models[A].error).toContain('連不到主機');
+    expect(store.getState().models[A].error).toBe('連不到你的電腦。');
   });
 });
 
@@ -262,12 +268,12 @@ describe('傳送與串流', () => {
     expect(events).toEqual(['stopped']);
   });
 
-  test('連不到主機：不留空白回答，加一則錯誤', async () => {
+  test('連不到電腦：不留空白回答，加一則白話錯誤，技術細節另外存', async () => {
     const { net, store, events } = await ready();
     net.hosts.get(A)!.online = false;
     await store.send('hi');
     expect(store.getState().messages.map((m) => m.role)).toEqual(['user', 'error']);
-    expect(store.getState().messages[1].content).toContain('連不到主機');
+    expect(store.getState().messages[1]).toMatchObject({ content: '沒有得到回答：連不到你的電腦。', detail: expect.stringContaining('Network request failed') });
     expect(events).toEqual(['failed']);
   });
 
@@ -275,7 +281,7 @@ describe('傳送與串流', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ error: 'model requires more system memory' }] });
     await store.send('hi');
-    expect(store.getState().messages[1]).toMatchObject({ role: 'error', content: '沒有得到回答：model requires more system memory' });
+    expect(store.getState().messages[1]).toMatchObject({ role: 'error', content: '沒有得到回答：電腦回報錯誤：model requires more system memory' });
   });
 
   test('還沒選模型不能送', async () => {
@@ -458,6 +464,86 @@ describe('訊息操作與範本', () => {
   });
 });
 
+describe('連上電腦就能用', () => {
+  test('手動輸入位址連上後，自動選好模型（優先看得懂圖片的）', async () => {
+    const { store } = await setup();
+    await store.addHost('192.168.1.20');
+    expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' });
+  });
+
+  test('自動選模型：已經載入顯示卡的優先（回答最快）', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.loaded = ['llama3:latest'];
+    await store.addHost('192.168.1.20');
+    expect(store.getState().session?.model).toBe('llama3:latest');
+  });
+
+  test('自動尋找找到電腦後，也自動選好模型', async () => {
+    const { store } = await setup();
+    await store.scanLan({ userInitiated: true });
+    expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' });
+  });
+
+  test('已經選好的模型不會被換掉', async () => {
+    const { store } = await ready('llama3:latest');
+    await store.addHost('192.168.1.20');
+    expect(store.getState().session?.model).toBe('llama3:latest');
+  });
+
+  test('改用另一台電腦：目前的模型那台沒有就自動換', async () => {
+    const { net, store } = await ready('llama3:latest');
+    net.addHost(B, { models: [{ name: 'qwen3-vl:4b', vision: true }] });
+    await store.addHost('192.168.1.30');
+    expect(await store.connectHost(B)).toBe('qwen3-vl:4b');
+    expect(store.getState().session).toMatchObject({ hostUrl: B, model: 'qwen3-vl:4b' });
+  });
+
+  test('電腦上沒有任何模型：不選', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.models = [];
+    await store.addHost('192.168.1.20');
+    expect(store.getState().session?.model).toBeNull();
+  });
+});
+
+describe('重試', () => {
+  test('最後一則是錯誤：拿掉錯誤再問一次', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.online = false;
+    await store.send('hi');
+    expect(store.getState().messages.at(-1)?.role).toBe('error');
+    net.hosts.get(A)!.online = true;
+    await store.retry();
+    expect(store.getState().messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', 'hi'],
+      ['assistant', '回答：hi'],
+    ]);
+  });
+
+  test('停止後重新回答：連半截回答一起換掉', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '一半' }, done: false }], hang: true });
+    const p = store.send('寫長文');
+    await flush();
+    store.stop();
+    await p;
+    net.hosts.get(A)!.reply = undefined;
+    await store.retry();
+    expect(store.getState().messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', '寫長文'],
+      ['assistant', '回答：寫長文'],
+    ]);
+  });
+
+  test('最後一則不是錯誤或停止：不動', async () => {
+    const { store } = await ready();
+    await store.send('hi');
+    const before = store.getState().messages.map((m) => m.id);
+    await store.retry();
+    expect(store.getState().messages.map((m) => m.id)).toEqual(before);
+  });
+});
+
 describe('掃描的回饋', () => {
   test('按下後立刻顯示檢查中；取不到網路狀態時寫出原因', async () => {
     const net = new FakeOllamaNet();
@@ -473,13 +559,13 @@ describe('掃描的回饋', () => {
     expect(store.getState().scan).toMatchObject({ running: true, total: 0 });
     fail(new Error('no permission'));
     expect(await p).toBe(0);
-    expect(store.getState().scan).toMatchObject({ running: false, error: '取不到手機的網路狀態：no permission' });
+    expect(store.getState().scan).toMatchObject({ running: false, error: '沒辦法確認手機的網路（no permission）。請改用「手動輸入位址」。' });
   });
 
   test('用 4G 時說明要手動新增', async () => {
     const { store } = await setup({ wifi: null });
     await store.scanLan();
-    expect(store.getState().scan?.error).toContain('用 4G 時掃不到區網');
+    expect(store.getState().scan?.error).toContain('請連上跟電腦同一個 Wi-Fi');
   });
 });
 

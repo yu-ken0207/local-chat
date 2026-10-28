@@ -9,8 +9,10 @@ import { plainText } from '../lib/plainText';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Attachment, Message } from '../store/repo';
+import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { Composer, chooseOption, type PickSource } from './Composer';
+import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
@@ -33,6 +35,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const [listOpen, setListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [connect, setConnect] = useState<{ help: boolean } | null>(null);
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
   const [injected, setInjected] = useState<{ text: string; photos?: NewPhoto[]; nonce: number } | null>(null);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -166,21 +169,25 @@ export function ChatScreen(p: ChatScreenProps) {
           if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
         }}>
         {state.messages.length === 0 ? (
-          <Welcome
-            hasHosts={state.hosts.length > 0}
-            scanning={state.scan?.running && state.scan.total > 0 ? `› 正在區網找 Ollama 主機…（${state.scan.done}/${state.scan.total}）` : ''}
+          <EmptyState
+            phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
+            scanning={state.scan?.running && state.scan.total > 0 ? `正在尋找你的電腦…（${state.scan.done}/${state.scan.total}）` : ''}
             modelLabel={modelLabel}
-            onOpenModels={() => setSheetOpen(true)}
+            onConnect={() => setConnect({ help: false })}
+            onPickModel={() => setSheetOpen(true)}
           />
         ) : (
-          state.messages.map((m) => (
+          state.messages.map((m, i) => (
             <MessageView
               key={m.id}
               message={m}
               streaming={state.streaming}
+              isLast={i === state.messages.length - 1}
               onOpenImage={(images, index) => setViewer({ images, index })}
               onCopyCode={p.copyText}
               onLongPress={messageMenu}
+              onRetry={() => void store.retry()}
+              onHelp={() => setConnect({ help: true })}
             />
           ))
         )}
@@ -249,13 +256,16 @@ export function ChatScreen(p: ChatScreenProps) {
       />
 
       <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
-        <ModelSheet store={store} state={state} onClose={() => setSheetOpen(false)} />
+        <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
       </Modal>
       <Modal visible={listOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setListOpen(false)}>
         <SessionList store={store} currentId={session?.id ?? null} onClose={() => setListOpen(false)} />
       </Modal>
       <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
         {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
+      </Modal>
+      <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
+        <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
       </Modal>
       <Modal visible={templatesOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setTemplatesOpen(false)}>
         <TemplatesSheet store={store} templates={state.templates} onClose={() => setTemplatesOpen(false)} />
@@ -267,33 +277,56 @@ export function ChatScreen(p: ChatScreenProps) {
 
 const kTokens = (n: number | null) => (n === null ? '?' : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
-function Welcome({ hasHosts, scanning, modelLabel, onOpenModels }: { hasHosts: boolean; scanning: string; modelLabel: string | null; onOpenModels: () => void }) {
+/** 沒有對話時：直接告訴使用者下一步（連接電腦、選模型，或直接開始打字） */
+function EmptyState({
+  phase,
+  scanning,
+  modelLabel,
+  onConnect,
+  onPickModel,
+}: {
+  phase: 'noComputer' | 'noModel' | 'ready';
+  scanning: string;
+  modelLabel: string | null;
+  onConnect: () => void;
+  onPickModel: () => void;
+}) {
   return (
-    <View style={styles.welcome}>
-      <Text style={styles.welcomeTitle}>
-        <Text style={{ color: C.accent }}>◆ </Text>地端聊天
+    <View style={styles.empty}>
+      <Text style={styles.emptyTitle}>
+        <Text style={{ color: C.accent }}>◆ </Text>
+        {APP_NAME}
       </Text>
-      <Text style={styles.dim}>跟自己電腦上的 Ollama 模型聊天，對話只存在這支手機。</Text>
-      <View style={styles.tips}>
-        {scanning ? (
-          <Text style={styles.dim} accessibilityLiveRegion="polite">
-            {scanning}
-          </Text>
-        ) : !hasHosts ? (
-          <Text style={styles.dim}>
-            › 還沒有主機：
-            <Text style={styles.link} onPress={onOpenModels}>
-              按這裡
-            </Text>
-            掃描區網或手動新增
-          </Text>
-        ) : (
-          <Text style={styles.dim}>› 目前模型：{modelLabel ?? '還沒選，點下方「選擇模型」'}</Text>
-        )}
-        <Text style={styles.dim}>› 模型看得懂圖時，按 ＋ 可以附照片</Text>
-        <Text style={styles.dim}>› 支援思考的模型，下方會出現「思考」開關</Text>
-      </View>
+      <Text style={styles.dim}>跟你自己電腦上的 AI 模型聊天。對話只存在這支手機。</Text>
+      {scanning ? (
+        <Text style={styles.dim} accessibilityLiveRegion="polite">
+          {scanning}
+        </Text>
+      ) : null}
+      {phase === 'noComputer' ? (
+        <>
+          <PrimaryButton text="連接你的電腦" onPress={onConnect} />
+          <Text style={styles.hint}>需要一台開著 Ollama 的電腦，跟手機連同一個 Wi-Fi。</Text>
+        </>
+      ) : phase === 'noModel' ? (
+        <>
+          <PrimaryButton text="選擇模型" onPress={onPickModel} />
+          <Text style={styles.hint}>已經連上電腦，選一個模型就能開始聊天。</Text>
+        </>
+      ) : (
+        <Text style={styles.ready}>
+          已經連上 <Text style={styles.readyModel}>{modelLabel}</Text>，直接在下面輸入問題就可以開始。
+        </Text>
+      )}
     </View>
+  );
+}
+
+function PrimaryButton({ text, onPress }: { text: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.primaryPressed]}>
+      <Text style={styles.primaryText}>{text}</Text>
+    </Pressable>
   );
 }
 
@@ -341,11 +374,15 @@ const styles = StyleSheet.create({
   headerButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.4 },
   transcript: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 16, gap: 14 },
-  welcome: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 10, padding: 16, gap: 6, marginTop: 8 },
-  welcomeTitle: { ...TEXT.body, fontSize: 17, fontWeight: '700', color: C.label },
-  tips: { marginTop: 10, gap: 4 },
+  empty: { borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 10, padding: 16, gap: 10, marginTop: 8 },
+  emptyTitle: { ...TEXT.body, fontSize: 17, fontWeight: '700', color: C.label },
   dim: { ...TEXT.small, color: C.secondary },
-  link: { color: C.accent, textDecorationLine: 'underline' },
+  hint: { ...TEXT.meta, color: C.secondary, textAlign: 'center' },
+  ready: { ...TEXT.small, color: C.label, marginTop: 4 },
+  readyModel: { color: C.accent },
+  primary: { height: 52, borderRadius: 14, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  primaryPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  primaryText: { ...TEXT.body, fontWeight: '700', color: '#ffffff' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 4 },
   bannerText: { ...TEXT.meta, flex: 1 },
   bannerAction: { ...TEXT.meta, color: C.accent, fontWeight: '700' },

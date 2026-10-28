@@ -59,48 +59,83 @@ jest.setTimeout(20_000);
 afterEach(() => jest.restoreAllMocks());
 
 describe('第一次使用', () => {
-  test('沒有主機：歡迎畫面提示，點「按這裡」打開主機面板，可以手動新增', async () => {
-    await setup({ model: null });
-    expect(screen.getByText('選擇模型')).toBeTruthy();
-    await fireEvent.press(screen.getByText('按這裡'));
-    expect(screen.getByText(/還沒有主機。連 Wi-Fi/)).toBeTruthy();
-
+  test('空白畫面直接給「連接你的電腦」；手動輸入位址連上後自動選好模型，可以直接聊天', async () => {
+    const { store } = await setup({ model: null });
+    await fireEvent.press(screen.getByText('連接你的電腦'));
     jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, cb: any) => cb('192.168.1.20'));
-    await fireEvent.press(screen.getByText('新增'));
-    expect(await screen.findByLabelText('主機 192.168.1.20，在線')).toBeTruthy();
-    expect(await screen.findByLabelText(/模型 gemma4:31b，看得懂圖片，可以思考/)).toBeTruthy();
-
-    await fireEvent.press(screen.getByLabelText(/模型 gemma4:31b/));
-    expect(await screen.findByText('192.168.1.20 · gemma4:31b')).toBeTruthy();
+    await fireEvent.press(await screen.findByText('手動輸入位址'));
+    await waitFor(() => expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' }));
+    expect(await screen.findByText(/已經連上/)).toBeTruthy();
+    expect(screen.getByLabelText(/模型：192.168.1.20 · gemma4:31b/)).toBeTruthy();
   });
 
-  test('連著 Wi-Fi 開 App：自動找到主機，歡迎畫面提示去選模型', async () => {
-    const { store } = await setup({ model: null, autoScan: true });
-    await act(async () => {
-      await store.startupTask;
-    });
-    expect(screen.getByText(/目前模型：還沒選/)).toBeTruthy();
-    await fireEvent.press(screen.getByText('選擇模型'));
-    expect(await screen.findByLabelText('主機 192.168.1.20，在線')).toBeTruthy();
-    expect(screen.getByText('掃描完成，找到 1 台')).toBeTruthy();
+  test('自動尋找：找到電腦就連上並選好模型', async () => {
+    const { store } = await setup({ model: null });
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('自動尋找'));
+    await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:31b'));
+    expect(screen.getByText(/已經連上/)).toBeTruthy();
   });
 
-  test('新增連不到的主機：問要不要照樣加入', async () => {
-    await setup({ model: null });
-    await fireEvent.press(screen.getByText('按這裡'));
+  test('手動輸入的位址連不到：展開連線說明，問要不要先加入', async () => {
+    const { store } = await setup({ model: null });
+    await fireEvent.press(screen.getByText('連接你的電腦'));
     jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, cb: any) => cb('192.168.1.99'));
     const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
-    await fireEvent.press(screen.getByText('新增'));
-    expect(alert.mock.calls[0][0]).toBe('連不到這台主機');
-    expect(await screen.findByLabelText('主機 192.168.1.99，離線')).toBeTruthy();
+    await fireEvent.press(await screen.findByText('手動輸入位址'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][0]).toBe('連不到這個位址');
+    expect(screen.getByLabelText('連線說明')).toBeTruthy();
+    await waitFor(() => expect(store.getState().hosts.map((h) => h.url)).toEqual(['http://192.168.1.99:11434']));
+    expect(await screen.findByLabelText('電腦 192.168.1.99，目前連不到')).toBeTruthy();
   });
 
-  test('掃描區網：顯示結果', async () => {
-    await setup({ model: null });
-    await fireEvent.press(screen.getByText('按這裡'));
-    await fireEvent.press(screen.getByText('掃描區網'));
-    expect(await screen.findByText('掃描完成，找到 1 台')).toBeTruthy();
-    expect(screen.getByLabelText('主機 192.168.1.20，在線')).toBeTruthy();
+  test('沒連 Wi-Fi：寫出原因並展開連線說明', async () => {
+    const net = new FakeOllamaNet();
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
+    await store.init();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('自動尋找'));
+    expect(await screen.findByText(/手機目前沒有連 Wi-Fi/)).toBeTruthy();
+    expect(screen.getByLabelText('連線說明')).toBeTruthy();
+  });
+
+  test('這個 Wi-Fi 裡沒有找到：說清楚並展開連線說明', async () => {
+    const net = new FakeOllamaNet();
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => '192.168.5.10', autoScan: false });
+    await store.init();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('自動尋找'));
+    expect(await screen.findByText('這個 Wi-Fi 裡沒有找到開著 Ollama 的電腦。')).toBeTruthy();
+    expect(screen.getByLabelText('連線說明')).toBeTruthy();
+  });
+
+  test('連線說明：可以切換 Mac／Windows／Linux，指令可以複製', async () => {
+    const { copyText } = await setup({ model: null });
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('連不上嗎？'));
+    expect(screen.getByText(/Expose Ollama to the network/, { exact: false })).toBeTruthy();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Windows' }));
+    await fireEvent.press(screen.getByLabelText('複製指令 setx OLLAMA_HOST 0.0.0.0'));
+    expect(copyText).toHaveBeenCalledWith('setx OLLAMA_HOST 0.0.0.0');
+    await fireEvent.press(screen.getByLabelText('複製指令 ollama pull gemma3'));
+    expect(copyText).toHaveBeenCalledWith('ollama pull gemma3');
+  });
+
+  test('已經連上電腦但還沒有模型：空白畫面給「選擇模型」，面板裡告訴他怎麼下載', async () => {
+    const net = new FakeOllamaNet();
+    net.addHost(A, { models: [] });
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
+    await store.init();
+    await store.addHost('192.168.1.20');
+    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByRole('button', { name: '選擇模型' }));
+    expect(await screen.findByText(/這台電腦還沒有模型/)).toBeTruthy();
+    net.hosts.get(A)!.models = [{ name: 'gemma3:4b', vision: true }];
+    await fireEvent.press(screen.getByText('下載好了，重新整理'));
+    expect(await screen.findByLabelText(/模型 gemma3:4b/)).toBeTruthy();
   });
 });
 
@@ -233,11 +268,31 @@ describe('對話', () => {
     expect(screen.getByText('新對話')).toBeTruthy();
   });
 
-  test('連不到主機：顯示紅色錯誤', async () => {
+  test('連不到電腦：白話錯誤下方有重試、連線說明、詳細資訊；重試成功後錯誤消失', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.online = false;
     await send(store, 'hi');
-    expect(await screen.findByText(/沒有得到回答：連不到主機/)).toBeTruthy();
+    expect(await screen.findByText('沒有得到回答：連不到你的電腦。')).toBeTruthy();
+    await fireEvent.press(screen.getByText('詳細資訊'));
+    expect(screen.getByText(/Network request failed/)).toBeTruthy();
+    await fireEvent.press(screen.getByText('連線說明'));
+    expect(await screen.findByLabelText('連線說明')).toBeTruthy();
+    await fireEvent.press(screen.getByText('完成'));
+    net.hosts.get(A)!.online = true;
+    await fireEvent.press(screen.getByText('重試'));
+    await waitFor(() => expect(store.getState().messages.map((m) => m.role)).toEqual(['user', 'assistant']));
+    expect(screen.queryByText(/沒有得到回答/)).toBeNull();
+  });
+
+  test('停止之後可以按「重新回答」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '一半' }, done: false }], hang: true });
+    await send(store, '寫長文', 'streaming');
+    await fireEvent.press(screen.getByLabelText('停止回答'));
+    await waitFor(() => expect(store.getState().streaming).toBeNull());
+    net.hosts.get(A)!.reply = undefined;
+    await fireEvent.press(await screen.findByText('重新回答'));
+    await waitFor(() => expect(store.getState().messages.at(-1)?.content).toBe('回答：寫長文'));
   });
 
   test('程式碼區塊的複製按鈕', async () => {
@@ -271,43 +326,13 @@ describe('主機與模型面板', () => {
     expect(await screen.findByLabelText('模型 gemma4:31b，看得懂圖片，可以思考')).toBeTruthy();
   });
 
-  test('長按主機可以刪除', async () => {
+  test('選擇模型面板：「新增電腦」打開連接面板；長按電腦可以移除', async () => {
     const { store } = await setup();
     await fireEvent.press(screen.getByLabelText(/模型：/));
+    await fireEvent.press(await screen.findByText('新增電腦'));
     pickActionSheet(1);
-    jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
-    await fireEvent(screen.getByLabelText('主機 192.168.1.20，在線'), 'longPress');
+    await fireEvent(await screen.findByLabelText('電腦 192.168.1.20，可以使用'), 'longPress');
     await waitFor(() => expect(store.getState().hosts).toEqual([]));
-    expect(screen.getByText(/還沒有主機。連 Wi-Fi/)).toBeTruthy();
-  });
-});
-
-describe('掃描區網的回饋', () => {
-  test('沒連 Wi-Fi：跳出對話框說明', async () => {
-    const net = new FakeOllamaNet();
-    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
-    await store.init();
-    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    await fireEvent.press(screen.getByText('按這裡'));
-    await fireEvent.press(screen.getByText('掃描區網'));
-    await waitFor(() => expect(alert).toHaveBeenCalled());
-    expect(alert.mock.calls[0][0]).toBe('沒辦法掃描區網');
-    expect(alert.mock.calls[0][1]).toContain('用 4G 時掃不到區網');
-  });
-
-  test('掃完沒找到：跳出對話框提醒檢查 Ollama 設定與區域網路權限', async () => {
-    const net = new FakeOllamaNet();
-    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => '192.168.5.10', autoScan: false });
-    await store.init();
-    await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    await fireEvent.press(screen.getByText('按這裡'));
-    await fireEvent.press(screen.getByText('掃描區網'));
-    await waitFor(() => expect(alert).toHaveBeenCalled());
-    expect(alert.mock.calls[0][0]).toBe('沒有找到主機');
-    expect(alert.mock.calls[0][1]).toContain('OLLAMA_HOST=0.0.0.0');
-    expect(screen.getByText('掃描完成，找到 0 台')).toBeTruthy();
   });
 });
 
