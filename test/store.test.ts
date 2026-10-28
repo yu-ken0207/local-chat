@@ -52,15 +52,14 @@ describe('主機', () => {
     expect((await repo.listHosts())[0]).toMatchObject({ label: 'A 機', source: 'manual', version: '1' });
   });
 
-  test('改名、標記在線、刪除', async () => {
+  test('標記在線、刪除', async () => {
     const { repo } = await freshRepo();
     await repo.saveHost({ url: 'http://a:11434', label: 'a', source: 'manual' });
     await repo.saveHost({ url: 'http://b:11434', label: 'b', source: 'scan', version: '1' });
-    await repo.renameHost('http://a:11434', '客廳');
     await repo.markHostSeen('http://a:11434', '0.40.0');
     await repo.removeHost('http://b:11434');
     const hosts = await repo.listHosts();
-    expect(hosts.map((h) => [h.label, h.version])).toEqual([['客廳', '0.40.0']]);
+    expect(hosts.map((h) => [h.label, h.version])).toEqual([['a', '0.40.0']]);
     expect(hosts[0].lastSeenAt).not.toBeNull();
   });
 });
@@ -192,17 +191,7 @@ describe('搜尋對話', () => {
   });
 });
 
-describe('範本與設定', () => {
-  test('新增排在最後、修改、刪除', async () => {
-    const { repo } = await freshRepo();
-    const t = await repo.addTemplate('寫信', '幫我寫一封信：');
-    expect((await repo.listTemplates()).at(-1)).toEqual(t);
-    await repo.updateTemplate(t.id, '寫 Email', '幫我寫 Email：');
-    expect((await repo.listTemplates()).at(-1)).toMatchObject({ title: '寫 Email', content: '幫我寫 Email：' });
-    await repo.deleteTemplate(t.id);
-    expect((await repo.listTemplates()).some((x) => x.id === t.id)).toBe(false);
-  });
-
+describe('設定', () => {
   test('設定存取與覆寫', async () => {
     const { repo } = await freshRepo();
     expect(await repo.getSetting('lastModel')).toBeNull();
@@ -230,7 +219,6 @@ describe('使用者自己移除資料', () => {
     const { db, repo } = await freshRepo();
     await repo.saveHost({ url: 'http://a:11434', label: 'a', source: 'manual', version: '1' });
     await repo.setSetting('lastModel', 'gemma4:31b');
-    await repo.addTemplate('自訂', '內容');
     for (let i = 0; i < 3; i++) {
       const s = await repo.createSession();
       await repo.addMessage(s.id, { role: 'user', content: 'x'.repeat(30000), attachments: [{ base64: 'A'.repeat(60000), width: 1, height: 1 }] });
@@ -238,7 +226,7 @@ describe('使用者自己移除資料', () => {
     return { db, repo };
   }
 
-  test('刪除所有對話：先移到最近刪除（主機、範本、設定保留）；清空最近刪除後檔案變小', async () => {
+  test('刪除所有對話：先移到最近刪除（主機、設定保留）；清空最近刪除後檔案變小', async () => {
     const { db, repo } = await seeded();
     const before = await repo.sizeBytes();
     expect(await repo.countSessions()).toBe(3);
@@ -247,7 +235,6 @@ describe('使用者自己移除資料', () => {
     expect(await repo.countSessions()).toBe(0);
     expect(await repo.countTrash()).toBe(3);
     expect(await repo.listHosts()).toHaveLength(1);
-    expect((await repo.listTemplates()).some((t) => t.title === '自訂')).toBe(true);
     expect(await repo.getSetting('lastModel')).toBe('gemma4:31b');
     await repo.emptyTrash();
     expect(await repo.countTrash()).toBe(0);

@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtWhen } from '../lib/format';
@@ -14,20 +14,18 @@ import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { SwipeRow } from './SwipeRow';
 import { SettingsView } from './SettingsSheet';
-import { confirmDiscard } from './TemplatesSheet';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
 
 type ListItem = Session & { preview: string };
 
-/** 分享（匯出）某段對話的 Markdown */
-export async function shareSession(store: ChatStore, id: string) {
-  try {
-    const { title, markdown } = await store.exportSession(id);
-    await Share.share({ title, message: markdown });
-  } catch (e: any) {
-    Alert.alert(t('匯出失敗'), String(e?.message ?? e));
-  }
+/** 有改過才問要不要放棄；沒改過直接離開 */
+export function confirmDiscard(dirty: boolean, leave: () => void) {
+  if (!dirty) return leave();
+  Alert.alert(t('放棄修改？'), t('剛剛輸入的內容不會儲存。'), [
+    { text: t('繼續編輯'), style: 'cancel' },
+    { text: t('放棄'), style: 'destructive', onPress: leave },
+  ]);
 }
 
 /** 刪除對話：直接移到最近刪除，畫面下方會出現「復原」，不用先確認 */
@@ -37,7 +35,7 @@ export async function deleteSession(store: ChatStore, id: string, after?: () => 
   after?.();
 }
 
-/** 對話清單（左邊的側邊欄）：搜尋、切換、長按或 ⋯ 改名／匯出／刪除；最下面是設定 */
+/** 對話清單（左邊的側邊欄）：搜尋、切換、長按或 ⋯ 改名／刪除；最下面是設定 */
 export function SessionList({
   store,
   currentId,
@@ -74,10 +72,9 @@ export function SessionList({
 
   function menu(s: ListItem) {
     const name = s.title || s.preview || t('新對話');
-    chooseOption(name, [t('重新命名'), t('匯出'), t('刪除')], (i) => {
+    chooseOption(name, [t('重新命名'), t('刪除')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, async (t) => (await store.renameSession(s.id, t), reload()), 'plain-text', s.title);
-      if (i === 1) void shareSession(store, s.id);
-      if (i === 2) void deleteSession(store, s.id, reload);
+      if (i === 1) void deleteSession(store, s.id, reload);
     });
   }
 
@@ -160,7 +157,7 @@ export function SessionList({
             })
           )}
         </View>
-        <Text style={styles.footnote}>{t('對話只存在這支手機。長按或按 ⋯ 可以改名、匯出、刪除。')}</Text>
+        <Text style={styles.footnote}>{t('對話只存在這支手機。長按或按 ⋯ 可以改名、刪除。')}</Text>
       </ScrollView>
       {/* 設定固定在最下面，不用捲到底才找得到 */}
       <Pressable
@@ -275,7 +272,7 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   );
 }
 
-/** 對話設定：標題、角色（系統提示詞）、匯出、刪除 */
+/** 對話設定：標題、自訂指示（系統提示詞）、刪除 */
 export function SessionSettings({ store, session, onClose }: { store: ChatStore; session: Session; onClose: () => void }) {
   const [title, setTitle] = useState(session.title);
   const [role, setRole] = useState(session.systemPrompt);
@@ -325,13 +322,6 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
         </View>
         <Text style={styles.footnote}>{t('告訴 AI 在這段對話裡要怎麼回答，只用在這段對話。留空就照預設。')}</Text>
         <View style={[styles.card, styles.actions]}>
-          <Pressable onPress={() => shareSession(store, session.id)} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-            <View style={styles.row}>
-              <SymbolView name="square.and.arrow.up" size={18} tintColor={C.accent} />
-              <Text style={[styles.rowTitle, { color: C.accent }]}>{t('匯出成 Markdown')}</Text>
-            </View>
-          </Pressable>
-          <View style={styles.separator} />
           <Pressable
             onPress={() => void deleteSession(store, session.id, onClose)}
             accessibilityRole="button"

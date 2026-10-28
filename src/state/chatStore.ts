@@ -1,11 +1,11 @@
 import { hostUrl, parseHostInput, scanHosts, subnetCandidates } from '../lib/discovery';
 import { contextLevel, type ContextLevel } from '../lib/format';
-import { cleanTitle, exportMarkdown, fallbackTitle } from '../lib/exportMd';
+import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import type { Attachment, Host, Message, Repo, Session, Template } from '../store/repo';
+import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
@@ -40,7 +40,6 @@ export type ChatState = {
   context: ContextInfo | null;
   /** 一次性的提示，例如「這個模型看不懂圖片，前面的照片不會送出」 */
   notice: string;
-  templates: Template[];
   /** 剛做的刪除或取代，可以按「復原」（畫面顯示幾秒後消失） */
   undo: { id: number; message: string } | null;
   prefs: Prefs;
@@ -51,15 +50,11 @@ type PendingUndo = { id: number; message: string; undo: () => Promise<void>; com
 export type AppLanguage = 'zh-Hant' | 'en';
 /** 使用者在設定裡可以改的偏好 */
 export type Prefs = {
-  /** App 語言：跟著系統，或指定 */
+  /** App 語言：跟著系統，或指定（AI 也用這個語言回答） */
   language: 'system' | AppLanguage;
-  /** AI 回答的語言：跟著 App、指定、或不指定（不送語言提示） */
-  replyLanguage: 'app' | AppLanguage | 'any';
-  /** 第一次回答後自動請模型取標題 */
-  autoTitle: boolean;
 };
 
-export const DEFAULT_PREFS: Prefs = { language: 'system', replyLanguage: 'app', autoTitle: true };
+export const DEFAULT_PREFS: Prefs = { language: 'system' };
 
 export type ChatEvent = 'answered' | 'failed' | 'stopped';
 
@@ -146,7 +141,6 @@ export class ChatStore {
     streaming: null,
     context: null,
     notice: '',
-    templates: [],
     undo: null,
     prefs: DEFAULT_PREFS,
   };
@@ -204,13 +198,6 @@ export class ChatStore {
   appLanguage(): AppLanguage {
     const pref = this.state.prefs.language;
     return pref === 'system' ? (this.deps.deviceLanguage?.() ?? 'zh-Hant') : pref;
-  }
-
-  /** AI 回答要用的語言（null 代表不指定） */
-  replyLanguage(): AppLanguage | null {
-    const r = this.state.prefs.replyLanguage;
-    if (r === 'any') return null;
-    return r === 'app' ? this.appLanguage() : r;
   }
 
   // ---- 復原 ----
@@ -285,7 +272,6 @@ export class ChatStore {
       hosts,
       session,
       messages: await repo.listMessages(session.id),
-      templates: await repo.listTemplates(),
       prefs,
       ready: true,
     });
@@ -441,11 +427,6 @@ export class ChatStore {
     return pick;
   }
 
-  async renameHost(url: string, label: string): Promise<void> {
-    await this.deps.repo.renameHost(url, label.trim() || this.hostLabel(url));
-    this.set({ hosts: await this.deps.repo.listHosts() });
-  }
-
   /** 移除電腦（可以復原） */
   async removeHost(url: string): Promise<void> {
     const { repo } = this.deps;
@@ -517,16 +498,6 @@ export class ChatStore {
     if (!s) return;
     await this.deps.repo.updateSession(s.id, { think });
     this.set({ session: { ...this.state.session!, think } });
-  }
-
-  async preload(url: string, model: string): Promise<void> {
-    await this.deps.client(url).preload(model);
-    await this.refreshLoaded(url);
-  }
-
-  async unload(url: string, model: string): Promise<void> {
-    await this.deps.client(url).unload(model);
-    await this.refreshLoaded(url);
   }
 
   // ---- 對話 ----
@@ -726,31 +697,6 @@ export class ChatStore {
     });
   }
 
-  // ---- 提示詞範本 ----
-
-  async addTemplate(title: string, content: string): Promise<void> {
-    await this.deps.repo.addTemplate(title.trim(), content);
-    this.set({ templates: await this.deps.repo.listTemplates() });
-  }
-
-  async updateTemplate(id: string, title: string, content: string): Promise<void> {
-    await this.deps.repo.updateTemplate(id, title.trim(), content);
-    this.set({ templates: await this.deps.repo.listTemplates() });
-  }
-
-  /** 刪除範本（可以復原） */
-  async deleteTemplate(id: string): Promise<void> {
-    const { repo } = this.deps;
-    const tpl = this.state.templates.find((x) => x.id === id);
-    if (!tpl) return;
-    await repo.deleteTemplate(id);
-    this.set({ templates: await repo.listTemplates() });
-    await this.offerUndo(t('已刪除範本「{p0}」', { p0: tpl.title }), async () => {
-      await repo.restoreTemplate(tpl);
-      this.set({ templates: await repo.listTemplates() });
-    });
-  }
-
   /** 中途停止回答 */
   stop(): void {
     this.abort?.abort();
@@ -763,11 +709,10 @@ export class ChatStore {
     const url = s.hostUrl!;
     const model = s.model!;
     const info = this.currentModel();
-    const reply = this.replyLanguage();
     const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
       systemPrompt: s.systemPrompt,
       vision: info ? info.vision : true,
-      defaultSystemPrompt: reply ? REPLY_PROMPTS[reply] : '',
+      defaultSystemPrompt: REPLY_PROMPTS[this.appLanguage()],
     });
     if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
@@ -813,7 +758,7 @@ export class ChatStore {
       this.deps.onEvent?.('answered');
       // 第一個回答出來後，請模型幫這段對話取標題（不擋住下一次輸入）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
-      if (this.state.prefs.autoTitle && !this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
+      if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
       if (content || thinking) {
@@ -849,7 +794,7 @@ export class ChatStore {
           model,
           think,
           messages: [
-            { role: 'system', content: TITLE_PROMPTS[this.replyLanguage() ?? this.appLanguage()] },
+            { role: 'system', content: TITLE_PROMPTS[this.appLanguage()] },
             { role: 'user', content: t('使用者：{p0}\nAI：{p1}', { p0: question.slice(0, 300), p1: answer.slice(0, 500) }) },
           ],
         },
@@ -864,18 +809,6 @@ export class ChatStore {
     if (!current || current.title) return;
     await repo.updateSession(sessionId, { title });
     if (this.state.session?.id === sessionId) this.set({ session: { ...this.state.session, title } });
-  }
-
-  /** 把某段對話匯出成 Markdown 文字 */
-  async exportSession(id: string): Promise<{ title: string; markdown: string }> {
-    const { repo } = this.deps;
-    const session = await repo.getSession(id);
-    if (!session) throw new Error(t('找不到這段對話'));
-    const messages = await repo.listMessages(id);
-    return {
-      title: session.title || t('對話'),
-      markdown: exportMarkdown(session, messages, { hostLabel: this.hostLabel(session.hostUrl), now: this.now() }),
-    };
   }
 
   /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦、範本與模型設定；換成一段新的空白對話 */
@@ -914,7 +847,6 @@ export class ChatStore {
       messages: [],
       context: null,
       notice: '',
-      templates: await repo.listTemplates(),
     });
     await this.offerUndo(
       t('已清除全部資料'),
@@ -922,14 +854,14 @@ export class ChatStore {
         await repo.restoreSnapshot(snapshot);
         await repo.restoreSessions(ids);
         await repo.deleteEmptySessions();
-        this.set({ ...saved, templates: await repo.listTemplates() });
+        this.set({ ...saved });
         await this.openLatestOrNew();
       },
       async () => {
         for (const id of ids) await repo.deleteSession(id);
         await repo.setSetting(SETTING_PENDING_WIPE, '');
         await repo.resetAll();
-        this.set({ templates: await repo.listTemplates(), session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
+        this.set({ session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
       }
     );
   }
@@ -969,7 +901,6 @@ export class ChatStore {
       loaded: {},
       session,
       messages: await repo.listMessages(session.id),
-      templates: await repo.listTemplates(),
       prefs: await this.loadPrefs(),
       context: null,
       notice: '',

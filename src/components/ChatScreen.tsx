@@ -1,4 +1,3 @@
-import * as Speech from 'expo-speech';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
@@ -7,11 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
 import type { NewPhoto } from '../lib/photos';
-import { plainText } from '../lib/plainText';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
-import type { Attachment, Message } from '../store/repo';
+import { defaultTemplates, type Attachment, type Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { Composer, chooseOption, type PickSource } from './Composer';
@@ -21,7 +19,6 @@ import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SessionSettings, SettingsPages } from './SessionSheets';
 import { SideDrawer } from './SideDrawer';
-import { TemplatesSheet } from './TemplatesSheet';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
@@ -44,11 +41,9 @@ export function ChatScreen(p: ChatScreenProps) {
   const [listOpen, setListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [connect, setConnect] = useState<{ help: boolean } | null>(null);
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
   const [injected, setInjected] = useState<{ text: string; photos?: NewPhoto[]; nonce: number } | null>(null);
-  const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   function showToast(text: string, action?: ToastData['action']) {
@@ -73,25 +68,10 @@ export function ChatScreen(p: ChatScreenProps) {
     Alert.alert(t('詳細資訊'), lines.join('\n'));
   }
 
-  // 換對話時結束編輯與朗讀
+  // 換對話時結束編輯
   useEffect(() => {
     setEditing(null);
-    Speech.stop();
-    setSpeakingId(null);
   }, [state.session?.id]);
-
-  function speak(m: Message) {
-    Speech.stop();
-    if (speakingId === m.id) {
-      setSpeakingId(null);
-      return;
-    }
-    setSpeakingId(m.id);
-    const done = () => setSpeakingId((id) => (id === m.id ? null : id));
-    // 朗讀語言跟著 AI 回答的語言（不指定時跟著 App 語言）
-    const lang = store.replyLanguage() ?? store.appLanguage();
-    Speech.speak(plainText(m.content), { language: lang === 'en' ? 'en-US' : 'zh-TW', onDone: done, onStopped: done, onError: done });
-  }
 
   /** 重新產生：舊回答會留著當版本，後面的訊息可以復原，所以不用先確認 */
   function confirmLater(_m: Message, action: () => Promise<void>) {
@@ -121,7 +101,7 @@ export function ChatScreen(p: ChatScreenProps) {
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
-      chooseOption(t('AI 的回答'), [t('複製'), t('分享'), t('重新產生'), t('換個模型重新產生'), speakingId === m.id ? t('停止朗讀') : t('朗讀'), t('詳細資訊'), t('刪除')], (i) =>
+      chooseOption(t('AI 的回答'), [t('複製'), t('分享'), t('重新產生'), t('換個模型重新產生'), t('詳細資訊'), t('刪除')], (i) =>
         [
           () => copy(m.content),
           () => void Share.share({ message: m.content }),
@@ -130,7 +110,6 @@ export function ChatScreen(p: ChatScreenProps) {
             hostUrl && others.length > 0
               ? chooseOption(t('用哪個模型重新產生'), others.map(friendlyModelName), (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
               : Alert.alert(t('沒有其他模型'), t('這台電腦上只有一個模型。')),
-          () => speak(m),
           () => showDetails(m),
           () => confirmDeleteMessage(m),
         ][i]()
@@ -159,7 +138,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || settingsOpen || appSettingsOpen || templatesOpen || !!connect;
+  const anySheetOpen = sheetOpen || listOpen || settingsOpen || appSettingsOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
   const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
 
@@ -247,19 +226,6 @@ export function ChatScreen(p: ChatScreenProps) {
             )}
           </ScrollView>
 
-          {speakingId ? (
-            <Banner
-              text={t('朗讀中…')}
-              tone="info"
-              action={{
-                text: t('停止'),
-                onPress: () => {
-                  Speech.stop();
-                  setSpeakingId(null);
-                },
-              }}
-            />
-          ) : null}
           {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
           {state.context && state.context.level !== 'ok' ? (
             <Banner
@@ -309,9 +275,8 @@ export function ChatScreen(p: ChatScreenProps) {
               ) : null
             }
             notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
-            templates={state.templates}
+            templates={defaultTemplates()}
             showTemplateChips={state.messages.length === 0 && !!modelLabel}
-            onManageTemplates={() => setTemplatesOpen(true)}
           />
 
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
@@ -322,9 +287,6 @@ export function ChatScreen(p: ChatScreenProps) {
           </Modal>
           <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
             <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
-          </Modal>
-          <Modal visible={templatesOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setTemplatesOpen(false)}>
-            <TemplatesSheet store={store} templates={state.templates} onClose={() => setTemplatesOpen(false)} />
           </Modal>
           <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
         </KeyboardAvoidingView>

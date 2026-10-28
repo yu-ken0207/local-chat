@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import * as Speech from 'expo-speech';
 import { ActionSheetIOS } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
@@ -39,8 +38,8 @@ test('英文手機：第一次打開就是英文', async () => {
 
 test('英文手機：預設範本是英文，AI 用英文回答', async () => {
   const { net, store } = await setup();
-  expect(store.getState().templates.map((t) => t.title)).toContain('Translate to English');
   await store.addHost('192.168.1.20');
+  expect(await screen.findByLabelText('Template Translate to English')).toBeTruthy();
   await store.send('hello');
   expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: 'Please reply in English.' });
   expect(net.titleBodies()[0].messages[0].content).toMatch(/^Write a title/);
@@ -56,15 +55,6 @@ test('英文：錯誤訊息、連線說明都是英文', async () => {
   expect(screen.getByText('Retry')).toBeTruthy();
   await fireEvent.press(screen.getByText('Connection help'));
   expect(await screen.findByText('Ollama must be running on the computer.')).toBeTruthy();
-});
-
-test('英文：朗讀用英文語音', async () => {
-  const { store } = await setup();
-  await store.addHost('192.168.1.20');
-  await store.send('hi');
-  jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_o, cb) => cb(4));
-  await fireEvent(screen.getByTestId(`message-${store.getState().messages[1].id}`), 'longPress');
-  expect(Speech.speak).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ language: 'en-US' }));
 });
 
 test('在設定裡把語言改成繁體中文，畫面馬上變中文', async () => {

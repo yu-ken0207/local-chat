@@ -1,6 +1,7 @@
 /**
  * @jest-environment node
  */
+import { REPLY_PROMPTS } from '../src/lib/history';
 import { ChatStore, HostOfflineError, type ChatEvent } from '../src/state/chatStore';
 import { Repo } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -130,10 +131,9 @@ describe('啟動與主機', () => {
     expect(store.getState().hostStatus[A]).toMatchObject({ state: 'online', version: '0.40.0' });
   });
 
-  test('改名、刪除主機', async () => {
+  test('刪除主機', async () => {
     const { store } = await setup();
-    await store.addHost('192.168.1.20');
-    await store.renameHost(A, '書房');
+    await store.addHost('192.168.1.20', { label: '書房' });
     expect(store.hostLabel(A)).toBe('書房');
     await store.removeHost(A);
     expect(store.getState().hosts).toEqual([]);
@@ -151,14 +151,6 @@ describe('模型', () => {
     expect(store.getState().session?.think).toBeNull();
     const saved = await repo.getSession(store.getState().session!.id);
     expect(saved).toMatchObject({ hostUrl: A, model: 'llama3:latest', think: null });
-  });
-
-  test('預熱、卸載會更新已載入清單', async () => {
-    const { store } = await ready();
-    await store.preload(A, 'gpt-oss:20b');
-    expect(store.getState().loaded[A].map((m) => m.name)).toEqual(['gpt-oss:20b']);
-    await store.unload(A, 'gpt-oss:20b');
-    expect(store.getState().loaded[A]).toEqual([]);
   });
 
   test('主機連不到時模型清單顯示錯誤', async () => {
@@ -390,17 +382,6 @@ describe('標題與匯出', () => {
     expect(store.titleTask).toBeNull();
     expect(store.getState().session?.title).toBe('我的標題');
   });
-
-  test('匯出對話', async () => {
-    const { store } = await ready();
-    await store.send('你好');
-    await store.titleTask;
-    const { title, markdown } = await store.exportSession(store.getState().session!.id);
-    expect(title).toBe(store.getState().session!.title);
-    expect(markdown).toContain('**你**：你好');
-    expect(markdown).toContain('**AI**（gemma4:31b）：');
-    expect(markdown).toContain('- 模型：192.168.1.20 · gemma4:31b');
-  });
 });
 
 describe('訊息操作與範本', () => {
@@ -448,19 +429,6 @@ describe('訊息操作與範本', () => {
     await store.send('a');
     await store.deleteMessage(store.getState().messages[1].id);
     expect(store.getState().messages.map((m) => m.content)).toEqual(['a']);
-  });
-
-  test('範本：啟動時載入預設、可以新增修改刪除', async () => {
-    const { store } = await ready();
-    const titles = () => store.getState().templates.map((t) => t.title);
-    expect(titles()).toContain('翻譯成英文');
-    await store.addTemplate(' 寫日報 ', '幫我整理今天的工作日報：\n');
-    expect(titles().at(-1)).toBe('寫日報');
-    const t = store.getState().templates.at(-1)!;
-    await store.updateTemplate(t.id, '寫週報', '幫我整理本週工作：');
-    expect(store.getState().templates.at(-1)).toMatchObject({ title: '寫週報', content: '幫我整理本週工作：' });
-    await store.deleteTemplate(t.id);
-    expect(titles()).not.toContain('寫週報');
   });
 });
 
@@ -585,7 +553,6 @@ describe('移除資料', () => {
 
   test('清除全部資料：主機、模型清單都清掉，回到第一次打開的樣子', async () => {
     const { store } = await ready();
-    await store.addTemplate('自訂', '內容');
     await store.send('a');
     await store.resetAll();
     const s = store.getState();
@@ -593,7 +560,6 @@ describe('移除資料', () => {
     expect(s.models).toEqual({});
     expect(s.messages).toEqual([]);
     expect(s.session).toMatchObject({ hostUrl: null, model: null });
-    expect(s.templates.some((t) => t.title === '自訂')).toBe(false);
   });
 });
 
@@ -707,21 +673,14 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(store.getState().messages.map((m) => m.id)).toEqual(original);
   });
 
-  test('移除電腦、刪除範本都可以復原', async () => {
+  test('移除電腦可以復原', async () => {
     const { store } = await ready();
-    await store.renameHost(A, '書房');
     await store.removeHost(A);
     expect(store.getState().hosts).toEqual([]);
-    expect(store.getState().undo?.message).toBe('已移除「書房」');
+    expect(store.getState().undo?.message).toBe('已移除「192.168.1.20」');
     await store.undoLast();
-    expect(store.getState().hosts.map((h) => h.label)).toEqual(['書房']);
+    expect(store.getState().hosts.map((h) => h.label)).toEqual(['192.168.1.20']);
     expect(store.getState().models[A].list.length).toBeGreaterThan(0);
-
-    const tpl = store.getState().templates[0];
-    await store.deleteTemplate(tpl.id);
-    expect(store.getState().templates.some((t) => t.id === tpl.id)).toBe(false);
-    await store.undoLast();
-    expect(store.getState().templates[0]).toEqual(tpl);
   });
 
   test('刪除所有對話可以復原', async () => {
@@ -739,19 +698,16 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
   test('清除全部資料：幾秒內可以復原；時間到才真的刪', async () => {
     const { store, repo } = await ready();
     await store.send('a');
-    await store.addTemplate('自訂', '內容');
     await store.resetAll();
     expect(store.getState().hosts).toEqual([]);
     await store.undoLast();
     expect(store.getState().hosts.map((h) => h.url)).toEqual([A]);
-    expect(store.getState().templates.some((t) => t.title === '自訂')).toBe(true);
     expect(store.getState().messages.map((m) => m.content)).toEqual(['a', '回答：a']);
 
     await store.resetAll();
     await store.dismissUndo(); // 提示時間到
     expect(await repo.countTrash()).toBe(0);
     expect(await repo.listHosts()).toEqual([]);
-    expect(store.getState().templates.some((t) => t.title === '自訂')).toBe(false);
   });
 
   test('清除全部資料後還在可以復原的時候就關掉 App：下次打開時真的刪掉', async () => {
@@ -780,23 +736,18 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
 describe('設定', () => {
   test('偏好設定會存起來，重開 App 還在', async () => {
     const { net, store, repo } = await ready();
-    expect(store.getState().prefs).toEqual({ language: 'system', replyLanguage: 'app', autoTitle: true });
-    await store.setPref('replyLanguage', 'en');
-    await store.setPref('autoTitle', false);
+    expect(store.getState().prefs).toEqual({ language: 'system' });
+    await store.setPref('language', 'en');
     const again = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false });
     await again.init();
-    expect(again.getState().prefs).toEqual({ language: 'system', replyLanguage: 'en', autoTitle: false });
+    expect(again.getState().prefs).toEqual({ language: 'en' });
+    await again.setPref('language', 'system');
   });
 
-  test('AI 回答的語言：英文、不指定（不送語言提示）、跟著 App；自訂指示優先', async () => {
+  test('AI 用 App 的語言回答；自訂指示優先', async () => {
     const { net, store } = await ready();
-    await store.setPref('replyLanguage', 'en');
     await store.send('hi');
-    expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: 'Please reply in English.' });
-    await store.setPref('replyLanguage', 'any');
-    await store.send('hi2');
-    expect(net.chatBodies().at(-1).messages[0].role).toBe('user');
-    await store.setPref('replyLanguage', 'app');
+    expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: REPLY_PROMPTS['zh-Hant'] });
     await store.setPref('language', 'en');
     await store.send('hi3');
     expect(net.chatBodies().at(-1).messages[0].content).toBe('Please reply in English.');
@@ -810,17 +761,8 @@ describe('設定', () => {
     const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false, deviceLanguage: () => 'en' });
     await store.init();
     expect(store.appLanguage()).toBe('en');
-    expect(store.replyLanguage()).toBe('en');
     await store.setPref('language', 'zh-Hant');
     expect(store.appLanguage()).toBe('zh-Hant');
-  });
-
-  test('關掉自動取標題：不會多送取標題的請求', async () => {
-    const { net, store } = await ready();
-    await store.setPref('autoTitle', false);
-    await store.send('hi');
-    expect(store.titleTask).toBeNull();
-    expect(net.titleBodies()).toHaveLength(0);
   });
 
   test('從備份還原：資料換成備份的；幾秒內可以復原', async () => {
@@ -830,9 +772,8 @@ describe('設定', () => {
     const otherDb = memoryDb();
     const other = new ChatStore({ repo: new Repo(otherDb), client: net.client, wifiIp: async () => null, autoScan: false });
     await other.init();
-    await other.addHost('192.168.1.20');
+    await other.addHost('192.168.1.20', { label: '舊電腦' });
     await other.send('備份裡的對話');
-    await other.renameHost(A, '舊電腦');
 
     const withMemory = store as any;
     withMemory.deps.openMemoryDb = async () => memoryDb();

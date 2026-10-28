@@ -46,27 +46,11 @@ test('語言：預設跟著系統，可以改成 English', async () => {
   await waitFor(() => expect(store.getState().prefs.language).toBe('en'));
 });
 
-test('AI 回答的語言：可以選「不指定」', async () => {
-  const { store } = await setup();
-  pickAction(3);
-  await fireEvent.press(screen.getByLabelText('AI 回答的語言，跟著 App 語言'));
-  await waitFor(() => expect(store.getState().prefs.replyLanguage).toBe('any'));
-  expect(screen.getByLabelText('AI 回答的語言，不指定')).toBeTruthy();
-});
-
-test('自動取標題可以關掉', async () => {
-  const { store } = await setup();
-  await fireEvent(screen.getByLabelText('自動幫對話取標題'), 'valueChange', false);
-  await waitFor(() => expect(store.getState().prefs.autoTitle).toBe(false));
-});
-
-test('你的電腦、提示詞範本：顯示數量，點了打開管理面板', async () => {
+test('你的電腦：顯示數量，點了打開連接面板；設定裡沒有已拿掉的項目', async () => {
   await setup();
+  for (const gone of ['AI 回答的語言', '自動幫對話取標題', '提示詞範本']) expect(screen.queryByText(gone)).toBeNull();
   await fireEvent.press(screen.getByLabelText('你的電腦，1 台'));
   expect(await screen.findByText('連接你的電腦')).toBeTruthy();
-  await fireEvent.press(screen.getAllByText('完成').at(-1)!);
-  await fireEvent.press(screen.getByLabelText('提示詞範本，6 個'));
-  expect(await screen.findByText('新增範本')).toBeTruthy();
 });
 
 test('從備份還原：先確認，還原後資料換掉，可以復原', async () => {

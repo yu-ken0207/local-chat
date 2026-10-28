@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, Share } from 'react-native';
+import { ActionSheetIOS, Alert } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
@@ -81,22 +81,10 @@ test('長按：重新命名', async () => {
   expect((await store.listSessions()).map((s) => s.title)).toContain('明天天氣');
 });
 
-test('長按：匯出成 Markdown 分享', async () => {
-  await setup();
-  const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as any);
-  await fireEvent.press(screen.getByLabelText('對話清單'));
-  pickAction(1);
-  await fireEvent(await screen.findByLabelText('對話 天氣'), 'longPress');
-  await waitFor(() => expect(share).toHaveBeenCalled());
-  const arg = share.mock.calls[0][0] as { title: string; message: string };
-  expect(arg.title).toBe('天氣');
-  expect(arg.message).toContain('**你**：明天會下雨嗎');
-});
-
 test('長按刪除：不用先確認，可以馬上復原', async () => {
   const { store } = await setup();
   await fireEvent.press(screen.getByLabelText('對話清單'));
-  pickAction(2);
+  pickAction(1);
   const alert = jest.spyOn(Alert, 'alert');
   await fireEvent(await screen.findByLabelText('對話 天氣'), 'longPress');
   expect(alert).not.toHaveBeenCalled();

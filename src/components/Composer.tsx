@@ -6,11 +6,13 @@ import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, ScrollView,
 import { friendlyLevel } from '../lib/modelName';
 import type { ThinkOption, ThinkSetting } from '../lib/ollama';
 import { MAX_PHOTOS, dataUri, type NewPhoto } from '../lib/photos';
-import type { Template } from '../store/repo';
 import { C, MONO, TEXT } from '../ui/theme';
 import { t } from '../i18n';
 
-export type PickSource = 'camera' | 'library' | 'clipboard';
+export type PickSource = 'camera' | 'library';
+
+/** 新對話時輸入框上方的範本按鈕 */
+export type QuickPrompt = { title: string; content: string };
 
 type Props = {
   /** 「主機 · 模型」；還沒選模型時是 null */
@@ -31,18 +33,10 @@ type Props = {
   accessory?: ReactNode;
   /** 還不能送出時輸入框的提示（例如「先連接你的電腦」） */
   notReadyHint?: string;
-  templates?: Template[];
+  templates?: QuickPrompt[];
   /** 輸入框空白時顯示範本按鈕（新對話時） */
   showTemplateChips?: boolean;
-  onManageTemplates?: () => void;
 };
-
-/** 輸入 / 開頭時，依 / 後面的字篩選範本（比對標題） */
-export function matchTemplates(draft: string, templates: Template[]): Template[] | null {
-  if (!draft.startsWith('/') || draft.includes('\n')) return null;
-  const q = draft.slice(1).trim().toLowerCase();
-  return templates.filter((t) => t.title.toLowerCase().includes(q));
-}
 
 /** 選項清單：iOS 用系統的動作表，其他平台用對話框 */
 export function chooseOption(title: string, options: string[], onPick: (index: number) => void) {
@@ -62,7 +56,7 @@ export function Composer(p: Props) {
   const [sending, setSending] = useState(false);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
-  function applyTemplate(tpl: Template) {
+  function applyTemplate(tpl: QuickPrompt) {
     setDraft(tpl.content);
     inputRef.current?.focus();
   }
@@ -99,7 +93,6 @@ export function Composer(p: Props) {
         ]);
         return;
       }
-      if (source === 'clipboard' && got.length === 0) setHint(t('剪貼簿裡沒有圖片。'));
       setPhotos((prev) => [...prev, ...got].slice(0, MAX_PHOTOS));
     } catch (e: any) {
       Alert.alert(t('照片處理失敗'), e?.message ?? String(e));
@@ -107,7 +100,7 @@ export function Composer(p: Props) {
   }
 
   function openAttach() {
-    chooseOption(t('附加照片'), [t('拍照'), t('從相簿選擇'), t('從剪貼簿貼上')], (i) => add((['camera', 'library', 'clipboard'] as const)[i]));
+    chooseOption(t('附加照片'), [t('拍照'), t('從相簿選擇')], (i) => add((['camera', 'library'] as const)[i]));
   }
 
   async function send() {
@@ -148,38 +141,16 @@ export function Composer(p: Props) {
         ? t('深入思考：{p0}', { p0: friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) })
         : '';
 
-  const slash = matchTemplates(draft, p.templates ?? []);
   const chips = p.showTemplateChips && !draft && photos.length === 0 && (p.templates?.length ?? 0) > 0;
 
   return (
     <View style={[styles.wrap, { paddingBottom: p.bottomInset }]}>
       {p.accessory}
-      {slash ? (
-        <View style={styles.slash} accessibilityLabel={t('範本清單')}>
-          {slash.length === 0 ? (
-            <Text style={styles.slashEmpty}>{t('沒有符合的範本')}</Text>
-          ) : (
-            slash.slice(0, 6).map((tpl) => (
-              <Pressable
-                key={tpl.id}
-                onPress={() => applyTemplate(tpl)}
-                accessibilityRole="button"
-                accessibilityLabel={t('範本 {p0}', { p0: tpl.title })}
-                style={({ pressed }) => [styles.slashRow, pressed && { backgroundColor: C.pressed }]}>
-                <Text style={styles.slashTitle}>/{tpl.title}</Text>
-                <Text style={styles.slashBody} numberOfLines={1}>
-                  {tpl.content.replace(/\s+/g, ' ')}
-                </Text>
-              </Pressable>
-            ))
-          )}
-        </View>
-      ) : null}
       {chips ? (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.chips}>
           {p.templates!.map((tpl) => (
             <Pressable
-              key={tpl.id}
+              key={tpl.title}
               onPress={() => applyTemplate(tpl)}
               accessibilityRole="button"
               accessibilityLabel={t('範本 {p0}', { p0: tpl.title })}
@@ -187,11 +158,6 @@ export function Composer(p: Props) {
               <Text style={styles.chipText}>{tpl.title}</Text>
             </Pressable>
           ))}
-          {p.onManageTemplates ? (
-            <Pressable onPress={p.onManageTemplates} accessibilityRole="button" accessibilityLabel={t('管理範本')} style={({ pressed }) => [styles.chip, pressed && styles.pressed]}>
-              <SymbolView name="slider.horizontal.3" size={13} tintColor={C.secondary} />
-            </Pressable>
-          ) : null}
         </ScrollView>
       ) : null}
       {hint ? (
@@ -229,7 +195,7 @@ export function Composer(p: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={p.modelLabel ? t('輸入訊息，或打 / 叫出範本') : (p.notReadyHint ?? t('先在下方選一個模型'))}
+            placeholder={p.modelLabel ? t('輸入訊息') : (p.notReadyHint ?? t('先在下方選一個模型'))}
             placeholderTextColor={C.placeholder}
             multiline
             accessibilityLabel={t('訊息輸入框')}
@@ -319,9 +285,4 @@ const styles = StyleSheet.create({
   chips: { gap: 8, paddingHorizontal: 2 },
   chip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
   chipText: { ...TEXT.small, color: C.label },
-  slash: { backgroundColor: C.surface, borderRadius: 12, overflow: 'hidden' },
-  slashRow: { paddingHorizontal: 12, paddingVertical: 8, gap: 2 },
-  slashTitle: { ...TEXT.small, color: C.accent, fontWeight: '600' },
-  slashBody: { ...TEXT.meta, color: C.secondary },
-  slashEmpty: { ...TEXT.meta, color: C.secondary, padding: 12 },
 });

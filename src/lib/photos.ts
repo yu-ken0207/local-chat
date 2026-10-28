@@ -1,4 +1,3 @@
-import * as Clipboard from 'expo-clipboard';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -29,22 +28,8 @@ export async function shrinkPhoto(uri: string, width: number, height: number): P
   return { base64: out.base64!, width: out.width, height: out.height };
 }
 
-/** 剪貼簿裡的圖片（沒有就回空陣列） */
-async function clipboardPhoto(): Promise<NewPhoto[]> {
-  if (!(await Clipboard.hasImageAsync())) return [];
-  const img = await Clipboard.getImageAsync({ format: 'jpeg', jpegQuality: 0.8 });
-  if (!img) return [];
-  try {
-    return [await shrinkPhoto(img.data, img.size.width, img.size.height)];
-  } catch {
-    // 縮不了就照原樣用
-    return [{ base64: img.data.replace(/^data:image\/\w+;base64,/, ''), width: img.size.width, height: img.size.height }];
-  }
-}
-
-/** 拍照、從相簿選（可以一次選多張）、或從剪貼簿貼上 */
-export async function pickPhotos(source: 'camera' | 'library' | 'clipboard', limit: number): Promise<NewPhoto[] | 'denied'> {
-  if (source === 'clipboard') return (await clipboardPhoto()).slice(0, limit);
+/** 拍照，或從相簿選（可以一次選多張） */
+export async function pickPhotos(source: 'camera' | 'library', limit: number): Promise<NewPhoto[] | 'denied'> {
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) return 'denied';

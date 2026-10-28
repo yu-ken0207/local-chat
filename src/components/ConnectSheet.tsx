@@ -70,10 +70,18 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   }
 
   function hostMenu(url: string, label: string) {
-    chooseOption(label, [t('重新命名'), t('移除這台電腦')], (i) => {
-      if (i === 0) Alert.prompt(t('重新命名'), t('取一個好認的名字，例如「書房電腦」'), (name) => store.renameHost(url, name), 'plain-text', label);
-      if (i === 1) void store.removeHost(url);
-    });
+    chooseOption(label, [t('移除這台電腦')], () => void store.removeHost(url));
+  }
+
+  /** 改用這台電腦；連不到就直接說，並打開「連不上嗎？」 */
+  async function use(url: string, label: string) {
+    Haptics.selectionAsync();
+    const model = await store.connectHost(url);
+    if (model) return onClose();
+    if (store.getState().models[url]?.error) {
+      setHelpOpen(true);
+      Alert.alert(t('連不到「{p0}」', { p0: label }), t('請確認這台電腦開著 Ollama，手機也連得到它。下方「連不上嗎？」有檢查步驟。'));
+    }
   }
 
   return (
@@ -126,27 +134,18 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
             <Text style={styles.section}>{t('你的電腦')}</Text>
             <View style={styles.card}>
               {state.hosts.map((h, i) => {
-                const st = state.hostStatus[h.url]?.state;
-                const stText = st === 'online' ? t('可以使用') : st === 'offline' ? t('目前連不到') : t('檢查中…');
                 return (
                   <SwipeRow key={h.url} label={t('移除')} testID={`swipe-host-${h.url}`} onDelete={() => void store.removeHost(h.url)}>
                   <Pressable
-                    onPress={async () => {
-                      Haptics.selectionAsync();
-                      const model = await store.connectHost(h.url);
-                      if (model) onClose();
-                    }}
+                    onPress={() => void use(h.url, h.label)}
                     onLongPress={() => hostMenu(h.url, h.label)}
                     accessibilityRole="button"
-                    accessibilityLabel={t('電腦 {p0}，{p1}', { p0: h.label, p1: stText })}
+                    accessibilityLabel={t('電腦 {p0}', { p0: h.label })}
                     accessibilityState={{ selected: current === h.url }}
                     style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                     <View style={styles.row}>
-                      {st === 'checking' ? <ActivityIndicator size="small" /> : <View style={[styles.dot, { backgroundColor: st === 'online' ? C.green : C.tertiary }]} />}
-                      <View style={styles.flex}>
-                        <Text style={styles.rowTitle}>{h.label}</Text>
-                        <Text style={[styles.rowSub, st === 'offline' && { color: C.orange }]}>{stText}</Text>
-                      </View>
+                      <SymbolView name="desktopcomputer" size={18} tintColor={C.secondary} />
+                      <Text style={[styles.rowTitle, styles.flex]}>{h.label}</Text>
                       {current === h.url ? <Text style={styles.using}>{t('使用中')}</Text> : null}
                       <Pressable onPress={() => hostMenu(h.url, h.label)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: h.label })}>
                         <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
@@ -286,9 +285,7 @@ const styles = StyleSheet.create({
   row: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   flex: { flex: 1 },
   rowTitle: { ...TEXT.body, color: C.label },
-  rowSub: { ...TEXT.meta, color: C.secondary, marginTop: 2 },
   using: { ...TEXT.meta, color: C.accent, fontWeight: '700' },
-  dot: { width: 10, height: 10, borderRadius: 5 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 16 },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   helpHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, paddingVertical: 6 },

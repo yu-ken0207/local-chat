@@ -267,10 +267,6 @@ export class Repo {
     await this.db.run('UPDATE hosts SET version = ?, last_seen_at = ? WHERE url = ?', [version, this.now(), url]);
   }
 
-  async renameHost(url: string, label: string): Promise<void> {
-    await this.db.run('UPDATE hosts SET label = ? WHERE url = ?', [label, url]);
-  }
-
   async listHosts(): Promise<Host[]> {
     const rows = await this.db.all<any>('SELECT * FROM hosts ORDER BY created_at, url');
     return rows.map((r) => ({
@@ -568,24 +564,9 @@ export class Repo {
     return this.db.all<Template>('SELECT id, title, content, position FROM templates ORDER BY position, title');
   }
 
-  async addTemplate(title: string, content: string): Promise<Template> {
-    const last = await this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM templates');
-    const t: Template = { id: newId(), title, content, position: (last?.p ?? -1) + 1 };
-    await this.db.run('INSERT INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [t.id, t.title, t.content, t.position]);
-    return t;
-  }
-
-  async updateTemplate(id: string, title: string, content: string): Promise<void> {
-    await this.db.run('UPDATE templates SET title = ?, content = ? WHERE id = ?', [title, content, id]);
-  }
-
-  /** 把刪掉的範本原樣加回去（復原用） */
+  /** 把範本原樣加回去（清除全部資料後復原用） */
   async restoreTemplate(tpl: Template): Promise<void> {
     await this.db.run('INSERT OR REPLACE INTO templates (id, title, content, position) VALUES (?, ?, ?, ?)', [tpl.id, tpl.title, tpl.content, tpl.position]);
-  }
-
-  async deleteTemplate(id: string): Promise<void> {
-    await this.db.run('DELETE FROM templates WHERE id = ?', [id]);
   }
 
   // ---- 備份與還原 ----

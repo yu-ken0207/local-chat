@@ -65,7 +65,7 @@ test('只有最後一則回答下方有按鈕', async () => {
 test('回答的「詳細資訊」：原始模型名稱、電腦、速度、時間', async () => {
   const { store } = await setup();
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  pickAction(5);
+  pickAction(4);
   await fireEvent(screen.getByTestId(`message-${store.getState().messages[1].id}`), 'longPress');
   expect(alert.mock.calls[0][0]).toBe('詳細資訊');
   const body = alert.mock.calls[0][1] as string;
@@ -79,8 +79,7 @@ test('模型的「詳細資訊」：原始名稱、大小、能記住多少', as
   await setup();
   await fireEvent.press(screen.getByLabelText(/模型：/));
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  pickAction(0);
-  await fireEvent.press(await screen.findByLabelText('Llama 3 的選項'));
+  await fireEvent.press(await screen.findByLabelText('Llama 3 的詳細資訊'));
   expect(alert.mock.calls[0][0]).toBe('詳細資訊');
   expect(alert.mock.calls[0][1]).toContain('原始名稱：llama3:latest');
   expect(alert.mock.calls[0][1]).toContain('最多能記住：131,072 tokens');
@@ -110,20 +109,8 @@ test('連接面板的電腦往左滑可以移除，也可以復原', async () =>
 
 test('預設範本是通用的（沒有工作專用的內容）', async () => {
   const { store } = await setup([]);
-  expect(store.getState().templates.map((t) => t.title)).toEqual(['翻譯成英文', '翻譯成中文', '摘要重點', '潤飾文字', '描述照片', '照片裡的文字']);
-});
-
-test('預先載入模型要等一陣子：那一列顯示「載入中…」，好了就消失', async () => {
-  const { store } = await setup();
-  let finish!: () => void;
-  const preload = jest.spyOn(store, 'preload').mockImplementation(() => new Promise<void>((r) => (finish = r)));
-  await fireEvent.press(screen.getByLabelText(/模型：/));
-  pickAction(1);
-  await fireEvent.press(await screen.findByLabelText('Llama 3 的選項'));
-  expect(await screen.findByText('載入中…')).toBeTruthy();
-  expect(preload).toHaveBeenCalledWith(A, 'llama3:latest');
-  finish();
-  await waitFor(() => expect(screen.queryByText('載入中…')).toBeNull());
+  await store.addHost('192.168.1.20');
+  for (const title of ['翻譯成英文', '翻譯成中文', '摘要重點', '潤飾文字', '描述照片', '照片裡的文字']) expect(await screen.findByLabelText(`範本 ${title}`)).toBeTruthy();
 });
 
 test('手動輸入位址後，等待連線時顯示「正在連線」', async () => {
@@ -138,4 +125,15 @@ test('手動輸入位址後，等待連線時顯示「正在連線」', async ()
   finish();
   // 連上了：提示消失（已經選好模型，面板自動關上）
   await waitFor(() => expect(screen.queryByText('正在連線 192.168.1.30…')).toBeNull());
+});
+
+test('點了連不到的電腦：直接說連不到，並打開「連不上嗎？」', async () => {
+  const { net } = await setup();
+  await fireEvent.press(screen.getByLabelText(/模型：/));
+  await fireEvent.press(await screen.findByText('新增電腦'));
+  net.hosts.get(A)!.online = false;
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  await fireEvent.press(await screen.findByLabelText('電腦 192.168.1.20'));
+  await waitFor(() => expect(alert.mock.calls[0]?.[0]).toBe('連不到「192.168.1.20」'));
+  expect(screen.getByText('Mac')).toBeTruthy();
 });

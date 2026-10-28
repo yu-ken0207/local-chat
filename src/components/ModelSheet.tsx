@@ -8,7 +8,6 @@ import { friendlyModelName } from '../lib/modelName';
 import type { ModelInfo } from '../lib/ollama';
 import type { ChatState, ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
-import { chooseOption } from './Composer';
 import { CommandBox, ConnectSheet } from './ConnectSheet';
 import { t } from '../i18n';
 
@@ -17,21 +16,6 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   const [viewing, setViewing] = useState<string | null>(state.session?.hostUrl ?? state.hosts[0]?.url ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
-  /** 正在預先載入或卸載的模型（載入大模型要幾十秒） */
-  const [working, setWorking] = useState<{ name: string; text: string } | null>(null);
-
-  async function run(name: string, text: string, task: () => Promise<void>, failTitle: string) {
-    setWorking({ name, text });
-    try {
-      await task();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e: any) {
-      Alert.alert(failTitle, String(e?.message ?? e));
-    } finally {
-      setWorking(null);
-    }
-  }
-
   useEffect(() => {
     if (!viewing && state.hosts[0]) setViewing(state.hosts[0].url);
     if (viewing && !state.hosts.some((h) => h.url === viewing)) setViewing(state.hosts[0]?.url ?? null);
@@ -47,34 +31,20 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
     setRefreshing(false);
   }
 
-  function modelMenu(url: string, m: ModelInfo, loadedBytes: number | null) {
-    const name = m.name;
-    const loaded = loadedBytes !== null;
-    chooseOption(friendlyModelName(name), [t('詳細資訊'), loaded ? t('卸載（釋放電腦的顯示卡記憶體）') : t('預先載入（之後第一次回答比較快）')], async (i) => {
-      if (i === 0) {
-        Alert.alert(
-          t('詳細資訊'),
-          [
-            t('原始名稱：{p0}', { p0: name }),
-            m.parameterSize ? t('大小：{p0} 參數', { p0: m.parameterSize }) : '',
-            m.quantization ? t('壓縮格式：{p0}', { p0: m.quantization }) : '',
-            m.contextLength ? t('最多能記住：{p0} tokens', { p0: m.contextLength.toLocaleString() }) : '',
-            loaded ? t('目前佔用顯示卡：{p0}', { p0: fmtBytes(loadedBytes) }) : t('目前沒有載入顯示卡'),
-          ]
-            .filter(Boolean)
-            .join('\n')
-        );
-        return;
-      }
-      if (!loaded) {
-        void run(name, t('載入中…'), () => store.preload(url, name), t('預先載入失敗'));
-        return;
-      }
-      Alert.alert(t('卸載 {p0}？', { p0: name }), t('模型會離開電腦的顯示卡。如果其他人或程式正在用這個模型，下次使用要重新載入。'), [
-        { text: t('取消'), style: 'cancel' },
-        { text: t('卸載'), style: 'destructive', onPress: () => void run(name, t('卸載中…'), () => store.unload(url, name), t('卸載失敗')) },
-      ]);
-    });
+  /** 模型的詳細資訊（進階資訊，平常不顯示） */
+  function showDetails(m: ModelInfo, loadedBytes: number | null) {
+    Alert.alert(
+      t('詳細資訊'),
+      [
+        t('原始名稱：{p0}', { p0: m.name }),
+        m.parameterSize ? t('大小：{p0} 參數', { p0: m.parameterSize }) : '',
+        m.quantization ? t('壓縮格式：{p0}', { p0: m.quantization }) : '',
+        m.contextLength ? t('最多能記住：{p0} tokens', { p0: m.contextLength.toLocaleString() }) : '',
+        loadedBytes !== null ? t('目前佔用顯示卡：{p0}', { p0: fmtBytes(loadedBytes) }) : t('目前沒有載入顯示卡'),
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
   }
 
   const models = viewing ? state.models[viewing] : undefined;
@@ -94,7 +64,6 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
         <Text style={styles.section}>{t('電腦')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {state.hosts.map((h) => {
-            const st = state.hostStatus[h.url]?.state;
             const on = viewing === h.url;
             return (
               <Pressable
@@ -104,10 +73,9 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                   setViewing(h.url);
                 }}
                 accessibilityRole="button"
-                accessibilityLabel={t('顯示 {p0} 的模型，{p1}', { p0: h.label, p1: st === 'online' ? t('可以使用') : st === 'offline' ? t('目前連不到') : t('檢查中') })}
+                accessibilityLabel={t('顯示 {p0} 的模型', { p0: h.label })}
                 accessibilityState={{ selected: on }}
                 style={[styles.chip, on && styles.chipOn]}>
-                <View style={[styles.dot, { backgroundColor: st === 'online' ? C.green : C.tertiary }]} />
                 <Text style={[styles.chipText, on && styles.chipTextOn]}>{h.label}</Text>
               </Pressable>
             );
@@ -163,18 +131,12 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                           <View style={styles.badges}>
                             {m.vision ? <Badge icon="eye" text={t('看得懂圖片')} /> : null}
                             {m.think ? <Badge icon="lightbulb" text={t('可以深入思考')} /> : null}
-                            {isLoaded && working?.name !== m.name ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
-                            {working?.name === m.name ? (
-                              <View style={styles.badge} accessibilityLiveRegion="polite">
-                                <ActivityIndicator size="small" />
-                                <Text style={styles.rowSub}>{working.text}</Text>
-                              </View>
-                            ) : null}
+                            {isLoaded ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
                           </View>
                         </View>
                         {current ? <SymbolView name="checkmark" size={16} weight="semibold" tintColor={C.accent} /> : null}
-                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} disabled={working?.name === m.name} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: friendlyModelName(m.name) })}>
-                          <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
+                        <Pressable onPress={() => showDetails(m, isLoaded ? isLoaded.sizeVram : null)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的詳細資訊', { p0: friendlyModelName(m.name) })}>
+                          <SymbolView name="info.circle" size={20} tintColor={C.secondary} />
                         </Pressable>
                       </View>
                       {i < (models?.list.length ?? 0) - 1 ? <View style={styles.separator} /> : null}
@@ -234,7 +196,6 @@ const styles = StyleSheet.create({
   rowSub: { ...TEXT.meta, color: C.secondary },
   badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 2 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 16 },
   empty: { padding: 16, gap: 10 },
   emptyText: { ...TEXT.small, color: C.label },
