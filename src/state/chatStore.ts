@@ -500,6 +500,16 @@ export class ChatStore {
     this.set({ session: { ...this.state.session!, think } });
   }
 
+  async preload(url: string, model: string): Promise<void> {
+    await this.deps.client(url).preload(model);
+    await this.refreshLoaded(url);
+  }
+
+  async unload(url: string, model: string): Promise<void> {
+    await this.deps.client(url).unload(model);
+    await this.refreshLoaded(url);
+  }
+
   // ---- 對話 ----
 
   /** 開新對話；目前這段還沒講話就不另開。沿用目前的模型與思考設定 */

@@ -79,7 +79,8 @@ test('模型的「詳細資訊」：原始名稱、大小、能記住多少', as
   await setup();
   await fireEvent.press(screen.getByLabelText(/模型：/));
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  await fireEvent.press(await screen.findByLabelText('Llama 3 的詳細資訊'));
+  pickAction(0);
+  await fireEvent.press(await screen.findByLabelText('Llama 3 的選項'));
   expect(alert.mock.calls[0][0]).toBe('詳細資訊');
   expect(alert.mock.calls[0][1]).toContain('原始名稱：llama3:latest');
   expect(alert.mock.calls[0][1]).toContain('最多能記住：131,072 tokens');
@@ -105,6 +106,19 @@ test('連接面板的電腦往左滑可以移除，也可以復原', async () =>
   await waitFor(() => expect(store.getState().hosts).toEqual([]));
   await fireEvent.press(await screen.findByText('復原'));
   await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
+});
+
+test('預先載入模型要等一陣子：那一列顯示「載入中…」，好了就消失', async () => {
+  const { store } = await setup();
+  let finish!: () => void;
+  const preload = jest.spyOn(store, 'preload').mockImplementation(() => new Promise<void>((r) => (finish = r)));
+  await fireEvent.press(screen.getByLabelText(/模型：/));
+  pickAction(1);
+  await fireEvent.press(await screen.findByLabelText('Llama 3 的選項'));
+  expect(await screen.findByText('載入中…')).toBeTruthy();
+  expect(preload).toHaveBeenCalledWith(A, 'llama3:latest');
+  finish();
+  await waitFor(() => expect(screen.queryByText('載入中…')).toBeNull());
 });
 
 test('手動輸入位址後，等待連線時顯示「正在連線」', async () => {

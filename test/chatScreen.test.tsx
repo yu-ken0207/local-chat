@@ -312,14 +312,21 @@ describe('對話', () => {
 });
 
 describe('主機與模型面板', () => {
-  test('模型標示看圖、思考、已載入', async () => {
-    const { store } = await setup();
+  test('模型標示看圖、思考、已載入；卸載前先確認', async () => {
+    const { net, store } = await setup();
     await send(store, '先用一次'); // 用過之後 gemma4:31b 會在已載入清單
     await fireEvent.press(screen.getByLabelText(/模型：192.168.1.20 · Gemma 4 · 31B/));
     const row = await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考，回答較快');
     expect(within(row).getByText('看得懂圖片')).toBeTruthy();
     expect(within(row).getByText('可以深入思考')).toBeTruthy();
     expect(within(row).getByText('回答較快')).toBeTruthy();
+
+    pickActionSheet(1); // 0 是詳細資訊、1 是卸載
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
+    await fireEvent.press(screen.getByLabelText('Gemma 4 · 31B 的選項'));
+    expect(alert.mock.calls[0][0]).toBe('卸載 gemma4:31b？');
+    await waitFor(() => expect(net.hosts.get(A)!.loaded).toEqual([]));
+    expect(await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考')).toBeTruthy();
   });
 
   test('選擇模型面板：「新增電腦」打開連接面板；長按電腦可以移除', async () => {

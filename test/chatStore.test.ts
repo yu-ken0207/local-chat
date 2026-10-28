@@ -153,6 +153,14 @@ describe('模型', () => {
     expect(saved).toMatchObject({ hostUrl: A, model: 'llama3:latest', think: null });
   });
 
+  test('預熱、卸載會更新已載入清單', async () => {
+    const { store } = await ready();
+    await store.preload(A, 'gpt-oss:20b');
+    expect(store.getState().loaded[A].map((m) => m.name)).toEqual(['gpt-oss:20b']);
+    await store.unload(A, 'gpt-oss:20b');
+    expect(store.getState().loaded[A]).toEqual([]);
+  });
+
   test('主機連不到時模型清單顯示錯誤', async () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.online = false;
