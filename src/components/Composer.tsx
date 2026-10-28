@@ -29,6 +29,8 @@ type Props = {
   injected?: { text: string; photos?: NewPhoto[]; nonce: number } | null;
   /** 輸入框上方的額外內容（例如「編輯中」提示） */
   accessory?: ReactNode;
+  /** 還不能送出時輸入框的提示（例如「先連接你的電腦」） */
+  notReadyHint?: string;
   templates?: Template[];
   /** 輸入框空白時顯示範本按鈕（新對話時） */
   showTemplateChips?: boolean;
@@ -227,7 +229,7 @@ export function Composer(p: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={p.modelLabel ? t('輸入訊息，或打 / 叫出範本') : t('先在下方選一個模型')}
+            placeholder={p.modelLabel ? t('輸入訊息，或打 / 叫出範本') : (p.notReadyHint ?? t('先在下方選一個模型'))}
             placeholderTextColor={C.placeholder}
             multiline
             accessibilityLabel={t('訊息輸入框')}

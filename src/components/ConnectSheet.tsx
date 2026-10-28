@@ -22,6 +22,8 @@ type Props = {
 /** 連接你的電腦：自動尋找、手動輸入位址、你的電腦清單、連不上時的說明 */
 export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Props) {
   const [helpOpen, setHelpOpen] = useState(!!showHelp);
+  /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
+  const [adding, setAdding] = useState<string | null>(null);
   const scan = state.scan;
   const failed = !!scan && !scan.running && (!!scan.error || (scan.total > 0 && scan.found === 0));
   const current = state.session?.hostUrl;
@@ -42,6 +44,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
       t('手動輸入位址'),
       t('輸入電腦的 IP 位址，例如 192.168.1.20\n（在電腦的網路設定裡可以看到）'),
       async (text) => {
+        setAdding(text.trim());
         try {
           await store.addHost(text);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -56,6 +59,8 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
           } else {
             Alert.alert(t('位址格式不對'), e instanceof Error ? e.message : String(e));
           }
+        } finally {
+          setAdding(null);
         }
       },
       'plain-text',
@@ -98,10 +103,17 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         )}
         <Text style={styles.footnote}>{t('第一次尋找時，iPhone 會問是否允許「尋找區域網路上的裝置」，請選「允許」。')}</Text>
 
-        <Pressable onPress={manual} accessibilityRole="button" style={({ pressed }) => [styles.secondary, pressed && styles.pressedButton]}>
-          <SymbolView name="keyboard" size={17} tintColor={C.accent} />
-          <Text style={styles.secondaryText}>{t('手動輸入位址')}</Text>
-        </Pressable>
+        {adding ? (
+          <View style={styles.secondary} accessibilityLiveRegion="polite">
+            <ActivityIndicator />
+            <Text style={styles.secondaryText}>{t('正在連線 {p0}…', { p0: adding })}</Text>
+          </View>
+        ) : (
+          <Pressable onPress={manual} accessibilityRole="button" style={({ pressed }) => [styles.secondary, pressed && styles.pressedButton]}>
+            <SymbolView name="keyboard" size={17} tintColor={C.accent} />
+            <Text style={styles.secondaryText}>{t('手動輸入位址')}</Text>
+          </Pressable>
+        )}
 
         {scan && !scan.running && (scan.error || scan.total > 0) ? (
           <Text style={[styles.result, failed && { color: C.orange }]} accessibilityLiveRegion="polite">

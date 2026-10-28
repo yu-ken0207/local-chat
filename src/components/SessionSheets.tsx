@@ -2,6 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtWhen } from '../lib/format';
 import { TRASH_DAYS } from '../store/repo';
@@ -13,6 +14,7 @@ import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { SwipeRow } from './SwipeRow';
 import { SettingsView } from './SettingsSheet';
+import { confirmDiscard } from './TemplatesSheet';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
 
@@ -35,27 +37,29 @@ export async function deleteSession(store: ChatStore, id: string, after?: () => 
   after?.();
 }
 
-/** 對話清單：搜尋、切換、長按改名／匯出／刪除 */
+/** 對話清單（左邊的側邊欄）：搜尋、切換、長按或 ⋯ 改名／匯出／刪除；最下面是設定 */
 export function SessionList({
   store,
   currentId,
   onClose,
-  copyText,
-  pickBackup,
+  onOpenSettings,
+  showUndo = true,
 }: {
   store: ChatStore;
   currentId: string | null;
   onClose: () => void;
-  copyText: (text: string) => void;
-  pickBackup?: () => Promise<Db | null>;
+  onOpenSettings: () => void;
+  /** 設定面板蓋在上面時，復原提示由設定面板顯示 */
+  showUndo?: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<ListItem[] | null>(null);
   const [version, setVersion] = useState(0);
-  const [view, setView] = useState<'list' | 'settings' | 'trash'>('list');
   const reload = () => setVersion((v) => v + 1);
-  const { undo } = useChatState(store);
+  const { undo, session } = useChatState(store);
 
+  // 設定面板關上時也重新載入（可能在「最近刪除」救回了對話）
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(async () => {
@@ -66,7 +70,7 @@ export function SessionList({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, version, store, undo?.id, view]);
+  }, [query, version, store, undo?.id, session?.title, showUndo]);
 
   function menu(s: ListItem) {
     const name = s.title || s.preview || t('新對話');
@@ -77,19 +81,12 @@ export function SessionList({
     });
   }
 
-  if (view === 'trash') return <TrashView store={store} onBack={() => setView('settings')} />;
-  if (view === 'settings')
-    return <SettingsView store={store} copyText={copyText} pickBackup={pickBackup} onBack={() => setView('list')} onOpenTrash={() => setView('trash')} />;
-
   const now = Date.now();
   return (
-    <View style={styles.sheet}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{t('對話')}</Text>
-        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={styles.done}>{t('完成')}</Text>
-        </Pressable>
-      </View>
+    <View style={[styles.drawer, { paddingTop: insets.top + 6 }]}>
+      <Text style={styles.drawerTitle} accessibilityRole="header">
+        {t('對話')}
+      </Text>
       <View style={styles.search}>
         <SymbolView name="magnifyingglass" size={15} tintColor={C.secondary} />
         <TextInput
@@ -103,7 +100,7 @@ export function SessionList({
           accessibilityLabel={t('搜尋對話')}
         />
       </View>
-      <ScrollView contentContainerStyle={styles.content} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardDismissMode="on-drag" keyboardShouldPersistTaps="handled">
         <Pressable
           onPress={async () => {
             await store.newSession();
@@ -122,8 +119,9 @@ export function SessionList({
             items.map((s, i) => {
               const name = s.title || s.preview || t('新對話');
               return (
-                <SwipeRow key={s.id} testID={`swipe-session-${s.id}`} onDelete={() => void deleteSession(store, s.id, reload)}>
                 <Pressable
+                  key={s.id}
+                  testID={`session-${s.id}`}
                   onPress={async () => {
                     Haptics.selectionAsync();
                     await store.openSession(s.id);
@@ -133,6 +131,10 @@ export function SessionList({
                   accessibilityRole="button"
                   accessibilityLabel={t('對話 {p0}', { p0: name })}
                   accessibilityState={{ selected: s.id === currentId }}
+                  accessibilityActions={[{ name: 'delete', label: t('刪除') }]}
+                  onAccessibilityAction={(e) => {
+                    if (e.nativeEvent.actionName === 'delete') void deleteSession(store, s.id, reload);
+                  }}
                   style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                   <View style={styles.row}>
                     <View style={styles.flex}>
@@ -154,23 +156,41 @@ export function SessionList({
                   </View>
                   {i < items.length - 1 ? <View style={styles.separator} /> : null}
                 </Pressable>
-                </SwipeRow>
               );
             })
           )}
         </View>
-        <Text style={styles.footnote}>{t('對話只存在這支手機。往左滑可以刪除；按 ⋯ 可以改名、匯出。')}</Text>
-        <Pressable onPress={() => setView('settings')} accessibilityRole="button" style={({ pressed }) => [styles.card, styles.settingsRow, pressed && { backgroundColor: C.pressed }]}>
-          <View style={styles.row}>
-            <SymbolView name="gearshape" size={18} tintColor={C.accent} />
-            <Text style={[styles.rowTitle, styles.flex]}>{t('設定')}</Text>
-            <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
-          </View>
-        </Pressable>
+        <Text style={styles.footnote}>{t('對話只存在這支手機。長按或按 ⋯ 可以改名、匯出、刪除。')}</Text>
       </ScrollView>
-      <UndoToast store={store} />
+      {/* 設定固定在最下面，不用捲到底才找得到 */}
+      <Pressable
+        onPress={onOpenSettings}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.settingsBar, { paddingBottom: Math.max(insets.bottom, 10) }, pressed && { backgroundColor: C.pressed }]}>
+        <SymbolView name="gearshape" size={18} tintColor={C.accent} />
+        <Text style={[styles.rowTitle, styles.flex]}>{t('設定')}</Text>
+        <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
+      </Pressable>
+      {showUndo ? <UndoToast store={store} /> : null}
     </View>
   );
+}
+
+/** 設定面板（從對話清單最下面打開）：設定頁，裡面可以進「最近刪除」 */
+export function SettingsPages({
+  store,
+  onClose,
+  copyText,
+  pickBackup,
+}: {
+  store: ChatStore;
+  onClose: () => void;
+  copyText: (text: string) => void;
+  pickBackup?: () => Promise<Db | null>;
+}) {
+  const [view, setView] = useState<'settings' | 'trash'>('settings');
+  if (view === 'trash') return <TrashView store={store} onBack={() => setView('settings')} />;
+  return <SettingsView store={store} copyText={copyText} pickBackup={pickBackup} onClose={onClose} onOpenTrash={() => setView('trash')} />;
 }
 
 type TrashItem = Session & { preview: string; deletedAt: number };
@@ -260,6 +280,8 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
   const [title, setTitle] = useState(session.title);
   const [role, setRole] = useState(session.systemPrompt);
 
+  const dirty = title !== session.title || role !== session.systemPrompt;
+
   async function save() {
     if (title.trim() !== session.title) await store.renameSession(session.id, title);
     if (role !== session.systemPrompt) await store.setSystemPrompt(role);
@@ -269,7 +291,7 @@ export function SessionSettings({ store, session, onClose }: { store: ChatStore;
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+        <Pressable onPress={() => confirmDiscard(dirty, onClose)} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
           <Text style={styles.cancel}>{t('取消')}</Text>
         </Pressable>
         <Text style={styles.title}>{t('對話設定')}</Text>
@@ -366,6 +388,16 @@ const styles = StyleSheet.create({
   count: { ...TEXT.small, color: C.secondary },
   back: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   restore: { ...TEXT.small, color: C.accent, fontWeight: '700' },
-  settingsRow: { marginTop: 14 },
+  drawer: { flex: 1 },
+  drawerTitle: { fontSize: 28, fontWeight: '700', color: C.label, marginHorizontal: 16, marginBottom: 10 },
+  settingsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.separator,
+  },
   danger: { marginTop: 4 },
 });

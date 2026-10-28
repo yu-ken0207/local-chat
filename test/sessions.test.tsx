@@ -129,7 +129,8 @@ test('最近刪除：可以救回、永久刪除（先確認）、全部清空�
   await waitFor(() => expect(screen.getByText(/最近刪除是空的/)).toBeTruthy());
 
   await fireEvent.press(screen.getByLabelText('返回設定'));
-  await fireEvent.press(await screen.findByLabelText('返回對話清單'));
+  // 關上設定回到對話清單，救回的對話在清單裡
+  await fireEvent.press(await screen.findByText('完成'));
   expect(await screen.findByLabelText('對話 天氣')).toBeTruthy();
 });
 
@@ -155,12 +156,27 @@ test('對話設定：設定自訂指示後標題列下方顯示，送出時帶�
   await waitFor(() => expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: '你是美食家' }));
 });
 
-test('對話設定：取消不會存', async () => {
+test('對話設定：有改過按取消會先問；選「繼續編輯」留著，選「放棄」才不存', async () => {
   const { store } = await setup();
   await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
   await fireEvent.changeText(await screen.findByLabelText('自訂指示'), '不要存');
+  const alert = jest.spyOn(Alert, 'alert').mockImplementationOnce(() => {});
   await fireEvent.press(screen.getByText('取消'));
+  expect(alert.mock.calls[0][0]).toBe('放棄修改？');
+  expect(screen.getByLabelText('自訂指示').props.value).toBe('不要存');
+  confirm();
+  await fireEvent.press(screen.getByText('取消'));
+  await waitFor(() => expect(screen.queryByLabelText('自訂指示')).toBeNull());
   expect(store.getState().session?.systemPrompt).toBe('');
+});
+
+test('對話設定：沒改過按取消直接關，不用問', async () => {
+  await setup();
+  await fireEvent.press(screen.getByLabelText('午餐，點一下打開對話設定'));
+  const alert = jest.spyOn(Alert, 'alert');
+  await fireEvent.press(await screen.findByText('取消'));
+  expect(alert).not.toHaveBeenCalled();
+  await waitFor(() => expect(screen.queryByLabelText('自訂指示')).toBeNull());
 });
 
 test('對話設定：刪除這段對話後切到另一段', async () => {
@@ -213,8 +229,8 @@ describe('使用者自己移除資料', () => {
     await waitFor(() => expect(store.getState().hosts).toHaveLength(1));
     await store.resetAll();
     await store.dismissUndo();
-    await fireEvent.press(screen.getByLabelText('返回對話清單'));
-    await fireEvent.press(await screen.findByText('完成'));
-    expect(screen.getByText('連接你的電腦')).toBeTruthy();
+    await fireEvent.press(screen.getByText('完成'));
+    await fireEvent.press(await screen.findByLabelText('關閉對話清單'));
+    expect(await screen.findByText('連接你的電腦')).toBeTruthy();
   });
 });

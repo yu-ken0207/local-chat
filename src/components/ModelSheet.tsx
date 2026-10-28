@@ -17,6 +17,20 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   const [viewing, setViewing] = useState<string | null>(state.session?.hostUrl ?? state.hosts[0]?.url ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  /** 正在預先載入或卸載的模型（載入大模型要幾十秒） */
+  const [working, setWorking] = useState<{ name: string; text: string } | null>(null);
+
+  async function run(name: string, text: string, task: () => Promise<void>, failTitle: string) {
+    setWorking({ name, text });
+    try {
+      await task();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e: any) {
+      Alert.alert(failTitle, String(e?.message ?? e));
+    } finally {
+      setWorking(null);
+    }
+  }
 
   useEffect(() => {
     if (!viewing && state.hosts[0]) setViewing(state.hosts[0].url);
@@ -52,18 +66,14 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
         );
         return;
       }
-      try {
-        if (!loaded) {
-          await store.preload(url, name);
-          return;
-        }
-        Alert.alert(t('卸載 {p0}？', { p0: name }), t('模型會離開電腦的顯示卡。如果其他人或程式正在用這個模型，下次使用要重新載入。'), [
-          { text: t('取消'), style: 'cancel' },
-          { text: t('卸載'), style: 'destructive', onPress: () => store.unload(url, name).catch((e) => Alert.alert(t('卸載失敗'), String(e?.message ?? e))) },
-        ]);
-      } catch (e: any) {
-        Alert.alert(t('預先載入失敗'), String(e?.message ?? e));
+      if (!loaded) {
+        void run(name, t('載入中…'), () => store.preload(url, name), t('預先載入失敗'));
+        return;
       }
+      Alert.alert(t('卸載 {p0}？', { p0: name }), t('模型會離開電腦的顯示卡。如果其他人或程式正在用這個模型，下次使用要重新載入。'), [
+        { text: t('取消'), style: 'cancel' },
+        { text: t('卸載'), style: 'destructive', onPress: () => void run(name, t('卸載中…'), () => store.unload(url, name), t('卸載失敗')) },
+      ]);
     });
   }
 
@@ -153,11 +163,17 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                           <View style={styles.badges}>
                             {m.vision ? <Badge icon="eye" text={t('看得懂圖片')} /> : null}
                             {m.think ? <Badge icon="lightbulb" text={t('可以深入思考')} /> : null}
-                            {isLoaded ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
+                            {isLoaded && working?.name !== m.name ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
+                            {working?.name === m.name ? (
+                              <View style={styles.badge} accessibilityLiveRegion="polite">
+                                <ActivityIndicator size="small" />
+                                <Text style={styles.rowSub}>{working.text}</Text>
+                              </View>
+                            ) : null}
                           </View>
                         </View>
                         {current ? <SymbolView name="checkmark" size={16} weight="semibold" tintColor={C.accent} /> : null}
-                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: friendlyModelName(m.name) })}>
+                        <Pressable onPress={() => modelMenu(viewing, m, isLoaded ? isLoaded.sizeVram : null)} disabled={working?.name === m.name} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: friendlyModelName(m.name) })}>
                           <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
                         </Pressable>
                       </View>

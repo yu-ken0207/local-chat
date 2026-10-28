@@ -31,7 +31,7 @@ afterEach(() => {
 
 test('英文手機：第一次打開就是英文', async () => {
   await setup();
-  expect(screen.getByText(/Home AI/)).toBeTruthy();
+  expect(screen.getByText(/Local AI/)).toBeTruthy();
   expect(screen.getByText('Connect your computer')).toBeTruthy();
   expect(screen.getByText('Chats')).toBeTruthy();
   expect(screen.getAllByText('New chat')).toHaveLength(2); // 標題與右上角按鈕
@@ -73,8 +73,7 @@ test('在設定裡把語言改成繁體中文，畫面馬上變中文', async ()
   await fireEvent.press(await screen.findByText('Settings'));
   jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_o, cb) => cb(1));
   await fireEvent.press(screen.getByLabelText('Language, Use system setting'));
-  expect(await screen.findByText('設定')).toBeTruthy();
-  expect(screen.getByLabelText('語言，繁體中文')).toBeTruthy();
+  expect(await screen.findByLabelText('語言，繁體中文')).toBeTruthy();
 });
 
 test('中文手機也可以在 App 裡改成英文', async () => {

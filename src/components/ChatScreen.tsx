@@ -19,7 +19,8 @@ import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
-import { SessionList, SessionSettings } from './SessionSheets';
+import { SessionList, SessionSettings, SettingsPages } from './SessionSheets';
+import { SideDrawer } from './SideDrawer';
 import { TemplatesSheet } from './TemplatesSheet';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
@@ -42,6 +43,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appSettingsOpen, setAppSettingsOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [connect, setConnect] = useState<{ help: boolean } | null>(null);
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
@@ -157,163 +159,181 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || settingsOpen || templatesOpen || !!connect;
+  const anySheetOpen = sheetOpen || listOpen || settingsOpen || appSettingsOpen || templatesOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
   const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
 
   return (
-    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-        <View style={styles.headerSide}>
-          <HeaderButton name="list.bullet" text={t('對話')} label={t('對話清單')} onPress={() => setListOpen(true)} />
-        </View>
-        <Pressable
-          style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
-          onPress={() => session && setSettingsOpen(true)}
-          accessibilityRole="button"
-          accessibilityLabel={t('{p0}，點一下打開對話設定', { p0: title })}>
-          <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
-            {title}
-          </Text>
-          <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
-        </Pressable>
-        <View style={[styles.headerSide, styles.headerRight]}>
-          <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
-        </View>
-      </View>
-      {session?.systemPrompt.trim() ? (
-        <Pressable onPress={() => setSettingsOpen(true)} accessibilityRole="button" style={styles.roleBar}>
-          <Text style={styles.roleMark} numberOfLines={1}>
-            {t('◆ 自訂指示：')}{session.systemPrompt.trim().replace(/\s+/g, ' ')}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      <ScrollView
-        ref={scrollRef}
-        style={styles.flex}
-        contentContainerStyle={styles.transcript}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={100}
-        onScroll={(e) => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
-        }}
-        onContentSizeChange={() => {
-          if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
-        }}>
-        {state.messages.length === 0 ? (
-          <EmptyState
-            phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
-            scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
-            modelLabel={modelLabel}
-            onConnect={() => setConnect({ help: false })}
-            onPickModel={() => setSheetOpen(true)}
+    <>
+      <SideDrawer
+        open={listOpen}
+        onOpenChange={setListOpen}
+        closeLabel={t('關閉對話清單')}
+        renderDrawer={() => (
+          <SessionList
+            store={store}
+            currentId={session?.id ?? null}
+            onClose={() => setListOpen(false)}
+            onOpenSettings={() => setAppSettingsOpen(true)}
+            showUndo={!appSettingsOpen}
           />
-        ) : (
-          state.messages.map((m, i) => (
-            <MessageView
-              key={m.id}
-              message={m}
-              streaming={state.streaming}
-              isLast={i === state.messages.length - 1}
-              onOpenImage={(images, index) => setViewer({ images, index })}
-              onCopyCode={copy}
-              onLongPress={messageMenu}
-              onRetry={() => void store.retry()}
-              onHelp={() => setConnect({ help: true })}
-              onCopy={() => copy(m.content)}
-              onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
-              onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
-            />
-          ))
-        )}
-      </ScrollView>
+        )}>
+        <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+            <View style={styles.headerSide}>
+              <HeaderButton name="list.bullet" text={t('對話')} label={t('對話清單')} onPress={() => setListOpen(true)} />
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
+              onPress={() => session && setSettingsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={t('{p0}，點一下打開對話設定', { p0: title })}>
+              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header">
+                {title}
+              </Text>
+              <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
+            </Pressable>
+            <View style={[styles.headerSide, styles.headerRight]}>
+              <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
+            </View>
+          </View>
+          {session?.systemPrompt.trim() ? (
+            <Pressable onPress={() => setSettingsOpen(true)} accessibilityRole="button" style={styles.roleBar}>
+              <Text style={styles.roleMark} numberOfLines={1}>
+                {t('◆ 自訂指示：')}{session.systemPrompt.trim().replace(/\s+/g, ' ')}
+              </Text>
+            </Pressable>
+          ) : null}
 
-      {speakingId ? (
-        <Banner
-          text={t('朗讀中…')}
-          tone="info"
-          action={{
-            text: t('停止'),
-            onPress: () => {
-              Speech.stop();
-              setSpeakingId(null);
-            },
-          }}
-        />
-      ) : null}
-      {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
-      {state.context && state.context.level !== 'ok' ? (
-        <Banner
-          tone={state.context.level === 'full' ? 'error' : 'warn'}
-          text={
-            state.context.level === 'full'
-              ? t('這段對話太長了，AI 已經記不住最前面的內容。')
-              : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
-          }
-          action={{ text: t('開新對話'), onPress: () => store.newSession() }}
-        />
-      ) : null}
+          <ScrollView
+            ref={scrollRef}
+            style={styles.flex}
+            contentContainerStyle={styles.transcript}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            scrollEventThrottle={100}
+            onScroll={(e) => {
+              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+              nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+            }}
+            onContentSizeChange={() => {
+              if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+            }}>
+            {state.messages.length === 0 ? (
+              <EmptyState
+                phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
+                scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
+                modelLabel={modelLabel}
+                onConnect={() => setConnect({ help: false })}
+                onPickModel={() => setSheetOpen(true)}
+              />
+            ) : (
+              state.messages.map((m, i) => (
+                <MessageView
+                  key={m.id}
+                  message={m}
+                  streaming={state.streaming}
+                  isLast={i === state.messages.length - 1}
+                  onOpenImage={(images, index) => setViewer({ images, index })}
+                  onCopyCode={copy}
+                  onLongPress={messageMenu}
+                  onRetry={() => void store.retry()}
+                  onHelp={() => setConnect({ help: true })}
+                  onCopy={() => copy(m.content)}
+                  onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
+                  onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+                />
+              ))
+            )}
+          </ScrollView>
 
-      <View style={styles.toastAnchor} pointerEvents="box-none">
-        {/* 面板開著時，復原提示由面板自己顯示 */}
-        {state.undo ? anySheetOpen ? null : <UndoToast store={store} /> : <Toast toast={toast} onDone={() => setToast(null)} />}
-      </View>
-      <Composer
-        modelLabel={modelLabel}
-        canAttach={!!model?.vision}
-        think={model?.think ?? null}
-        thinkValue={session?.think ?? null}
-        busy={!!state.streaming}
-        bottomInset={keyboardUp ? 8 : Math.max(insets.bottom, 8)}
-        onSend={async (text, photos) => {
-          nearBottom.current = true;
-          if (editing) {
-            const id = editing.id;
-            setEditing(null);
-            await store.editAndResend(id, text, photos);
-          } else {
-            await store.send(text, photos);
-          }
-        }}
-        onStop={() => store.stop()}
-        onOpenModels={() => setSheetOpen(true)}
-        onThink={(v) => store.setThink(v)}
-        pickPhotos={p.pickPhotos}
-        injected={injected}
-        accessory={
-          editing ? (
+          {speakingId ? (
             <Banner
+              text={t('朗讀中…')}
               tone="info"
-              text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
-              action={{ text: t('取消編輯'), onPress: cancelEdit }}
+              action={{
+                text: t('停止'),
+                onPress: () => {
+                  Speech.stop();
+                  setSpeakingId(null);
+                },
+              }}
             />
-          ) : null
-        }
-        templates={state.templates}
-        showTemplateChips={state.messages.length === 0}
-        onManageTemplates={() => setTemplatesOpen(true)}
-      />
+          ) : null}
+          {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
+          {state.context && state.context.level !== 'ok' ? (
+            <Banner
+              tone={state.context.level === 'full' ? 'error' : 'warn'}
+              text={
+                state.context.level === 'full'
+                  ? t('這段對話太長了，AI 已經記不住最前面的內容。')
+                  : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
+              }
+              action={{ text: t('開新對話'), onPress: () => store.newSession() }}
+            />
+          ) : null}
 
-      <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
-        <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
+          <View style={styles.toastAnchor} pointerEvents="box-none">
+            {/* 面板開著時，復原提示由面板自己顯示 */}
+            {state.undo ? anySheetOpen ? null : <UndoToast store={store} /> : <Toast toast={toast} onDone={() => setToast(null)} />}
+          </View>
+          <Composer
+            modelLabel={modelLabel}
+            canAttach={!!model?.vision}
+            think={model?.think ?? null}
+            thinkValue={session?.think ?? null}
+            busy={!!state.streaming}
+            bottomInset={keyboardUp ? 8 : Math.max(insets.bottom, 8)}
+            onSend={async (text, photos) => {
+              nearBottom.current = true;
+              if (editing) {
+                const id = editing.id;
+                setEditing(null);
+                await store.editAndResend(id, text, photos);
+              } else {
+                await store.send(text, photos);
+              }
+            }}
+            onStop={() => store.stop()}
+            onOpenModels={() => setSheetOpen(true)}
+            onThink={(v) => store.setThink(v)}
+            pickPhotos={p.pickPhotos}
+            injected={injected}
+            accessory={
+              editing ? (
+                <Banner
+                  tone="info"
+                  text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
+                  action={{ text: t('取消編輯'), onPress: cancelEdit }}
+                />
+              ) : null
+            }
+            notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
+            templates={state.templates}
+            showTemplateChips={state.messages.length === 0 && !!modelLabel}
+            onManageTemplates={() => setTemplatesOpen(true)}
+          />
+
+          <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
+            <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
+          </Modal>
+          <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
+            {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
+          </Modal>
+          <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
+            <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
+          </Modal>
+          <Modal visible={templatesOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setTemplatesOpen(false)}>
+            <TemplatesSheet store={store} templates={state.templates} onClose={() => setTemplatesOpen(false)} />
+          </Modal>
+          <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
+        </KeyboardAvoidingView>
+      </SideDrawer>
+      {/* 設定從側邊欄打開，放在主畫面外面（側邊欄開著時主畫面對輔助使用是隱藏的） */}
+      <Modal visible={appSettingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setAppSettingsOpen(false)}>
+        <SettingsPages store={store} copyText={copy} pickBackup={p.pickBackup} onClose={() => setAppSettingsOpen(false)} />
       </Modal>
-      <Modal visible={listOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setListOpen(false)}>
-        <SessionList store={store} currentId={session?.id ?? null} copyText={copy} pickBackup={p.pickBackup} onClose={() => setListOpen(false)} />
-      </Modal>
-      <Modal visible={settingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSettingsOpen(false)}>
-        {session ? <SessionSettings store={store} session={session} onClose={() => setSettingsOpen(false)} /> : null}
-      </Modal>
-      <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
-        <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
-      </Modal>
-      <Modal visible={templatesOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setTemplatesOpen(false)}>
-        <TemplatesSheet store={store} templates={state.templates} onClose={() => setTemplatesOpen(false)} />
-      </Modal>
-      <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
-    </KeyboardAvoidingView>
+    </>
   );
 }
 
@@ -336,7 +356,7 @@ function EmptyState({
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>
         <Text style={{ color: C.accent }}>◆ </Text>
-        {t(APP_NAME)}
+        {APP_NAME}
       </Text>
       <Text style={styles.dim}>{t('跟你自己電腦上的 AI 模型聊天。對話只存在這支手機。')}</Text>
       {scanning ? (

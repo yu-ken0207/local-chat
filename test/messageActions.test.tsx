@@ -202,14 +202,19 @@ describe('提示詞範本', () => {
     await waitFor(() => expect(store.getState().templates.some((t) => t.title === '寫日報')).toBe(true));
   });
 
-  test('範本沒填完不能存', async () => {
+  test('範本沒填完時「儲存」是灰的；寫到一半按取消會先問要不要放棄', async () => {
     const { store } = await setup();
-    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     await fireEvent.press(screen.getByLabelText('管理範本'));
     await fireEvent.press(await screen.findByText('新增範本'));
     await fireEvent.changeText(screen.getByLabelText('範本標題'), '只有標題');
+    expect(screen.getByRole('button', { name: '儲存' }).props.accessibilityState.disabled).toBe(true);
     await fireEvent.press(screen.getByText('儲存'));
-    expect(alert.mock.calls[0][0]).toBe('還沒填完');
+    expect(store.getState().templates.some((t) => t.title === '只有標題')).toBe(false);
+
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons: any) => buttons?.[1]?.onPress?.());
+    await fireEvent.press(screen.getByText('取消'));
+    expect(alert.mock.calls[0][0]).toBe('放棄修改？');
+    expect(await screen.findByText('新增範本')).toBeTruthy();
     expect(store.getState().templates.some((t) => t.title === '只有標題')).toBe(false);
   });
 });

@@ -24,7 +24,7 @@ const replyName = (k: Prefs['replyLanguage']) => ({ app: t('跟著 App 語言'),
 
 type Props = {
   store: ChatStore;
-  onBack: () => void;
+  onClose: () => void;
   onOpenTrash: () => void;
   copyText: (text: string) => void;
   /** 選一個備份檔，載入成資料庫（取消回 null） */
@@ -32,7 +32,7 @@ type Props = {
 };
 
 /** 設定：一般、對話、你的電腦與範本、資料、進階、關於。進階的東西放最下面 */
-export function SettingsView({ store, onBack, onOpenTrash, copyText, pickBackup }: Props) {
+export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup }: Props) {
   const state = useChatState(store);
   const { prefs } = state;
   const [info, setInfo] = useState<{ path: string | null; bytes: number; sessions: number; trash: number } | null>(null);
@@ -104,12 +104,13 @@ export function SettingsView({ store, onBack, onOpenTrash, copyText, pickBackup 
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('返回對話清單')} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
-          <SymbolView name="chevron.left" size={16} tintColor={C.accent} />
-          <Text style={styles.link}>{t('對話')}</Text>
+        <View style={styles.headerSide} />
+        <Text style={styles.title} accessibilityRole="header">
+          {t('設定')}
+        </Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.headerSide, styles.headerRight, pressed && styles.pressed]}>
+          <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
-        <Text style={styles.title}>{t('設定')}</Text>
-        <View style={styles.headerSpacer} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Section title={t('一般')}>
@@ -157,7 +158,7 @@ export function SettingsView({ store, onBack, onOpenTrash, copyText, pickBackup 
         <Section title={t('關於')}>
           <View style={styles.infoBox}>
             <Text style={styles.rowTitle}>
-              {t('{app} 版本 {version}', { app: t(APP_NAME), version: appJson.expo.version })}
+              {t('{app} 版本 {version}', { app: APP_NAME, version: appJson.expo.version })}
             </Text>
           </View>
         </Section>
@@ -208,8 +209,12 @@ function Row({
       style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
       <View style={styles.row}>
         <SymbolView name={icon} size={18} tintColor={danger ? C.red : C.accent} />
-        <Text style={[styles.rowTitle, styles.flex, danger && { color: C.red }]}>{label}</Text>
-        {value ? <Text style={styles.value}>{value}</Text> : null}
+        <Text style={[styles.rowTitle, value ? styles.rowLabel : styles.flex, danger && { color: C.red }]}>{label}</Text>
+        {value ? (
+          <Text style={styles.value} numberOfLines={1}>
+            {value}
+          </Text>
+        ) : null}
         {!danger ? <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} /> : null}
       </View>
       {!last ? <View style={styles.separator} /> : null}
@@ -221,9 +226,9 @@ const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: C.groupedBg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 8 },
   title: { fontSize: 17, fontWeight: '600', color: C.label },
-  back: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 72 },
-  headerSpacer: { minWidth: 72 },
-  link: { fontSize: 17, color: C.accent },
+  headerSide: { minWidth: 72 },
+  headerRight: { alignItems: 'flex-end' },
+  done: { fontSize: 17, fontWeight: '600', color: C.accent },
   pressed: { opacity: 0.4 },
   content: { padding: 16, paddingTop: 4, gap: 8, paddingBottom: 48 },
   section: { fontSize: 13, color: C.secondary, marginHorizontal: 4, marginTop: 14 },
@@ -231,7 +236,9 @@ const styles = StyleSheet.create({
   row: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   flex: { flex: 1 },
   rowTitle: { ...TEXT.body, color: C.label },
-  value: { ...TEXT.small, color: C.secondary },
+  /** 有右邊的值時，標題保持完整寬度（最多 6 成），值放不下就截斷 */
+  rowLabel: { flexShrink: 0, maxWidth: '62%' },
+  value: { ...TEXT.small, color: C.secondary, flexShrink: 1, marginLeft: 'auto', textAlign: 'right' },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 46 },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   infoBox: { padding: 16, gap: 6 },

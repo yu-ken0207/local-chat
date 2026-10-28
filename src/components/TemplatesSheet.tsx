@@ -9,6 +9,15 @@ import { UndoToast } from './UndoToast';
 import { C, TEXT } from '../ui/theme';
 import { t } from '../i18n';
 
+/** 有改過才問要不要放棄；沒改過直接離開 */
+export function confirmDiscard(dirty: boolean, leave: () => void) {
+  if (!dirty) return leave();
+  Alert.alert(t('放棄修改？'), t('剛剛輸入的內容不會儲存。'), [
+    { text: t('繼續編輯'), style: 'cancel' },
+    { text: t('放棄'), style: 'destructive', onPress: leave },
+  ]);
+}
+
 /** 管理提示詞範本：新增、修改、刪除 */
 export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore; templates: Template[]; onClose: () => void }) {
   const [editing, setEditing] = useState<Template | 'new' | null>(null);
@@ -21,11 +30,11 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
     setContent(t === 'new' ? '' : t.content);
   }
 
+  const filled = !!title.trim() && !!content.trim();
+  const dirty = editing === 'new' ? !!(title.trim() || content.trim()) : !!editing && (title !== editing.title || content !== editing.content);
+
   async function save() {
-    if (!title.trim() || !content.trim()) {
-      Alert.alert(t('還沒填完'), t('標題和內容都要填。'));
-      return;
-    }
+    if (!filled) return;
     if (editing === 'new') await store.addTemplate(title, content);
     else if (editing) await store.updateTemplate(editing.id, title, content);
     setEditing(null);
@@ -40,12 +49,12 @@ export function TemplatesSheet({ store, templates, onClose }: { store: ChatStore
     return (
       <View style={styles.sheet}>
         <View style={styles.header}>
-          <Pressable onPress={() => setEditing(null)} hitSlop={10} accessibilityRole="button">
+          <Pressable onPress={() => confirmDiscard(dirty, () => setEditing(null))} hitSlop={10} accessibilityRole="button">
             <Text style={styles.cancel}>{t('取消')}</Text>
           </Pressable>
           <Text style={styles.title}>{editing === 'new' ? t('新增範本') : t('修改範本')}</Text>
-          <Pressable onPress={save} hitSlop={10} accessibilityRole="button">
-            <Text style={styles.done}>{t('儲存')}</Text>
+          <Pressable onPress={save} disabled={!filled} hitSlop={10} accessibilityRole="button" accessibilityState={{ disabled: !filled }}>
+            <Text style={[styles.done, !filled && { color: C.tertiary }]}>{t('儲存')}</Text>
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

@@ -86,14 +86,14 @@ test('模型的「詳細資訊」：原始名稱、大小、能記住多少', as
   expect(alert.mock.calls[0][1]).toContain('最多能記住：131,072 tokens');
 });
 
-test('對話清單往左滑可以刪除（也支援 VoiceOver 的刪除動作）', async () => {
+test('對話清單：VoiceOver 的刪除動作可以刪除，也可以復原', async () => {
   const { store } = await setup();
   await store.newSession();
   await store.send('第二段');
   await store.titleTask;
   const first = (await store.listSessions()).at(-1)!;
   await fireEvent.press(screen.getByText('對話'));
-  await swipeDelete(await screen.findByTestId(`swipe-session-${first.id}`));
+  await swipeDelete(await screen.findByTestId(`session-${first.id}`));
   await waitFor(async () => expect(await store.listSessions()).toHaveLength(1));
   expect(await screen.findByText('復原')).toBeTruthy();
 });
@@ -111,4 +111,31 @@ test('連接面板的電腦往左滑可以移除，也可以復原', async () =>
 test('預設範本是通用的（沒有工作專用的內容）', async () => {
   const { store } = await setup([]);
   expect(store.getState().templates.map((t) => t.title)).toEqual(['翻譯成英文', '翻譯成中文', '摘要重點', '潤飾文字', '描述照片', '照片裡的文字']);
+});
+
+test('預先載入模型要等一陣子：那一列顯示「載入中…」，好了就消失', async () => {
+  const { store } = await setup();
+  let finish!: () => void;
+  const preload = jest.spyOn(store, 'preload').mockImplementation(() => new Promise<void>((r) => (finish = r)));
+  await fireEvent.press(screen.getByLabelText(/模型：/));
+  pickAction(1);
+  await fireEvent.press(await screen.findByLabelText('Llama 3 的選項'));
+  expect(await screen.findByText('載入中…')).toBeTruthy();
+  expect(preload).toHaveBeenCalledWith(A, 'llama3:latest');
+  finish();
+  await waitFor(() => expect(screen.queryByText('載入中…')).toBeNull());
+});
+
+test('手動輸入位址後，等待連線時顯示「正在連線」', async () => {
+  const { store } = await setup();
+  let finish!: () => void;
+  jest.spyOn(store, 'addHost').mockImplementation(() => new Promise<any>((r) => (finish = () => r(store.getState().hosts[0]))));
+  jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, cb: any) => cb('192.168.1.30'));
+  await fireEvent.press(screen.getByLabelText(/模型：/));
+  await fireEvent.press(await screen.findByText('新增電腦'));
+  await fireEvent.press(await screen.findByText('手動輸入位址'));
+  expect(await screen.findByText('正在連線 192.168.1.30…')).toBeTruthy();
+  finish();
+  // 連上了：提示消失（已經選好模型，面板自動關上）
+  await waitFor(() => expect(screen.queryByText('正在連線 192.168.1.30…')).toBeNull());
 });
