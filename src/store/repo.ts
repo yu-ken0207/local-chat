@@ -443,6 +443,24 @@ export class Repo {
     await this.db.run('DELETE FROM templates WHERE id = ?', [id]);
   }
 
+  // ---- 資料庫檔案 ----
+
+  /** 資料庫目前的大小（位元組） */
+  async sizeBytes(): Promise<number> {
+    const count = (await this.db.get<{ page_count: number }>('PRAGMA page_count'))?.page_count ?? 0;
+    const size = (await this.db.get<{ page_size: number }>('PRAGMA page_size'))?.page_size ?? 0;
+    return count * size;
+  }
+
+  /** 把暫存在 -wal 檔的寫入合併回主檔，匯出的檔案才完整 */
+  async checkpoint(): Promise<void> {
+    await this.db.get('PRAGMA wal_checkpoint(TRUNCATE)');
+  }
+
+  dbPath(): string | null {
+    return this.db.path ?? null;
+  }
+
   // ---- 設定 ----
 
   async getSetting(key: string): Promise<string | null> {

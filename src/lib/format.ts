@@ -13,10 +13,11 @@ export function fmtTokPerSec(evalCount: number, evalDurationNs: number): string 
   return `${(evalCount / (evalDurationNs / 1e9)).toFixed(1)} tok/s`;
 }
 
-/** 位元組換成 GB／MB */
+/** 位元組換成 GB／MB／KB */
 export function fmtBytes(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  return `${Math.max(0, Math.round(bytes / 1e6))} MB`;
+  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(bytes >= 1e7 ? 0 : 1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
 }
 
 export type ContextLevel = 'ok' | 'near' | 'full';

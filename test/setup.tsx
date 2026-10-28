@@ -15,3 +15,5 @@ jest.mock('expo-haptics', () => ({
 }));
 
 jest.mock('expo-speech', () => ({ speak: jest.fn(), stop: jest.fn(async () => {}) }));
+
+jest.mock('expo-sharing', () => ({ shareAsync: jest.fn(async () => {}), isAvailableAsync: jest.fn(async () => true) }));

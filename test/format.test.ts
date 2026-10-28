@@ -20,6 +20,9 @@ test('生成速度', () => {
 test('容量', () => {
   expect(fmtBytes(8_060_739_255)).toBe('8.1 GB');
   expect(fmtBytes(250_000_000)).toBe('250 MB');
+  expect(fmtBytes(2_345_678)).toBe('2.3 MB');
+  expect(fmtBytes(45_056)).toBe('45 KB');
+  expect(fmtBytes(0)).toBe('1 KB');
 });
 
 test('上下文用量：80% 提醒、滿了警告、不知道上限就不提醒', () => {

@@ -136,3 +136,20 @@ test('對話設定：刪除這段對話後切到另一段', async () => {
   await fireEvent.press(await screen.findByText('刪除這段對話'));
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));
 });
+
+test('對話清單最下面顯示資料庫位置與大小，可以匯出整個資料庫', async () => {
+  const net = new FakeOllamaNet();
+  net.addHost(A, { models: [{ name: 'gemma4:31b' }] });
+  const db = Object.assign(memoryDb(), { path: '/var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db' });
+  const store = new ChatStore({ repo: new Repo(db), client: net.client, wifiIp: async () => null, autoScan: false });
+  await store.init();
+  await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  expect(await screen.findByText(/^local-chat\.db · \d+ KB$/)).toBeTruthy();
+  expect(screen.getByLabelText('資料庫位置').props.children).toBe('/var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db');
+  await fireEvent.press(screen.getByText('匯出資料庫'));
+  const Sharing = require('expo-sharing');
+  await waitFor(() =>
+    expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db', { dialogTitle: '匯出資料庫' })
+  );
+});

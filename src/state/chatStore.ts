@@ -621,6 +621,21 @@ export class ChatStore {
     };
   }
 
+  /** 資料存在哪裡、多大 */
+  async dataInfo(): Promise<{ path: string | null; bytes: number }> {
+    const { repo } = this.deps;
+    return { path: repo.dbPath(), bytes: await repo.sizeBytes() };
+  }
+
+  /** 準備匯出整個資料庫：先合併暫存的寫入，回傳可以分享的檔案網址；沒有檔案（記憶體資料庫）回 null */
+  async prepareDatabaseExport(): Promise<string | null> {
+    const { repo } = this.deps;
+    const path = repo.dbPath();
+    if (!path) return null;
+    await repo.checkpoint();
+    return path.startsWith('file://') ? path : `file://${path}`;
+  }
+
   /** 模型實際執行時的上下文上限：優先看已載入模型的設定，查不到才用模型本身的最大值 */
   private async contextLimit(url: string, model: string): Promise<number | null> {
     try {

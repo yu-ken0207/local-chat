@@ -212,3 +212,15 @@ describe('範本與設定', () => {
   });
 });
 
+
+describe('資料庫檔案', () => {
+  test('大小會隨內容變大；合併暫存寫入不會出錯；記憶體資料庫沒有路徑', async () => {
+    const { repo } = await freshRepo();
+    const before = await repo.sizeBytes();
+    const s = await repo.createSession();
+    await repo.addMessage(s.id, { role: 'user', content: 'x'.repeat(20000), attachments: [{ base64: 'A'.repeat(50000), width: 1, height: 1 }] });
+    expect(await repo.sizeBytes()).toBeGreaterThan(before + 60000);
+    await expect(repo.checkpoint()).resolves.toBeUndefined();
+    expect(repo.dbPath()).toBeNull();
+  });
+});

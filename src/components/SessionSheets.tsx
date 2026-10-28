@@ -1,9 +1,10 @@
 import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { fmtWhen } from '../lib/format';
+import { fmtBytes, fmtWhen } from '../lib/format';
 import type { ChatStore } from '../state/chatStore';
 import type { Session } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
@@ -35,6 +36,53 @@ export function confirmDelete(store: ChatStore, session: { id: string; title: st
       },
     },
   ]);
+}
+
+/** 對話清單最下面：資料存在哪裡、多大、匯出整個資料庫 */
+function DataSection({ store }: { store: ChatStore }) {
+  const [info, setInfo] = useState<{ path: string | null; bytes: number } | null>(null);
+  useEffect(() => {
+    store.dataInfo().then(setInfo).catch(() => setInfo(null));
+  }, [store]);
+  if (!info) return null;
+
+  async function exportDb() {
+    try {
+      const uri = await store.prepareDatabaseExport();
+      if (!uri) return;
+      await Sharing.shareAsync(uri, { dialogTitle: '匯出資料庫' });
+    } catch (e: any) {
+      Alert.alert('匯出失敗', String(e?.message ?? e));
+    }
+  }
+
+  return (
+    <View style={styles.data}>
+      <Text style={styles.section}>資料</Text>
+      <View style={styles.card}>
+        <View style={styles.dataBody}>
+          <Text style={styles.rowTitle}>local-chat.db · {fmtBytes(info.bytes)}</Text>
+          <Text style={styles.footnote}>所有對話和照片都在這個檔案，只存在這支手機。iPhone 的「檔案」App 看不到這個位置，要拿出來請用「匯出資料庫」。</Text>
+          {info.path ? (
+            <Text style={styles.path} selectable accessibilityLabel="資料庫位置">
+              {info.path}
+            </Text>
+          ) : null}
+        </View>
+        {info.path ? (
+          <>
+            <View style={styles.separator} />
+            <Pressable onPress={exportDb} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+              <View style={styles.row}>
+                <SymbolView name="square.and.arrow.up" size={18} tintColor={C.accent} />
+                <Text style={[styles.rowTitle, { color: C.accent }]}>匯出資料庫</Text>
+              </View>
+            </Pressable>
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
 }
 
 /** 對話清單：搜尋、切換、長按改名／匯出／刪除 */
@@ -142,6 +190,7 @@ export function SessionList({ store, currentId, onClose }: { store: ChatStore; c
           )}
         </View>
         <Text style={styles.footnote}>對話只存在這支手機。長按可以改名、匯出或刪除。</Text>
+        <DataSection store={store} />
       </ScrollView>
     </View>
   );
@@ -252,4 +301,7 @@ const styles = StyleSheet.create({
   section: { fontSize: 13, color: C.secondary, marginHorizontal: 4, marginTop: 6 },
   field: { ...TEXT.body, color: C.label, paddingHorizontal: 16, paddingVertical: 12 },
   multiline: { minHeight: 110, textAlignVertical: 'top' },
+  data: { gap: 6, marginTop: 14 },
+  dataBody: { padding: 16, gap: 6 },
+  path: { ...TEXT.meta, color: C.secondary },
 });

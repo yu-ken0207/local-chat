@@ -5,6 +5,8 @@ import * as SQLite from 'expo-sqlite';
 export type SqlValue = string | number | null;
 
 export interface Db {
+  /** 資料庫檔案在手機上的實際路徑（記憶體資料庫沒有） */
+  path?: string;
   exec(sql: string): Promise<void>;
   run(sql: string, params?: SqlValue[]): Promise<{ changes: number }>;
   all<T>(sql: string, params?: SqlValue[]): Promise<T[]>;
@@ -16,6 +18,7 @@ export async function openPhoneDb(name = 'local-chat.db'): Promise<Db> {
   const db = await SQLite.openDatabaseAsync(name);
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   return {
+    path: db.databasePath,
     exec: (sql) => db.execAsync(sql),
     run: async (sql, params = []) => ({ changes: (await db.runAsync(sql, params)).changes }),
     all: (sql, params = []) => db.getAllAsync(sql, params),
