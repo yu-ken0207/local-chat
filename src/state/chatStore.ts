@@ -13,7 +13,7 @@ import { setLanguage, t } from '../i18n';
 
 export type HostStatus = { state: 'checking' | 'online' | 'offline'; latencyMs: number | null; version: string };
 
-export type ModelsEntry = { list: ModelInfo[]; loading: boolean; error: string };
+export type ModelsEntry = { list: ModelInfo[]; loading: boolean; error: string; /** 小幫手回的錯誤代碼，例如 no_engine（電腦連得到，但 AI 引擎沒開） */ errorCode?: string };
 
 export type Streaming = {
   messageId: string;
@@ -157,6 +157,7 @@ export function describeError(e: unknown): string {
     if (e.kind === 'timeout') return t('電腦太久沒有回應。');
     if (e.kind === 'cancelled') return t('已取消。');
     if (e.kind === 'unpaired') return e.message;
+    if (e.code === 'no_engine' || e.code === 'engine_unreachable') return t('電腦上的 AI 引擎沒有開著。請到電腦的 Local AI 小幫手畫面，按「安裝 Ollama」或「打開 Ollama」。');
     if (e.kind === 'http' && /not found/i.test(e.message)) return t('電腦上找不到這個模型，可能已經被刪除，請換一個模型。');
     if (e.kind === 'http') return t('電腦拒絕了這次請求。');
     return t('電腦回報錯誤：{p0}', { p0: e.message });
@@ -641,7 +642,7 @@ export class ChatStore {
       }
     } catch (e) {
       await this.notePairingLost(url, e);
-      this.set({ models: { ...this.state.models, [url]: { list: [], loading: false, error: describeError(e) } } });
+      this.set({ models: { ...this.state.models, [url]: { list: [], loading: false, error: describeError(e), errorCode: e instanceof OllamaError ? e.code : '' } } });
     }
   }
 

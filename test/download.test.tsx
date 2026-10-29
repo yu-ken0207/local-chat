@@ -189,4 +189,17 @@ describe('畫面', () => {
     expect(await screen.findByText(/請在電腦上的 AI 程式裡下載模型/)).toBeTruthy();
     expect(screen.queryByText('下載更多模型')).toBeNull();
   });
+
+  test('電腦上沒有開著的 AI 引擎：說要去小幫手裝或打開 Ollama，不是說連不到', async () => {
+    const { pc, store } = await pairedHelper([{ name: 'gemma4:12b' }]);
+    pc.noEngine = true;
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^選擇模型$|^模型：/ })[0]);
+    await store.loadModels(H);
+    expect(await screen.findByText(/AI 引擎沒有開著.*安裝 Ollama/)).toBeTruthy();
+    expect(screen.queryByText('連不到這台電腦。')).toBeNull();
+    pc.noEngine = false;
+    await fireEvent.press(screen.getByText('重試'));
+    expect(await screen.findByLabelText(/模型 Gemma 4 · 12B/)).toBeTruthy();
+  });
 });

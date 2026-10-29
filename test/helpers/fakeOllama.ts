@@ -18,6 +18,8 @@ export type FakeHost = {
   titleReply?: (body: any) => { lines: unknown[] };
   /** 這個位址是 Local AI 小幫手（後面接這台假 Ollama） */
   helper?: FakeHelper;
+  /** 小幫手開著，但電腦上沒有開著的 AI 引擎 */
+  noEngine?: boolean;
 };
 
 export type FakeHelper = {
@@ -119,6 +121,10 @@ export class FakeOllamaNet {
       return json({ error: 'not found' }, 404);
     }
 
+    if (helper && host.noEngine && path.startsWith('/api/')) {
+      if (path === '/api/tags') return json({ error: 'no AI engine is running on this computer', code: 'no_engine' }, 502);
+      return json({ error: 'Ollama is not running on this computer', code: 'engine_unreachable' }, 502);
+    }
     switch (path) {
       case '/api/version':
         return json({ version: host.version });

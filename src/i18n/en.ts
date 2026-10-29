@@ -337,4 +337,5 @@ export const en: Record<string, string> = {
   "這台電腦還沒有模型。請在電腦上的 AI 程式裡下載模型，再回來重新整理。": "This computer has no models yet. Download one in the AI app on the computer, then refresh.",
   "移除這個下載": "Remove this download",
   "下載更多模型": "Download More Models",
+  "電腦上的 AI 引擎沒有開著。請到電腦的 Local AI 小幫手畫面，按「安裝 Ollama」或「打開 Ollama」。": "The AI engine on the computer isn't running. In Local AI Helper on the computer, click \"Install Ollama\" or \"Open Ollama\".",
 };

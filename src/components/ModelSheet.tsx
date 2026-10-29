@@ -135,6 +135,11 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                   <ActivityIndicator />
                   <Text style={styles.rowSub}>{t('讀取中…')}</Text>
                 </View>
+              ) : models?.errorCode === 'no_engine' || models?.errorCode === 'engine_unreachable' ? (
+                <View style={styles.empty}>
+                  <Text style={[styles.emptyText, { color: C.orange }]}>{models.error}</Text>
+                  <TextButton text={t('重試')} onPress={() => store.connectHost(viewing)} />
+                </View>
               ) : models?.error || (status === 'offline' && !models?.list.length) ? (
                 <View style={styles.empty}>
                   <Text style={[styles.emptyText, { color: C.orange }]}>{t('連不到這台電腦。')}</Text>
