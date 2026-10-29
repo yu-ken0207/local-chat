@@ -165,7 +165,7 @@ export function needsConfirmation(tool: PhoneTool): boolean {
 }
 
 /** 交給模型的工具結果（JSON 文字，太長截掉，本地模型能記的內容有限） */
-export function toolResultContent(result: { ok: true; result: unknown; note?: string } | { ok: false; error: string; reason?: string }, max = 2000): string {
+export function toolResultContent(result: { ok: true; result: unknown; note?: string } | { ok: false; error: string; reason?: string; item?: string }, max = 2000): string {
   const text = JSON.stringify(result);
   return text.length <= max ? text : text.slice(0, max - 20) + '…(truncated)';
 }

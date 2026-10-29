@@ -197,7 +197,7 @@ describe('會改東西的工具', () => {
     await store.declineAction(pending(store)[0].id, '改成週四');
     await waitFor(() => expect(lastText(store)).toBe('已經加好了（no）'));
     expect(cal.created).toEqual([]);
-    expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content)).toEqual({ ok: false, error: 'The user declined this action.', reason: '改成週四' });
+    expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content)).toEqual({ ok: false, error: 'The user declined this action.', reason: '改成週四', item: '新增「帶小孩看牙醫」' });
   });
 
   test('App 規則擋掉的（時間在過去）：不出確認卡，原因交回模型', async () => {
@@ -214,7 +214,7 @@ describe('會改東西的工具', () => {
     expect(pending(store)).toEqual([]);
     expect(cal.created).toEqual([]);
     const msgs = net.chatBodies().at(-1).messages;
-    expect(JSON.parse(msgs.at(-2).content).error).toContain('did not confirm');
+    expect(JSON.parse(msgs.at(-2).content)).toMatchObject({ error: expect.stringContaining('did not confirm'), item: expect.stringContaining('帶小孩看牙醫') });
     expect(msgs.at(-1)).toMatchObject({ role: 'user', content: '算了，今天天氣如何？' });
   });
 
@@ -269,7 +269,7 @@ describe('畫面', () => {
     await fireEvent.press(screen.getByText('不要'));
     await fireEvent.changeText(screen.getByLabelText('要改成怎樣？（可以不填）'), '改成週四');
     await fireEvent.press(screen.getByText('送出'));
-    expect(await screen.findByText('沒有做：加行程')).toBeTruthy();
+    expect(await screen.findByText('沒有做：加行程「帶小孩看牙醫」')).toBeTruthy();
     expect(cal.created).toEqual([]);
     await waitFor(() => expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content).reason).toBe('改成週四'));
   });
@@ -337,9 +337,10 @@ describe('清單卡（一次好幾件）', () => {
     await waitFor(() => expect(lastText(store)).toBe('都處理好了'));
     expect(cal.created.map((x) => x.title)).toEqual(['校慶運動會', '戶外教學（帶便當）']);
     expect(net.chatBodies()).toHaveLength(2);
+    // 取消勾選的先記下來，但交給模型時照叫的順序排，而且寫明是哪一件（不然 AI 會說三件都做了）
     const results = net.chatBodies()[1].messages.filter((m: any) => m.role === 'tool').map((m: any) => JSON.parse(m.content));
-    expect(results.map((r: any) => r.ok)).toEqual([false, true, true]);
-    expect(results[0].error).toContain('unchecked');
+    expect(results.map((r: any) => r.ok)).toEqual([true, false, true]);
+    expect(results[1]).toMatchObject({ error: expect.stringContaining('unchecked'), item: expect.stringContaining('親師座談會') });
   });
 
   test('改壞了：一件都不做', async () => {
@@ -361,7 +362,7 @@ describe('清單卡（一次好幾件）', () => {
     await fireEvent.press(screen.getByText('加入 2 個'));
     await waitFor(() => expect(cal.created.map((x) => x.title)).toEqual(['校慶', '戶外教學']));
     expect(await screen.findByText('都處理好了')).toBeTruthy();
-    expect(screen.getByText('沒有做：加行程')).toBeTruthy();
+    expect(screen.getByText('沒有做：加行程「親師座談會」')).toBeTruthy();
   });
 
   test('畫面：全部不要', async () => {
@@ -372,6 +373,6 @@ describe('清單卡（一次好幾件）', () => {
     expect(await screen.findByText('都處理好了')).toBeTruthy();
     expect(cal.created).toEqual([]);
     expect(net.chatBodies()).toHaveLength(2);
-    expect(screen.getAllByText('沒有做：加行程')).toHaveLength(3);
+    expect(screen.getAllByText(/^沒有做：加行程「/)).toHaveLength(3);
   });
 });

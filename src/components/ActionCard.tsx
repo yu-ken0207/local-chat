@@ -22,7 +22,9 @@ type ToolOf = (name: string) => PhoneTool | undefined;
  */
 export function ActionView({ action, tool, ...h }: { action: Action; tool: PhoneTool | undefined } & Handlers) {
   if (action.status === 'pending') return tool?.kind === 'question' ? <QuestionCard action={action} {...h} /> : <ActionCard action={action} tool={tool} {...h} />;
-  const label = tool?.label ?? action.tool;
+  const title = typeof action.input.title === 'string' ? action.input.title.trim() : '';
+  // 沒做的那行也要看得出是哪一件（清單卡取消勾選時，同一張卡會有好幾行）
+  const label = title ? t('{p0}「{p1}」', { p0: tool?.label ?? action.tool, p1: title }) : (tool?.label ?? action.tool);
   const what = action.summary || label;
   const text =
     tool?.kind === 'question'

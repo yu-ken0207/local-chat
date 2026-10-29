@@ -21,7 +21,10 @@ export function buildChatMessages(
 ): { messages: ChatMessage[]; droppedImages: number } {
   const out: ChatMessage[] = [{ role: 'system', content: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT }];
   let droppedImages = 0;
-  for (const m of messages) {
+  const toolMessage = (m: Message): ChatMessage => ({ role: 'tool', content: m.content, ...(m.toolName ? { tool_name: m.toolName } : {}), ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}) });
+  const sent = new Set<Message>();
+  for (const [i, m] of messages.entries()) {
+    if (sent.has(m)) continue;
     if (m.role === 'user') {
       const images = m.attachments.map((a) => a.base64);
       if (images.length > 0 && !options.vision) droppedImages += images.length;
@@ -33,10 +36,22 @@ export function buildChatMessages(
     } else if (m.role === 'assistant' && m.toolCalls?.length) {
       // 叫過工具的回答：連同叫了什麼一起送回去（工具結果在後面的 tool 訊息）
       out.push({ role: 'assistant', content: m.content, tool_calls: m.toolCalls.map((c) => ({ id: c.id, function: { name: c.name, arguments: c.arguments } })) });
+      // 結果照叫的順序排（使用者可能先按第二張卡、清單卡取消勾選的會先記下來）：
+      // 有些模型只看順序對結果，順序亂了會把沒做的說成做了
+      const end = messages.findIndex((x, j) => j > i && (x.role === 'user' || x.role === 'assistant'));
+      const results = messages.slice(i + 1, end < 0 ? undefined : end).filter((x) => x.role === 'tool');
+      const order = (x: Message) => {
+        const k = m.toolCalls!.findIndex((c) => c.id === x.toolCallId);
+        return k < 0 ? m.toolCalls!.length : k;
+      };
+      for (const r of [...results].sort((a, b) => order(a) - order(b))) {
+        out.push(toolMessage(r));
+        sent.add(r);
+      }
     } else if (m.role === 'assistant' && m.content.trim()) {
       out.push({ role: 'assistant', content: m.content });
     } else if (m.role === 'tool') {
-      out.push({ role: 'tool', content: m.content, ...(m.toolName ? { tool_name: m.toolName } : {}), ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}) });
+      out.push(toolMessage(m));
     }
   }
   return { messages: out, droppedImages };

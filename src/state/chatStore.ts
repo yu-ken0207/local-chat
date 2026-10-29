@@ -1442,7 +1442,7 @@ export class ChatStore {
       const a = await repo.getAction(id);
       if (a?.status !== 'pending') continue;
       await repo.updateAction(id, { status: 'declined' });
-      await this.addToolResult(a.sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user unchecked this item, so it was not done.' }, '');
+      await this.addToolResult(a.sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user unchecked this item, so it was not done.', ...this.itemOf(a) }, '');
     }
     try {
       for (const [i, a] of actions.entries()) {
@@ -1488,10 +1488,20 @@ export class ChatStore {
       } catch (e) {
         const denied = e instanceof ToolPermissionError;
         await repo.updateAction(id, { status: 'failed', input, note: describeError(e), ...(denied ? { result: { error: 'permission_denied' } } : {}) });
-        await this.addToolResult(action.sessionId, call, { ok: false, error: denied ? `permission_denied: ${e.forModel}` : errorDetail(e) }, '');
+        await this.addToolResult(action.sessionId, call, { ok: false, error: denied ? `permission_denied: ${e.forModel}` : errorDetail(e), ...this.itemOf(action, input) }, '');
       }
     } finally {
       this.actionBusy.delete(id);
+    }
+  }
+
+  /** 沒做成的是哪一件（交給模型：只有順序的話，有些模型會把沒做的說成做了） */
+  private itemOf(action: Action, input = action.input): { item?: string } {
+    try {
+      const text = this.toolFor(action.tool)?.describe?.(input);
+      return text ? { item: text } : {};
+    } catch {
+      return {};
     }
   }
 
@@ -1512,7 +1522,7 @@ export class ChatStore {
       await this.addToolResult(
         action.sessionId,
         { id: action.callId, name: action.tool, arguments: action.input },
-        { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}) },
+        { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}), ...this.itemOf(action) },
         ''
       );
     }
@@ -1542,7 +1552,7 @@ export class ChatStore {
     const pending = this.state.messages.flatMap((m) => m.actions ?? []).filter((a: Action) => a.status === 'pending');
     for (const a of pending) {
       await this.deps.repo.updateAction(a.id, { status: 'declined' });
-      await this.addToolResult(sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user did not confirm and sent a new message instead.' }, '');
+      await this.addToolResult(sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user did not confirm and sent a new message instead.', ...this.itemOf(a) }, '');
     }
   }
 

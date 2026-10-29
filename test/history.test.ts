@@ -54,3 +54,15 @@ test('計算照片張數', () => {
   expect(countImages(CONVERSATION)).toBe(2);
   expect(countImages([])).toBe(0);
 });
+
+test('工具結果照叫的順序送（記下來的順序可能不一樣），只排同一輪的', () => {
+  const call = (id: string) => ({ id, name: 'create_event', arguments: {} });
+  const tool = (id: string, content: string): Message => ({ ...msg('tool', content), toolName: 'create_event', toolCallId: id });
+  const asked = { ...msg('assistant', ''), toolCalls: [call('call_1'), call('call_2'), call('call_3')] };
+  const again = { ...msg('assistant', ''), toolCalls: [call('call_1')] };
+  const { messages } = buildChatMessages(
+    [msg('user', '加三個'), asked, tool('call_2', 'b'), tool('call_3', 'c'), msg('note', '提示'), tool('call_1', 'a'), msg('assistant', '好了'), msg('user', '再一個'), again, tool('call_1', 'd')],
+    { vision: true }
+  );
+  expect(messages.map((m) => `${m.role}:${m.content}`)).toEqual(['system:' + DEFAULT_SYSTEM_PROMPT, 'user:加三個', 'assistant:', 'tool:a', 'tool:b', 'tool:c', 'assistant:好了', 'user:再一個', 'assistant:', 'tool:d']);
+});
