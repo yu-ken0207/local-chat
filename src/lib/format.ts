@@ -46,6 +46,9 @@ export function fmtWhen(ts: number, now: number): string {
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+const ZH_WEEKDAYS = ['週日', '週一', '週二', '週三', '週四', '週五', '週六']; // i18n-ignore：星期名稱，英文另外一組
+const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 /**
  * 行程時間的白話：中文「11/4（週三）15:00–16:00」，英文「Wed 11/4 15:00–16:00」；整天的只寫日期。
  * 跨天時結束也寫日期。
@@ -54,7 +57,8 @@ export function fmtEventTime(start: Date, end: Date | null, allDay: boolean, lan
   const p = (n: number) => String(n).padStart(2, '0');
   const day = (d: Date) => {
     const md = `${d.getMonth() + 1}/${d.getDate()}`;
-    const wd = new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' }).format(d);
+    // 不用 Intl：iPhone 的 zh-TW 會給簡體的「周五」
+    const wd = (lang === 'en' ? EN_WEEKDAYS : ZH_WEEKDAYS)[d.getDay()];
     return lang === 'en' ? `${wd} ${md}` : `${md}\uff08${wd}\uff09`;
   };
   const time = (d: Date) => `${p(d.getHours())}:${p(d.getMinutes())}`;
