@@ -255,6 +255,14 @@ describe('畫面', () => {
     expect(await screen.findByText('已復原：新增 1 個行程')).toBeTruthy();
   });
 
+  test('沒按確認卡就直接打字：那一行寫「跳過」，跟按「不要」分開', async () => {
+    const { cal } = await screenWithCard();
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改成兩小時');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('跳過：加行程「帶小孩看牙醫」（你直接打字了）')).toBeTruthy();
+    expect(cal.created).toEqual([]);
+  });
+
   test('按修改可以改欄位再加入', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));

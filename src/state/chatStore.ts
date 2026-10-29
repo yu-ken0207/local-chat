@@ -1561,7 +1561,7 @@ export class ChatStore {
   private async declinePending(sessionId: string): Promise<void> {
     const pending = this.state.messages.flatMap((m) => m.actions ?? []).filter((a: Action) => a.status === 'pending');
     for (const a of pending) {
-      await this.deps.repo.updateAction(a.id, { status: 'declined' });
+      await this.deps.repo.updateAction(a.id, { status: 'skipped' });
       await this.addToolResult(sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user did not confirm and sent a new message instead.', ...this.itemOf(a) }, '');
     }
   }

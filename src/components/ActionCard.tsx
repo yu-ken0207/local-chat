@@ -37,7 +37,9 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
           ? t('已復原：{p0}', { p0: what })
           : action.status === 'declined'
             ? t('沒有做：{p0}', { p0: label })
-            : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
+            : action.status === 'skipped'
+              ? t('跳過：{p0}（你直接打字了）', { p0: label })
+              : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
   return (
     <View style={styles.doneRow} testID={`action-${action.id}`}>
       <Text style={[styles.small, action.status === 'failed' ? styles.red : styles.dim, styles.flex]}>{text}</Text>

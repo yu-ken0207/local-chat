@@ -41,7 +41,8 @@ export type MessageStats = {
 export type Role = 'user' | 'assistant' | 'error' | 'note' | 'tool';
 
 /** 會改東西的工具動作：等使用者確認、做了什麼、怎麼復原 */
-export type ActionStatus = 'pending' | 'declined' | 'done' | 'failed' | 'undone';
+/** skipped：沒按確認卡就打了新訊息（跟按「不要」的 declined 分開，畫面說法不同） */
+export type ActionStatus = 'pending' | 'declined' | 'skipped' | 'done' | 'failed' | 'undone';
 export type Action = {
   id: string;
   sessionId: string;
