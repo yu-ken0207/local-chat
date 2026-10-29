@@ -1,4 +1,4 @@
-import { OllamaClient, OllamaError, isHashName, parseModelInfo, type ChatDelta } from '../src/lib/ollama';
+import { OllamaClient, OllamaError, isHashName, parseModelInfo, splitThink, type ChatDelta } from '../src/lib/ollama';
 import { fakeFetch, splitBytes } from './helpers/fakeFetch';
 
 // 以下 /api/show 回應取自兩台真實主機（Ollama 0.40.0、0.31.1），只留用得到的欄位
@@ -229,5 +229,19 @@ describe('OllamaClient', () => {
       const client = new OllamaClient(URL, { fetch: f.fetch, timeouts: { firstToken: 30 } });
       await expect(client.chat({ model: 'x', messages: [] }, () => {})).rejects.toMatchObject({ kind: 'timeout' });
     });
+  });
+});
+
+describe('一定會思考的模型', () => {
+  test('思考混在回答裡：拆回思考與回答', () => {
+    expect(splitThink('想一下這題</think>\n\n答案是 2')).toEqual({ thinking: '想一下這題', content: '答案是 2' });
+    expect(splitThink('<think>想一下</think>答案')).toEqual({ thinking: '想一下', content: '答案' });
+    expect(splitThink('<think>還在想')).toEqual({ thinking: '還在想', content: '' });
+    expect(splitThink('一般的回答')).toBeNull();
+  });
+
+  test('新版 Ollama 說只能開：一定會思考', () => {
+    const show = { capabilities: ['completion', 'thinking'], thinking: { values: [true] }, details: {} };
+    expect(parseModelInfo('qwen3:4b', show)?.think).toEqual({ kind: 'always' });
   });
 });

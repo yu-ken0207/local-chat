@@ -11,6 +11,8 @@ test.each([
   ['mistral', 'Mistral'],
   ['hf.co/nvjob/Mistral-24B-crack-ru:Q4_0', 'Mistral 24B Crack RU · Q4_0'],
   ['deepseek-r1:7b', 'DeepSeek R1 · 7B'],
+  ['qwen3:4b-instruct-2507-q4_K_M', 'Qwen 3 · 4B Instruct 2507 Q4_K_M'],
+  ['gemma4:31b-it-q8_0', 'Gemma 4 · 31B IT Q8_0'],
 ])('%s → %s', (name, expected) => {
   expect(friendlyModelName(name)).toBe(expected);
 });

@@ -5,8 +5,21 @@ import { t } from '../i18n';
 
 // ---- 型別 ----
 
-/** 模型的思考選項：開關型（gemma4 等），或分段型（gpt-oss 的 low / medium / high） */
-export type ThinkOption = { kind: 'toggle' } | { kind: 'levels'; levels: string[]; defaultLevel: string };
+/** 模型的思考選項：開關型（gemma4 等）、分段型（gpt-oss 的 low / medium / high）、一定會思考（Qwen3 Thinking 這類，關不掉） */
+export type ThinkOption = { kind: 'toggle' } | { kind: 'levels'; levels: string[]; defaultLevel: string } | { kind: 'always' };
+
+/**
+ * 一定會思考的模型在「不思考」時，Ollama 不會把思考分出來：思考混在回答前面，只看得到結尾的 </think>。
+ * 把它拆回思考與回答；沒有思考的樣子回 null。
+ */
+export function splitThink(raw: string): { thinking: string; content: string } | null {
+  const end = raw.indexOf('</think>');
+  if (end < 0) {
+    const t = raw.trimStart();
+    return t.startsWith('<think>') ? { thinking: t.slice(7).trimStart(), content: '' } : null;
+  }
+  return { thinking: raw.slice(0, end).replace(/^\s*<think>/, '').trim(), content: raw.slice(end + 8).replace(/^\s+/, '') };
+}
 /** 送給 Ollama 的 think 參數：開關型用 true / false，分段型用等級字串 */
 export type ThinkSetting = boolean | string;
 
@@ -162,6 +175,8 @@ function parseThink(show: any, family: string | undefined): ThinkOption {
       const def = typeof show.thinking.default === 'string' ? show.thinking.default : levels[Math.floor(levels.length / 2)];
       return { kind: 'levels', levels, defaultLevel: def };
     }
+    // 只能開、不能關
+    if (values.every((v) => v === true)) return { kind: 'always' };
     return { kind: 'toggle' };
   }
   // 舊版沒有回報：gpt-oss 一定是分段型，其他當開關型

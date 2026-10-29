@@ -291,7 +291,6 @@ export const en: Record<string, string> = {
   "小而快，一般電腦就能跑": "Small and fast; runs on an ordinary computer",
   "中文流暢，不看圖": "Fluent in Chinese; no images",
   "很輕巧，筆電也能跑": "Lightweight; runs on laptops too",
-  "最小，沒有顯示卡也能跑": "The smallest; runs without a graphics card",
   "記憶體 {p0} GB": "{p0} GB memory",
   "{p0}（跟顯示卡共用）": "{p0} (shared with graphics)",
   "這台電腦跑得很順": "Runs smoothly on this computer",
@@ -351,4 +350,10 @@ export const en: Record<string, string> = {
   "第一次用這個模型，電腦要先把它載入記憶體，大模型可能要 30 秒到 1 分鐘，之後就快了。": "The first time you use this model, the computer loads it into memory. Big models can take 30 seconds to a minute; after that it's fast.",
   "電腦正在讀前面的對話，對話越長要越久。": "The computer is reading the conversation so far; longer chats take longer.",
   "連不到這台電腦，正在找原因…": "Can't reach this computer. Finding out why…",
+  "一定會先思考": "Always thinks first",
+  "這個模型每次都會先思考再回答，沒辦法關掉。思考過程收在回答上方，可以點開看。": "This model always thinks before answering, and that can't be turned off. Its thinking is tucked above the answer; tap to see it.",
+  "最小、回答快，沒有顯示卡也能跑": "The smallest and quick to answer; runs without a graphics card",
+  "沒辦法下載「{p0}」": "Couldn't download \"{p0}\"",
+  "其他下載": "Other downloads",
+  "確認這個名稱…": "Checking this name…",
 };

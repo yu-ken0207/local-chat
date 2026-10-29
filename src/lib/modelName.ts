@@ -40,8 +40,9 @@ export function friendlyModelName(name: string): string {
   const pretty = prettyBase(base);
   const t = tag.toLowerCase();
   if (!t || t === 'latest') return pretty;
-  // 12b、e4b、4b、1.5b → 大寫；q4_0 這類量化標記也大寫
-  return `${pretty} · ${tag.toUpperCase()}`;
+  // 12b、e4b、4b、1.5b、q4_0 這類大寫；instruct 這類字首大寫；用空白分開
+  const parts = tag.split('-').map((w) => (/^[a-z]+$/i.test(w) && w.length > 3 ? cap(w.toLowerCase()) : w.toUpperCase()));
+  return `${pretty} · ${parts.join(' ')}`;
 }
 
 /** 思考等級的白話說法 */

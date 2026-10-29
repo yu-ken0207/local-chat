@@ -4,7 +4,7 @@ import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
-import { OllamaError, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
@@ -190,6 +190,8 @@ const SETTING_PENDING_WIPE = 'pendingWipe';
 /** 使用者自己按過「自動尋找」（iPhone 的區域網路權限已經問過），之後開 App 才自動找 */
 const SETTING_SCAN_CONSENTED = 'scanConsented';
 const SETTING_LAST_MODEL = 'lastModel';
+/** 發現「一定會思考」的模型（關掉思考還是會想）：記下來，之後直接開著思考送出 */
+const SETTING_ALWAYS_THINK = 'alwaysThinkModels';
 const PROBE_TIMEOUT_MS = 2500;
 const SCAN_TIMEOUT_MS = 800;
 const WIFI_TIMEOUT_MS = 3000;
@@ -217,7 +219,15 @@ export function errorDetail(e: unknown): string {
 /** 選了某個模型之後，思考設定的預設值：開關型預設關（比較快），分段型用模型預設等級 */
 export function defaultThink(model: ModelInfo | undefined): ThinkSetting | null {
   if (!model?.think) return null;
+  if (model.think.kind === 'always') return true;
   return model.think.kind === 'toggle' ? false : model.think.defaultLevel;
+}
+
+/** 實際要送給模型的思考設定：一定會思考的模型永遠開著（不然 Ollama 不會把思考分出來） */
+function thinkToSend(info: ModelInfo | undefined, chosen: ThinkSetting | null): ThinkSetting | undefined {
+  if (!info?.think) return undefined;
+  if (info.think.kind === 'always') return true;
+  return chosen ?? defaultThink(info) ?? undefined;
 }
 
 export class ChatStore {
@@ -253,6 +263,8 @@ export class ChatStore {
   private pullAborts = new Map<string, AbortController>();
   /** 手機直接下載的工作（測試用來等它完成） */
   downloadTask: Promise<void> | null = null;
+  /** 一定會思考的模型（「電腦網址 模型名稱」） */
+  private alwaysThink = new Set<string>();
   private readonly now: () => number;
   private readonly throttleMs: number;
 
@@ -364,6 +376,11 @@ export class ChatStore {
     }
     const hosts = await repo.listHosts();
     await this.loadTokens(hosts);
+    try {
+      this.alwaysThink = new Set(JSON.parse((await repo.getSetting(SETTING_ALWAYS_THINK)) ?? '[]'));
+    } catch {
+      this.alwaysThink = new Set();
+    }
     const latest = (await repo.listSessions())[0];
     const session = latest ?? (await this.createSessionFromLast());
     const prefs = await this.loadPrefs();
@@ -672,7 +689,8 @@ export class ChatStore {
     const c = this.clientFor(url);
     this.set({ models: { ...this.state.models, [url]: { list: this.state.models[url]?.list ?? [], loading: true, error: '' } } });
     try {
-      const [list, loaded] = await Promise.all([c.listModels(), c.loaded().catch(() => [] as LoadedModel[])]);
+      const [fetched, loaded] = await Promise.all([c.listModels(), c.loaded().catch(() => [] as LoadedModel[])]);
+      const list = fetched.map((m) => (m.think && this.alwaysThink.has(`${url} ${m.name}`) ? { ...m, think: { kind: 'always' as const } } : m));
       this.set({
         models: { ...this.state.models, [url]: { list, loading: false, error: '' } },
         loaded: { ...this.state.loaded, [url]: loaded },
@@ -734,6 +752,19 @@ export class ChatStore {
   async unload(url: string, model: string): Promise<void> {
     await this.clientFor(url).unload(model);
     await this.refreshLoaded(url);
+  }
+
+  /** 記下「一定會思考」的模型；模型清單與這段對話馬上改成一定思考 */
+  private async markAlwaysThinks(url: string, model: string): Promise<void> {
+    const key = `${url} ${model}`;
+    if (this.alwaysThink.has(key)) return;
+    this.alwaysThink.add(key);
+    await this.deps.repo.setSetting(SETTING_ALWAYS_THINK, JSON.stringify([...this.alwaysThink]));
+    const entry = this.state.models[url];
+    if (entry) {
+      const list = entry.list.map((m) => (m.name === model ? { ...m, think: { kind: 'always' as const } } : m));
+      this.set({ models: { ...this.state.models, [url]: { ...entry, list } } });
+    }
   }
 
   // ---- 連不到時找原因 ----
@@ -850,6 +881,8 @@ export class ChatStore {
    * 直接連 Ollama：手機自己叫 Ollama 下載，App 要開著。
    */
   async startDownload(url: string, model: string): Promise<void> {
+    // 同一個模型之前失敗、取消的紀錄先拿掉（重試不會一直疊上去）
+    for (const j of (this.state.downloads[url] ?? []).filter((x) => x.model === model && x.status !== 'downloading')) await this.dismissDownload(url, j.id);
     const current = this.state.downloads[url] ?? [];
     if (this.isHelper(url)) {
       const job = await this.clientFor(url).startDownload(model, this.state.helperInfo[url]?.downloadEngines[0]);
@@ -1124,12 +1157,18 @@ export class ChatStore {
     // 串流的字先累積，固定間隔才更新畫面
     let content = '';
     let thinking = '';
+    const sentThink = thinkToSend(info, s.think);
+    // 這個模型會思考但這次沒開：注意它是不是還是先想了（一定會思考的模型）
+    const mayLeak = !!info?.think && !sentThink;
+    let raw = '';
+    let leaked = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
       timer = null;
       if (!this.state.streaming) return;
+      const allThinking = thinking + leaked;
       this.set({
-        streaming: { ...this.state.streaming, content, thinking, phase: content ? 'answering' : thinking ? 'thinking' : 'waiting' },
+        streaming: { ...this.state.streaming, content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' },
       });
     };
 
@@ -1158,10 +1197,19 @@ export class ChatStore {
     let retryMoved = false;
     try {
       const result = await this.clientFor(url).chat(
-        { model, messages: history, think: info?.think ? (s.think ?? defaultThink(info) ?? undefined) : undefined },
+        { model, messages: history, think: sentThink },
         (d) => {
           if (d.thinking) thinking += d.thinking;
-          if (d.content) content += d.content;
+          if (d.content) {
+            raw += d.content;
+            content = raw;
+            // 沒開思考，模型卻還是先想（一定會思考的模型）：把想的部分搬到思考裡
+            const split = mayLeak ? splitThink(raw) : null;
+            if (split) {
+              leaked = split.thinking;
+              content = split.content;
+            }
+          }
           if (!timer) timer = setTimeout(flush, this.throttleMs);
         },
         signal
@@ -1172,7 +1220,9 @@ export class ChatStore {
         promptEvalCount: result.promptEvalCount,
         totalDurationNs: result.totalDurationNs,
       };
+      thinking += leaked;
       await repo.updateMessage(placeholder.id, { content, thinking, stats });
+      if (leaked) await this.markAlwaysThinks(url, model);
       const limit = await this.contextLimit(url, model);
       const used = result.promptEvalCount + result.evalCount;
       this.set({ context: { used, limit, level: contextLevel(used, limit) } });
@@ -1184,6 +1234,7 @@ export class ChatStore {
       await this.notePairingLost(url, e);
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled' && !unreachable;
       const offline = unreachable || (e instanceof OllamaError && e.kind === 'network' && !content && !thinking);
+      thinking += leaked;
       if (content || thinking) {
         await repo.updateMessage(placeholder.id, { content, thinking });
       } else {
@@ -1223,7 +1274,7 @@ export class ChatStore {
     let title = '';
     try {
       let text = '';
-      const think = info?.think ? (info.think.kind === 'toggle' ? false : info.think.levels[0]) : undefined;
+      const think = !info?.think ? undefined : info.think.kind === 'always' ? true : info.think.kind === 'toggle' ? false : info.think.levels[0];
       await this.clientFor(url).chat(
         {
           model,
@@ -1235,7 +1286,8 @@ export class ChatStore {
         },
         (d) => (text += d.content ?? '')
       );
-      title = cleanTitle(text);
+      // 一定會思考的模型：只拿思考之後的部分
+      title = cleanTitle(info?.think ? (splitThink(text)?.content ?? text) : text);
     } catch {
       // 取不到就用備案
     }
@@ -1333,6 +1385,11 @@ export class ChatStore {
     const session = latest ?? (await this.createSessionFromLast());
     const hosts = await repo.listHosts();
     await this.loadTokens(hosts);
+    try {
+      this.alwaysThink = new Set(JSON.parse((await repo.getSetting(SETTING_ALWAYS_THINK)) ?? '[]'));
+    } catch {
+      this.alwaysThink = new Set();
+    }
     this.set({
       hosts,
       hostStatus: {},

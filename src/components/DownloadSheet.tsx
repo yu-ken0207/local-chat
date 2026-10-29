@@ -1,5 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View, type ColorValue } from 'react-native';
 
 import { bestPick, describeHardware, suggestions, type Fit, type Suggestion } from '../lib/catalog';
@@ -44,10 +45,29 @@ export function DownloadSheet({ store, state, url, onClose, onUse }: { store: Ch
     if (m) onUse(m.name);
   };
 
-  async function start(name: string) {
+  /** 用名稱下載的：等電腦說找得到才算開始（名稱打錯要馬上告訴使用者） */
+  const [watching, setWatching] = useState<string | null>(null);
+  useEffect(() => {
+    if (!watching) return;
+    const job = [...jobs].reverse().find((j) => j.model === watching);
+    if (!job) return;
+    if (job.status === 'failed') {
+      setWatching(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(t('沒辦法下載「{p0}」', { p0: watching }), downloadError(job));
+      void store.dismissDownload(url, job.id);
+    } else if (job.status !== 'downloading' || job.total > 0) {
+      // 開始有進度了：下面「其他下載」看得到
+      setWatching(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [jobs, watching]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function start(name: string, byName = false) {
     try {
       await store.startDownload(url, name);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (byName) setWatching(name);
+      else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (e) {
       Alert.alert(t('沒辦法開始下載'), describeError(e));
     }
@@ -66,11 +86,14 @@ export function DownloadSheet({ store, state, url, onClose, onUse }: { store: Ch
     const hint = engine === 'lmstudio' ? t('例如 qwen/qwen3-8b，也可以貼上 Hugging Face 的連結。') : t('例如 llama3.2:3b。名稱可以在 ollama.com/library 找到。');
     Alert.prompt(t('用名稱下載'), hint, [
       { text: t('取消'), style: 'cancel' },
-      { text: t('下載'), onPress: (v?: string) => void (v?.trim() && start(v.trim())) },
+      { text: t('下載'), onPress: (v?: string) => void (v?.trim() && start(v.trim(), true)) },
     ]);
   }
 
   const others = list.filter((s) => s !== best);
+  // 用名稱下載的（不在推薦清單裡）
+  const names = new Set(list.map((s) => s.name));
+  const extra = jobs.filter((j) => !names.has(j.model) && j.model !== watching && (j.status === 'downloading' || j.status === 'failed'));
 
   return (
     <View style={styles.sheet}>
@@ -115,6 +138,35 @@ export function DownloadSheet({ store, state, url, onClose, onUse }: { store: Ch
             </View>
           ))}
         </View>
+
+        {extra.length > 0 || watching ? (
+          <>
+            <Text style={styles.section}>{t('其他下載')}</Text>
+            <View style={styles.card}>
+              {watching ? (
+                <View style={styles.row}>
+                  <View style={styles.flex}>
+                    <Text style={styles.rowTitle}>{watching}</Text>
+                    <Text style={styles.rowSub}>{t('確認這個名稱…')}</Text>
+                  </View>
+                </View>
+              ) : null}
+              {extra.map((j) => (
+                <View key={j.id} style={styles.row}>
+                  <View style={styles.flex}>
+                    <Text style={styles.rowTitle}>{friendlyModelName(j.model)}</Text>
+                    {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.red }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={url} />}
+                  </View>
+                  {j.status === 'failed' ? (
+                    <Pressable onPress={() => void store.dismissDownload(url, j.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('移除這個下載')}>
+                      <SymbolView name="xmark.circle.fill" size={18} tintColor={C.secondary} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </View>
+          </>
+        ) : null}
 
         <Pressable onPress={byName} accessibilityRole="button" style={({ pressed }) => [styles.byName, pressed && styles.pressed]}>
           <Text style={styles.link}>{t('用名稱下載其他模型')}</Text>

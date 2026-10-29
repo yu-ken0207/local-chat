@@ -24,7 +24,8 @@ export const CATALOG: CatalogEntry[] = [
   { ollama: 'gemma4:e4b', lmstudio: 'google/gemma-4-e4b', sizeGB: 6.6, vision: true, think: true, blurb: () => t('小而快，一般電腦就能跑') },
   { ollama: 'qwen3:8b', lmstudio: 'qwen/qwen3-8b', sizeGB: 5.2, vision: false, think: true, blurb: () => t('中文流暢，不看圖') },
   { ollama: 'gemma4:e2b', lmstudio: 'google/gemma-4-e2b', sizeGB: 4.6, vision: true, think: true, blurb: () => t('很輕巧，筆電也能跑') },
-  { ollama: 'qwen3:4b', lmstudio: 'qwen/qwen3-4b', sizeGB: 2.5, vision: false, think: true, blurb: () => t('最小，沒有顯示卡也能跑') },
+  // qwen3:4b 現在是一定會思考的版本（沒有顯示卡時會想好幾分鐘）；推薦不思考的 2507 Instruct
+  { ollama: 'qwen3:4b-instruct-2507-q4_K_M', lmstudio: 'qwen/qwen3-4b-2507', sizeGB: 2.5, vision: false, think: false, blurb: () => t('最小、回答快，沒有顯示卡也能跑') },
 ];
 
 /**

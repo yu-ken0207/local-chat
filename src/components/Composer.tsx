@@ -115,7 +115,9 @@ export function Composer(p: Props) {
   function pressThink() {
     if (!p.think) return;
     Haptics.selectionAsync();
-    if (p.think.kind === 'toggle') {
+    if (p.think.kind === 'always') {
+      Alert.alert(t('一定會先思考'), t('這個模型每次都會先思考再回答，沒辦法關掉。思考過程收在回答上方，可以點開看。'));
+    } else if (p.think.kind === 'toggle') {
       p.onThink(!p.thinkValue);
     } else {
       const levels = p.think.levels;
@@ -123,8 +125,12 @@ export function Composer(p: Props) {
     }
   }
 
+  const always = p.think?.kind === 'always';
+  const thinkOn = always || !!p.thinkValue;
   const thinkText =
-    p.think?.kind === 'toggle'
+    p.think?.kind === 'always'
+      ? t('一定會先思考')
+      : p.think?.kind === 'toggle'
       ? t('深入思考 {p0}', { p0: p.thinkValue ? t('開') : t('關') })
       : p.think
         ? t('深入思考：{p0}', { p0: friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) })
@@ -200,9 +206,9 @@ export function Composer(p: Props) {
             accessibilityRole={p.think.kind === 'toggle' ? 'switch' : 'button'}
             accessibilityState={p.think.kind === 'toggle' ? { checked: !!p.thinkValue } : undefined}
             accessibilityLabel={thinkText}
-            style={({ pressed }) => [styles.pill, p.thinkValue ? styles.pillOn : null, pressed && styles.pressed]}>
-            <SymbolView name="lightbulb" size={11} tintColor={p.thinkValue ? C.accent : C.secondary} />
-            <Text style={[styles.footerText, p.thinkValue ? { color: C.accent } : null]}>{thinkText}</Text>
+            style={({ pressed }) => [styles.pill, thinkOn ? styles.pillOn : null, pressed && styles.pressed]}>
+            <SymbolView name="lightbulb" size={11} tintColor={thinkOn ? C.accent : C.secondary} />
+            <Text style={[styles.footerText, thinkOn ? { color: C.accent } : null]}>{thinkText}</Text>
           </Pressable>
         ) : null}
       </View>

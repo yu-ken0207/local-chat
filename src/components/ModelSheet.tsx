@@ -211,7 +211,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                           <View style={styles.badges}>
                             {multiEngine && m.engineName ? <Badge icon="desktopcomputer" text={m.engineName} /> : null}
                             {m.vision ? <Badge icon="eye" text={t('看得懂圖片')} /> : null}
-                            {m.think ? <Badge icon="lightbulb" text={t('可以深入思考')} /> : null}
+                            {m.think ? <Badge icon="lightbulb" text={m.think.kind === 'always' ? t('一定會先思考') : t('可以深入思考')} /> : null}
                             {isLoaded && working?.name !== m.name ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
                             {working?.name === m.name ? (
                               <View style={styles.badge} accessibilityLiveRegion="polite">

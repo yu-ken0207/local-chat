@@ -42,8 +42,8 @@ describe('推薦', () => {
 
   test('已經有的標成已下載（包含 :latest、撞名的 @引擎）', () => {
     const have = (name: string) => ({ name }) as ModelInfo;
-    const list = suggestions(null, 'lmstudio', [have('google/gemma-4-12b@lmstudio'), have('qwen/qwen3-4b')]);
-    expect(list.filter((s) => s.installed).map((s) => s.name)).toEqual(['google/gemma-4-12b', 'qwen/qwen3-4b']);
+    const list = suggestions(null, 'lmstudio', [have('google/gemma-4-12b@lmstudio'), have('qwen/qwen3-4b-2507')]);
+    expect(list.filter((s) => s.installed).map((s) => s.name)).toEqual(['google/gemma-4-12b', 'qwen/qwen3-4b-2507']);
   });
 
   test('配備的白話說明', () => {
@@ -202,4 +202,25 @@ describe('畫面', () => {
     await fireEvent.press(screen.getByText('重試'));
     expect(await screen.findByLabelText(/模型 Gemma 4 · 12B/)).toBeTruthy();
   });
+
+  test('用名稱下載打錯：馬上跳出說明，不會留在清單裡', async () => {
+    const { store } = await openModels([]);
+    await fireEvent.press(await screen.findByText('選一個模型下載'));
+    jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, buttons: any) => buttons[1].onPress('nope'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await fireEvent.press(await screen.findByText('用名稱下載其他模型'));
+    await waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(alert.mock.calls[0][0]).toBe('沒辦法下載「nope」');
+    expect(alert.mock.calls[0][1]).toBe('找不到這個模型，請確認名稱。');
+    await waitFor(() => expect(store.getState().downloads[H]).toEqual([]));
+  });
+});
+
+test('同一個模型失敗後重試：舊的失敗紀錄拿掉，不會一直疊上去', async () => {
+  const { store } = await pairedHelper();
+  await store.startDownload(H, 'nope');
+  await waitFor(() => expect(store.getState().downloads[H]?.[0]?.status).toBe('failed'));
+  await store.startDownload(H, 'nope');
+  await waitFor(() => expect(store.getState().downloads[H]?.[0]?.status).toBe('failed'));
+  expect(store.getState().downloads[H]).toHaveLength(1);
 });
