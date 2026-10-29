@@ -49,6 +49,7 @@ function fakeCalendar() {
 }
 
 const toolCall = (name: string, args: unknown, id = 'call_1') => ({ message: { role: 'assistant', content: '', tool_calls: [{ id, function: { name, arguments: args } }] }, done: false });
+const toolCalls = (...calls: [string, unknown][]) => ({ message: { role: 'assistant', content: '', tool_calls: calls.map(([name, args], i) => ({ id: `call_${i + 1}`, function: { name, arguments: args } })) }, done: false });
 const text = (content: string) => ({ message: { role: 'assistant', content }, done: false });
 const done = { message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', eval_count: 5, prompt_eval_count: 50 };
 
@@ -94,7 +95,7 @@ describe('送給模型的內容', () => {
     const { net, store } = await setup();
     await store.send('你好');
     const body = net.chatBodies()[0];
-    expect(body.tools.map((x: any) => x.function.name)).toEqual(['list_events', 'create_event']);
+    expect(body.tools.map((x: any) => x.function.name)).toEqual(['list_events', 'create_event', 'ask_user']);
     expect(body.messages[0].content).toContain('2026-10-29 16:40 (Thursday), time zone Asia/Taipei');
   });
 
@@ -270,5 +271,106 @@ describe('畫面', () => {
     expect(await screen.findByText('沒有做：加行程')).toBeTruthy();
     expect(cal.created).toEqual([]);
     await waitFor(() => expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content).reason).toBe('改成週四'));
+  });
+});
+
+describe('問使用者選擇題', () => {
+  async function asked(options: unknown = ['早上 9:00', '晚上 8:00']) {
+    const ctx = await setup();
+    script(ctx.host, [() => [toolCall('ask_user', { question: '明天幾點提醒你？', options }), done], (body) => [text(`收到：${body.messages.at(-1).content}`), done]]);
+    await ctx.store.send('明天提醒我繳電費');
+    await waitFor(() => expect(ctx.store.getState().streaming).toBeNull());
+    return ctx;
+  }
+
+  test('出選擇題卡，選了之後答案交回模型', async () => {
+    const { store } = await asked();
+    const [q] = pending(store);
+    expect(q).toMatchObject({ tool: 'ask_user', input: { question: '明天幾點提醒你？', options: ['早上 9:00', '晚上 8:00'] } });
+    await store.approveAction(q.id, { answer: '晚上 8:00' });
+    await waitFor(() => expect(lastText(store)).toBe('收到：{"ok":true,"result":{"answer":"晚上 8:00"}}'));
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0]).toMatchObject({ status: 'done', summary: '你回答：晚上 8:00' });
+  });
+
+  test('選項少於 2 個：退回模型重問', async () => {
+    const { net, store } = await asked(['只有一個']);
+    await waitFor(() => expect(net.chatBodies()).toHaveLength(2));
+    expect(pending(store)).toEqual([]);
+    expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content).error).toContain('needs at least 2 items');
+  });
+
+  test('畫面：點選項、自己打字、不回答', async () => {
+    const { store } = await asked();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    expect(screen.getByText('明天幾點提醒你？')).toBeTruthy();
+    await fireEvent.press(screen.getByText('其他…'));
+    await fireEvent.changeText(screen.getByLabelText('你的回答'), '中午');
+    await fireEvent.press(screen.getByText('送出'));
+    expect(await screen.findByText('你回答：中午')).toBeTruthy();
+  });
+
+  test('畫面：按不回答', async () => {
+    const { store } = await asked();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('不回答'));
+    expect(await screen.findByText('沒有回答')).toBeTruthy();
+  });
+});
+
+describe('清單卡（一次好幾件）', () => {
+  async function three() {
+    const ctx = await setup();
+    script(ctx.host, [
+      () => [toolCalls(['create_event', { title: '校慶運動會', start: '2026-11-07T09:00' }], ['create_event', { title: '親師座談會', start: '2026-11-13T18:30' }], ['create_event', { title: '戶外教學', start: '2026-11-20T08:00' }]), done],
+      () => [text('都處理好了'), done],
+    ]);
+    await ctx.store.send('通知單上的活動幫我加到行事曆');
+    await waitFor(() => expect(ctx.store.getState().streaming).toBeNull());
+    return ctx;
+  }
+
+  test('取消勾選的不做、改過的照改過的做，全部做完才接著問模型一次', async () => {
+    const { store, cal, net } = await three();
+    const [a, b, c] = pending(store);
+    await store.approveActions([{ id: a.id }, { id: c.id, edited: { title: '戶外教學（帶便當）' } }], [b.id]);
+    await waitFor(() => expect(lastText(store)).toBe('都處理好了'));
+    expect(cal.created.map((x) => x.title)).toEqual(['校慶運動會', '戶外教學（帶便當）']);
+    expect(net.chatBodies()).toHaveLength(2);
+    const results = net.chatBodies()[1].messages.filter((m: any) => m.role === 'tool').map((m: any) => JSON.parse(m.content));
+    expect(results.map((r: any) => r.ok)).toEqual([false, true, true]);
+    expect(results[0].error).toContain('unchecked');
+  });
+
+  test('改壞了：一件都不做', async () => {
+    const { store, cal } = await three();
+    const [a, b] = pending(store);
+    await expect(store.approveActions([{ id: a.id }, { id: b.id, edited: { start: '下週五' } }])).rejects.toThrow('格式不對');
+    expect(cal.created).toEqual([]);
+    expect(pending(store)).toHaveLength(3);
+  });
+
+  test('畫面：合成一張卡，取消勾選一件、修改一件，按「加入 2 個」', async () => {
+    const { store, cal } = await three();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    expect(screen.getByText('加行程（3 件）')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('checkbox', { name: /親師座談會/ }));
+    await fireEvent.press(screen.getAllByText('修改')[0]);
+    await fireEvent.changeText(screen.getByLabelText('標題'), '校慶');
+    await fireEvent.press(screen.getByText('好'));
+    await fireEvent.press(screen.getByText('加入 2 個'));
+    await waitFor(() => expect(cal.created.map((x) => x.title)).toEqual(['校慶', '戶外教學']));
+    expect(await screen.findByText('都處理好了')).toBeTruthy();
+    expect(screen.getByText('沒有做：加行程')).toBeTruthy();
+  });
+
+  test('畫面：全部不要', async () => {
+    const { store, cal, net } = await three();
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('全部不要'));
+    await fireEvent.press(screen.getByText('送出'));
+    expect(await screen.findByText('都處理好了')).toBeTruthy();
+    expect(cal.created).toEqual([]);
+    expect(net.chatBodies()).toHaveLength(2);
+    expect(screen.getAllByText('沒有做：加行程')).toHaveLength(3);
   });
 });

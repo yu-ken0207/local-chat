@@ -15,7 +15,7 @@ import { C, TEXT } from '../ui/theme';
 import { Composer, chooseOption, type PickSource } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
-import { ActionView } from './ActionCard';
+import { ActionListCard, ActionView } from './ActionCard';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
@@ -140,6 +140,40 @@ export function ChatScreen(p: ChatScreenProps) {
   const model = store.currentModel();
   const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect;
   const modelLabel = session?.hostUrl && session.model ? `${store.hostLabel(session.hostUrl)} · ${friendlyModelName(session.model)}` : null;
+  const failed = (title: string) => (e: unknown) => Alert.alert(title, e instanceof Error ? e.message : String(e));
+  /** AI 訊息下面的確認卡與做了什麼；同一則回答有兩件以上要確認時合成清單卡 */
+  const actionsOf = (m: Message) => {
+    const actions = m.actions ?? [];
+    if (actions.length === 0) return undefined;
+    const listed = actions.filter((a) => a.status === 'pending' && store.toolFor(a.tool)?.kind !== 'question');
+    const grouped = listed.length >= 2;
+    return (
+      <>
+        {actions
+          .filter((a) => !(grouped && listed.includes(a)))
+          .map((a) => (
+            <ActionView
+              key={a.id}
+              action={a}
+              tool={store.toolFor(a.tool)}
+              onApprove={(id, edited) => store.approveAction(id, edited).catch(failed(t('沒有做成')))}
+              onDecline={(id, reason) => store.declineAction(id, reason)}
+              onUndo={(id) => store.undoAction(id).catch(failed(t('沒辦法復原')))}
+            />
+          ))}
+        {grouped ? (
+          <ActionListCard
+            key={listed.map((a) => a.id).join(',')}
+            actions={listed}
+            toolFor={(name) => store.toolFor(name)}
+            progress={state.acting?.messageId === m.id ? state.acting : null}
+            onApproveAll={(items, skip) => store.approveActions(items, skip).catch(failed(t('沒有做成')))}
+            onDeclineAll={(ids, reason) => store.declineActions(ids, reason)}
+          />
+        ) : null}
+      </>
+    );
+  };
   const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
   const hasChat = !!session && state.messages.length > 0;
 
@@ -225,16 +259,7 @@ export function ChatScreen(p: ChatScreenProps) {
                   onCopy={() => copy(m.content)}
                   onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
                   onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
-                  extra={m.actions?.map((a) => (
-                    <ActionView
-                      key={a.id}
-                      action={a}
-                      tool={store.toolFor(a.tool)}
-                      onApprove={(id, edited) => store.approveAction(id, edited).catch((e) => Alert.alert(t('沒有做成'), e instanceof Error ? e.message : String(e)))}
-                      onDecline={(id, reason) => store.declineAction(id, reason)}
-                      onUndo={(id) => store.undoAction(id).catch((e) => Alert.alert(t('沒辦法復原'), e instanceof Error ? e.message : String(e)))}
-                    />
-                  ))}
+                  extra={actionsOf(m)}
                 />
               ))
             )}

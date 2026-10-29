@@ -1,17 +1,21 @@
 // 手機上動手做事：AI 可以叫的工具（照 MCP 的格式定義），以及叫工具前的檢查與審核。
 // 設計見 docs/設計_手機上動手做事.md。工具本身（行事曆、提醒事項）在別的檔案，這裡只管共通的部分。
 
-/** 工具輸入的格式（JSON Schema 的一小部分：一層物件，欄位是字串、數字、整數、是非） */
+/** 工具輸入的格式（JSON Schema 的一小部分：一層物件，欄位是字串、數字、整數、是非、字串清單） */
 export type FieldSchema = {
-  type: 'string' | 'number' | 'integer' | 'boolean';
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array';
   description?: string;
   enum?: string[];
   /** date-time：YYYY-MM-DDTHH:mm（當地時間）；date：YYYY-MM-DD */
   format?: 'date-time' | 'date';
+  /** 清單（type: array）：只支援字串，可以限制幾項 */
+  items?: { type: 'string' };
+  minItems?: number;
+  maxItems?: number;
 };
 export type InputSchema = { type: 'object'; properties: Record<string, FieldSchema>; required?: string[] };
 
-export type ToolInput = Record<string, string | number | boolean>;
+export type ToolInput = Record<string, string | number | boolean | string[]>;
 
 /** 工具執行完的結果：data 交給模型（要短），summary 給使用者看（例如「新增 1 個行程」） */
 export type ToolOutput = { data: unknown; summary: string };
@@ -44,6 +48,8 @@ export type PhoneTool = {
   undo?(data: unknown): Promise<void>;
   /** 設定頁「AI 可以做的事」的分類（關掉就不給模型這個工具） */
   group?: ToolGroup;
+  /** question：問使用者選擇題（確認卡換成選項按鈕，回答放在 answer） */
+  kind?: 'question';
 };
 
 export type ToolGroup = 'calendar' | 'reminders';
@@ -119,6 +125,21 @@ export function validateInput(schema: InputSchema, input: ToolInput): Checked {
     if ((field.type === 'number' || field.type === 'integer') && typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) v = Number(v);
     if (field.type === 'boolean' && (v === 'true' || v === 'false')) v = v === 'true';
     if (field.type === 'string' && typeof v === 'number') v = String(v);
+    if (field.type === 'array') {
+      if (typeof v === 'string') {
+        const raw: string = v;
+        try {
+          v = JSON.parse(raw);
+        } catch {
+          v = raw.split(/[,\n]/);
+        }
+      }
+      if (!Array.isArray(v)) return { ok: false, error: `"${key}" must be a list of strings.` };
+      const list = v.map((x) => (typeof x === 'string' || typeof x === 'number' ? String(x).trim() : '')).filter(Boolean);
+      if (field.minItems !== undefined && list.length < field.minItems) return { ok: false, error: `"${key}" needs at least ${field.minItems} items.` };
+      out[key] = field.maxItems !== undefined ? list.slice(0, field.maxItems) : list;
+      continue;
+    }
     const wrongType =
       field.type === 'string' ? typeof v !== 'string' : field.type === 'boolean' ? typeof v !== 'boolean' : typeof v !== 'number' || !isFinite(v);
     if (wrongType) return { ok: false, error: `"${key}" must be a ${field.type}.` };
@@ -167,7 +188,7 @@ export function toolSystemPrompt(now: number, timeZone: string): string {
     'Rules:',
     '- Use a tool only when the user asks you to do something; otherwise just answer.',
     '- Use only dates and times the user said or that appear in their photos. Work out relative dates (like "next Wednesday") from the current date above. Never invent missing details; leave optional fields out.',
-    '- If something required is unclear, ask the user instead of guessing.',
+    '- If something required is unclear, ask the user with ask_user instead of guessing.',
     '- The app asks the user to confirm every change. After a tool result, tell the user in one short sentence what was done.',
   ].join('\n');
 }

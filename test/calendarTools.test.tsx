@@ -191,7 +191,7 @@ describe('接上 App', () => {
     host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '看牙醫', start: '2026-11-04T15:00' }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
     await store.send('加行程');
     await waitFor(() => expect(store.getState().streaming).toBeNull());
-    expect(net.chatBodies()[0].tools.map((x: any) => x.function.name)).toEqual(['list_calendars', 'list_events', 'create_event']);
+    expect(net.chatBodies()[0].tools.map((x: any) => x.function.name)).toEqual(['list_calendars', 'list_events', 'create_event', 'ask_user']);
     const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     await store.approveAction(action.id);
     await waitFor(() => expect(api.created).toHaveLength(1));

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Linking, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import type { PhoneTool, ToolInput } from '../lib/tools';
 import type { Action } from '../store/repo';
@@ -13,22 +13,28 @@ type Handlers = {
   onUndo: (id: string) => Promise<void>;
 };
 
+type ToolOf = (name: string) => PhoneTool | undefined;
+
 /**
  * AI 要做的一件事：還沒確認時是確認卡（放在對話裡，App 關掉再開也還在）；
- * 做完之後縮成一行（做了什麼、可以復原）。
+ * 做完之後縮成一行（做了什麼、可以復原）。選擇題是一排選項按鈕。
  */
 export function ActionView({ action, tool, ...h }: { action: Action; tool: PhoneTool | undefined } & Handlers) {
-  if (action.status === 'pending') return <ActionCard action={action} tool={tool} {...h} />;
+  if (action.status === 'pending') return tool?.kind === 'question' ? <QuestionCard action={action} {...h} /> : <ActionCard action={action} tool={tool} {...h} />;
   const label = tool?.label ?? action.tool;
   const what = action.summary || label;
   const text =
-    action.status === 'done'
-      ? `✓ ${what}`
-      : action.status === 'undone'
-        ? t('已復原：{p0}', { p0: what })
-        : action.status === 'declined'
-          ? t('沒有做：{p0}', { p0: label })
-          : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
+    tool?.kind === 'question'
+      ? action.status === 'done'
+        ? what
+        : t('沒有回答')
+      : action.status === 'done'
+        ? `✓ ${what}`
+        : action.status === 'undone'
+          ? t('已復原：{p0}', { p0: what })
+          : action.status === 'declined'
+            ? t('沒有做：{p0}', { p0: label })
+            : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
   return (
     <View style={styles.doneRow} testID={`action-${action.id}`}>
       <Text style={[styles.small, action.status === 'failed' ? styles.red : styles.dim, styles.flex]}>{text}</Text>
@@ -40,14 +46,184 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
   );
 }
 
+/**
+ * 同一則回答裡有好幾件事要確認：合成一張清單卡，可以取消勾選、修改其中一件，最後一次做完。
+ * 做的時候顯示做到第幾件。
+ */
+export function ActionListCard({
+  actions,
+  toolFor,
+  progress,
+  onApproveAll,
+  onDeclineAll,
+}: {
+  actions: Action[];
+  toolFor: ToolOf;
+  progress: { done: number; total: number } | null;
+  onApproveAll: (items: { id: string; edited?: ToolInput }[], skip: string[]) => Promise<void>;
+  onDeclineAll: (ids: string[], reason: string) => Promise<void>;
+}) {
+  const [checked, setChecked] = useState<Record<string, boolean>>(() => Object.fromEntries(actions.map((a) => [a.id, true])));
+  const [edits, setEdits] = useState<Record<string, ToolInput>>({});
+  const [editing, setEditing] = useState<string | null>(null);
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const chosen = actions.filter((a) => checked[a.id]);
+  const tools = [...new Set(actions.map((a) => a.tool))];
+  const single = tools.length === 1 ? toolFor(tools[0]) : undefined;
+  const verb =
+    chosen.length === 0
+      ? t('都不要')
+      : single?.verb
+        ? t('{p0} {n} 個', { p0: single.verb, n: chosen.length })
+        : t('做這 {n} 件', { n: chosen.length });
+
+  const go = async () => {
+    setBusy(true);
+    try {
+      await onApproveAll(
+        chosen.map((a) => ({ id: a.id, ...(edits[a.id] ? { edited: edits[a.id] } : {}) })),
+        actions.filter((a) => !checked[a.id]).map((a) => a.id)
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const declineAll = async () => {
+    setBusy(true);
+    try {
+      await onDeclineAll(
+        actions.map((a) => a.id),
+        reason
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={styles.card} testID="action-list" accessibilityLabel={t('等你確認：{n} 件事', { n: actions.length })}>
+      <Text style={styles.title}>{single ? t('{p0}（{n} 件）', { p0: single.label, n: actions.length }) : t('要做 {n} 件事', { n: actions.length })}</Text>
+      {actions.map((a) => {
+        const tool = toolFor(a.tool);
+        const input = { ...a.input, ...edits[a.id] };
+        const on = !!checked[a.id];
+        return (
+          <View key={a.id} style={styles.item}>
+            <View style={styles.itemRow}>
+              <Pressable
+                onPress={() => setChecked((s) => ({ ...s, [a.id]: !on }))}
+                hitSlop={8}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: on }}
+                accessibilityLabel={tool?.describe?.(input) ?? tool?.label ?? a.tool}
+                style={styles.itemMain}>
+                <Text style={[styles.check, on && { color: C.accent }]}>{on ? '☑' : '☐'}</Text>
+                <Text style={[styles.text, styles.flex, !on && styles.off]}>{tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
+              </Pressable>
+              {tool?.fields && editing !== a.id ? <ActionButton text={t('修改')} onPress={() => setEditing(a.id)} /> : null}
+            </View>
+            {editing === a.id && tool ? (
+              <FieldEditor
+                tool={tool}
+                input={input}
+                done={t('好')}
+                onCancel={() => setEditing(null)}
+                onDone={(values) => {
+                  setEdits((s) => ({ ...s, [a.id]: values }));
+                  setEditing(null);
+                }}
+              />
+            ) : null}
+          </View>
+        );
+      })}
+
+      {declining ? (
+        <TextInput
+          value={reason}
+          onChangeText={setReason}
+          placeholder={t('要改成怎樣？（可以不填）')}
+          placeholderTextColor={C.placeholder}
+          style={styles.input}
+          autoFocus
+          accessibilityLabel={t('要改成怎樣？（可以不填）')}
+        />
+      ) : null}
+
+      {progress ? (
+        <Text style={[styles.small, styles.dim]} accessibilityLiveRegion="polite">
+          {t('正在處理第 {p0} 件（共 {p1} 件）', { p0: progress.done + 1, p1: progress.total })}
+        </Text>
+      ) : (
+        <View style={styles.buttons}>
+          {declining ? (
+            <>
+              <ActionButton text={t('返回')} onPress={() => setDeclining(false)} />
+              <ActionButton text={t('送出')} primary onPress={() => !busy && void declineAll()} />
+            </>
+          ) : (
+            <>
+              <ActionButton text={t('全部不要')} onPress={() => setDeclining(true)} />
+              <ActionButton text={busy ? t('處理中…') : verb} primary onPress={() => !busy && editing === null && void (chosen.length === 0 ? declineAll() : go())} />
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 const toText = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+
+/** 確認卡上可以改的欄位（文字、數字、是非） */
+function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool; input: ToolInput; done: string; onDone: (values: ToolInput) => void; onCancel: () => void }) {
+  const fields = Object.entries(tool.fields ?? {});
+  const [values, setValues] = useState<Record<string, string | boolean>>(() =>
+    Object.fromEntries(fields.map(([key]) => [key, tool.inputSchema.properties[key]?.type === 'boolean' ? !!input[key] : toText(input[key])]))
+  );
+  const collect = (): ToolInput => {
+    const out: ToolInput = {};
+    for (const [key] of fields) {
+      const v = values[key];
+      if (typeof v === 'boolean' || v.trim() !== '') out[key] = typeof v === 'string' ? v.trim() : v;
+    }
+    return out;
+  };
+  return (
+    <View style={styles.editor}>
+      {fields.map(([key, label]) => {
+        const type = tool.inputSchema.properties[key]?.type;
+        const v = values[key];
+        return (
+          <View key={key} style={styles.field}>
+            <Text style={[styles.small, styles.dim]}>{label}</Text>
+            {type === 'boolean' ? (
+              <Switch value={!!v} onValueChange={(next) => setValues((s) => ({ ...s, [key]: next }))} accessibilityLabel={label} />
+            ) : (
+              <TextInput
+                value={String(v)}
+                onChangeText={(text) => setValues((s) => ({ ...s, [key]: text }))}
+                style={styles.input}
+                keyboardType={type === 'number' || type === 'integer' ? 'numeric' : 'default'}
+                accessibilityLabel={label}
+              />
+            )}
+          </View>
+        );
+      })}
+      <View style={styles.buttons}>
+        <ActionButton text={t('取消')} onPress={onCancel} />
+        <ActionButton text={done} primary onPress={() => onDone(collect())} />
+      </View>
+    </View>
+  );
+}
 
 function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; tool: PhoneTool | undefined } & Handlers) {
   const [mode, setMode] = useState<'view' | 'edit' | 'decline'>('view');
   const fields = Object.entries(tool?.fields ?? {});
-  const [values, setValues] = useState<Record<string, string | boolean>>(() =>
-    Object.fromEntries(fields.map(([key]) => [key, tool?.inputSchema.properties[key]?.type === 'boolean' ? !!action.input[key] : toText(action.input[key])]))
-  );
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const verb = tool?.verb ?? t('確定');
@@ -60,14 +236,6 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
     } finally {
       setBusy(false);
     }
-  };
-  const edited = (): ToolInput => {
-    const out: ToolInput = {};
-    for (const [key] of fields) {
-      const v = values[key];
-      if (typeof v === 'boolean' || v.trim() !== '') out[key] = typeof v === 'string' ? v.trim() : v;
-    }
-    return out;
   };
 
   return (
@@ -86,28 +254,9 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
             ))
         : null}
 
-      {mode === 'edit'
-        ? fields.map(([key, label]) => {
-            const type = tool?.inputSchema.properties[key]?.type;
-            const v = values[key];
-            return (
-              <View key={key} style={styles.field}>
-                <Text style={[styles.small, styles.dim]}>{label}</Text>
-                {type === 'boolean' ? (
-                  <Switch value={!!v} onValueChange={(next) => setValues((s) => ({ ...s, [key]: next }))} accessibilityLabel={label} />
-                ) : (
-                  <TextInput
-                    value={String(v)}
-                    onChangeText={(text) => setValues((s) => ({ ...s, [key]: text }))}
-                    style={styles.input}
-                    keyboardType={type === 'number' || type === 'integer' ? 'numeric' : 'default'}
-                    accessibilityLabel={label}
-                  />
-                )}
-              </View>
-            );
-          })
-        : null}
+      {mode === 'edit' && tool ? (
+        <FieldEditor tool={tool} input={action.input} done={busy ? t('處理中…') : verb} onCancel={() => setMode('view')} onDone={(values) => !busy && void run(() => onApprove(action.id, values))} />
+      ) : null}
 
       {mode === 'decline' ? (
         <TextInput
@@ -121,25 +270,71 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
         />
       ) : null}
 
-      <View style={styles.buttons}>
-        {mode === 'view' ? (
-          <>
-            <ActionButton text={t('不要')} onPress={() => setMode('decline')} />
-            {tool && fields.length > 0 ? <ActionButton text={t('修改')} onPress={() => setMode('edit')} /> : null}
-            {tool ? <ActionButton text={busy ? t('處理中…') : verb} primary onPress={() => !busy && void run(() => onApprove(action.id))} /> : null}
-          </>
-        ) : mode === 'edit' ? (
-          <>
-            <ActionButton text={t('取消')} onPress={() => setMode('view')} />
-            <ActionButton text={busy ? t('處理中…') : verb} primary onPress={() => !busy && void run(() => onApprove(action.id, edited()))} />
-          </>
-        ) : (
-          <>
-            <ActionButton text={t('返回')} onPress={() => setMode('view')} />
-            <ActionButton text={t('送出')} primary onPress={() => !busy && void run(() => onDecline(action.id, reason))} />
-          </>
-        )}
-      </View>
+      {mode === 'edit' ? null : (
+        <View style={styles.buttons}>
+          {mode === 'view' ? (
+            <>
+              <ActionButton text={t('不要')} onPress={() => setMode('decline')} />
+              {tool && fields.length > 0 ? <ActionButton text={t('修改')} onPress={() => setMode('edit')} /> : null}
+              {tool ? <ActionButton text={busy ? t('處理中…') : verb} primary onPress={() => !busy && void run(() => onApprove(action.id))} /> : null}
+            </>
+          ) : (
+            <>
+              <ActionButton text={t('返回')} onPress={() => setMode('view')} />
+              <ActionButton text={t('送出')} primary onPress={() => !busy && void run(() => onDecline(action.id, reason))} />
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/** AI 問的選擇題：選項按鈕，最後一個「其他…」可以自己打字 */
+function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Handlers) {
+  const [typing, setTyping] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const question = toText(action.input.question);
+  const options = Array.isArray(action.input.options) ? action.input.options : [];
+  const answer = async (value: string) => {
+    if (busy || !value.trim()) return;
+    setBusy(true);
+    try {
+      await onApprove(action.id, { answer: value.trim() });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={styles.card} testID={`action-${action.id}`} accessibilityLabel={t('AI 問你：{p0}', { p0: question })}>
+      <Text style={styles.text}>{question}</Text>
+      {typing ? (
+        <>
+          <TextInput
+            value={text}
+            onChangeText={setText}
+            placeholder={t('你的回答')}
+            placeholderTextColor={C.placeholder}
+            style={styles.input}
+            autoFocus
+            accessibilityLabel={t('你的回答')}
+            onSubmitEditing={() => void answer(text)}
+          />
+          <View style={styles.buttons}>
+            <ActionButton text={t('返回')} onPress={() => setTyping(false)} />
+            <ActionButton text={t('送出')} primary onPress={() => void answer(text)} />
+          </View>
+        </>
+      ) : (
+        <View style={styles.buttons}>
+          {options.map((o) => (
+            <ActionButton key={o} text={o} onPress={() => void answer(o)} />
+          ))}
+          <ActionButton text={t('其他…')} onPress={() => setTyping(true)} />
+          <ActionButton text={t('不回答')} onPress={() => !busy && void onDecline(action.id, '')} />
+        </View>
+      )}
     </View>
   );
 }
@@ -150,11 +345,17 @@ const styles = StyleSheet.create({
   text: { ...TEXT.body, color: C.label },
   small: { ...TEXT.small },
   dim: { color: C.secondary },
+  off: { color: C.tertiary, textDecorationLine: 'line-through' },
   guessed: { color: C.tertiary, fontStyle: 'italic' },
   red: { color: C.red },
   flex: { flex: 1 },
   field: { gap: 2 },
+  editor: { gap: 6, paddingLeft: 24 },
   input: { ...TEXT.body, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  item: { gap: 6 },
+  itemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  itemMain: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  check: { ...TEXT.body, color: C.secondary },
 });

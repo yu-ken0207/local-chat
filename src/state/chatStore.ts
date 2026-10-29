@@ -8,6 +8,7 @@ import { OllamaError, splitThink, type DownloadJob, type HelperHello, type Helpe
 import type { Db } from '../store/db';
 import { ToolPermissionError, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolResultContent, toolSystemPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
+import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
@@ -128,6 +129,8 @@ export type ChatState = {
   /** 剛做的刪除或取代，可以按「復原」（畫面顯示幾秒後消失） */
   undo: { id: number; message: string } | null;
   prefs: Prefs;
+  /** 清單卡正在一件一件做：做到第幾件 */
+  acting: { messageId: string; done: number; total: number } | null;
 };
 
 type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
@@ -261,6 +264,7 @@ export class ChatStore {
     notice: '',
     undo: null,
     prefs: DEFAULT_PREFS,
+    acting: null,
   };
   private pendingUndo: PendingUndo | null = null;
   private undoCounter = 0;
@@ -1302,11 +1306,15 @@ export class ChatStore {
     }
   }
 
-  /** 這次可以給模型的工具：模型要會叫工具才給；設定裡關掉的分類不給 */
+  /** App 內建、有其他工具時一起給的工具（問使用者選擇題） */
+  private readonly builtinTools = [askUserTool()];
+
+  /** 這次可以給模型的工具：模型要會叫工具才給；設定裡關掉的分類不給；有工具時加上「問使用者」 */
   private toolsFor(info: ModelInfo | undefined): PhoneTool[] {
     if (!info?.tools) return [];
     const off = new Set(this.state.prefs.toolsOff ?? []);
-    return (this.deps.tools ?? []).filter((tool) => !tool.group || !off.has(tool.group));
+    const tools = (this.deps.tools ?? []).filter((tool) => !tool.group || !off.has(tool.group));
+    return tools.length > 0 ? [...tools, ...this.builtinTools] : [];
   }
 
   /** 設定頁「AI 可以做的事」要列出的分類 */
@@ -1328,7 +1336,7 @@ export class ChatStore {
 
   /** 照名稱找工具（畫面顯示確認卡也用） */
   toolFor(name: string): PhoneTool | undefined {
-    return this.deps.tools?.find((tool) => tool.name === name);
+    return [...(this.deps.tools ?? []), ...this.builtinTools].find((tool) => tool.name === name);
   }
 
   /** 加一則工具結果（content 交給模型，detail 是給使用者看的一句話） */
@@ -1413,54 +1421,102 @@ export class ChatStore {
 
   /** 使用者按了確認卡上的動詞按鈕（edited：按「修改」改過的內容） */
   async approveAction(id: string, edited?: ToolInput): Promise<void> {
-    const { repo } = this.deps;
-    const action = await repo.getAction(id);
-    const tool = action && this.toolFor(action.tool);
+    const action = await this.deps.repo.getAction(id);
     if (!action || action.status !== 'pending' || this.actionBusy.has(id)) return;
+    const input = this.editedInput(action, edited);
+    await this.runAction(action, input);
+    await this.afterAction(action.sessionId);
+  }
+
+  /**
+   * 清單卡：一次確認好幾件事。items 是勾著的（可能改過內容），skip 是取消勾選的。
+   * 先檢查全部改過的內容，有錯就一件都不做；做的時候顯示做到第幾件。
+   */
+  async approveActions(items: { id: string; edited?: ToolInput }[], skip: string[] = []): Promise<void> {
+    const { repo } = this.deps;
+    const actions = (await Promise.all(items.map((x) => repo.getAction(x.id)))).filter((a): a is Action => !!a && a.status === 'pending');
+    const inputs = actions.map((a) => this.editedInput(a, items.find((x) => x.id === a.id)?.edited));
+    const sessionId = actions[0]?.sessionId ?? (await repo.getAction(skip[0] ?? ''))?.sessionId;
+    if (!sessionId) return;
+    for (const id of skip) {
+      const a = await repo.getAction(id);
+      if (a?.status !== 'pending') continue;
+      await repo.updateAction(id, { status: 'declined' });
+      await this.addToolResult(a.sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user unchecked this item, so it was not done.' }, '');
+    }
+    try {
+      for (const [i, a] of actions.entries()) {
+        this.set({ acting: { messageId: a.messageId, done: i, total: actions.length } });
+        await this.runAction(a, inputs[i]);
+      }
+    } finally {
+      this.set({ acting: null });
+    }
+    await this.afterAction(sessionId);
+  }
+
+  /** 使用者改過的內容：照格式檢查（不對就丟錯，什麼都不做）；選擇題的回答直接放進去 */
+  private editedInput(action: Action, edited?: ToolInput): ToolInput {
+    if (!edited) return action.input;
+    const tool = this.toolFor(action.tool);
+    if (!tool || tool.kind === 'question') return { ...action.input, ...edited };
+    const checked = validateInput(tool.inputSchema, { ...action.input, ...edited });
+    if (!checked.ok) throw new Error(t('改過的內容格式不對，請再檢查一次。'));
+    return checked.value;
+  }
+
+  /** 真的去做一件確認過的事，結果記下來並交給模型（不接著問模型，讓呼叫的人決定） */
+  private async runAction(action: Action, input: ToolInput): Promise<void> {
+    const { repo } = this.deps;
+    const id = action.id;
+    const tool = this.toolFor(action.tool);
+    if (this.actionBusy.has(id)) return;
     this.actionBusy.add(id);
     try {
       const call: ToolCall = { id: action.callId, name: action.tool, arguments: action.input };
-      let input = action.input;
-      if (edited) {
-        const checked = tool ? validateInput(tool.inputSchema, { ...action.input, ...edited }) : null;
-        if (checked && !checked.ok) throw new Error(t('改過的內容格式不對，請再檢查一次。'));
-        if (checked?.ok) input = checked.value;
-      }
-      const changes = edited ? describeChanges(action.input, input) : '';
+      const changes = tool?.kind === 'question' ? '' : describeChanges(action.input, input);
       if (!tool) {
         await repo.updateAction(id, { status: 'failed', note: t('這個 App 版本沒有這個功能。') });
         await this.addToolResult(action.sessionId, call, { ok: false, error: `The tool "${action.tool}" is not available.` }, '');
-      } else {
-        try {
-          const out = await tool.run(input);
-          await repo.updateAction(id, { status: 'done', input, result: out.data, summary: out.summary });
-          await this.addToolResult(action.sessionId, call, { ok: true, result: out.data, ...(changes ? { note: `The user changed these fields before confirming: ${changes}` } : {}) }, '');
-          this.deps.onEvent?.('acted');
-        } catch (e) {
-          const denied = e instanceof ToolPermissionError;
-          await repo.updateAction(id, { status: 'failed', input, note: describeError(e), ...(denied ? { result: { error: 'permission_denied' } } : {}) });
-          await this.addToolResult(action.sessionId, call, { ok: false, error: denied ? `permission_denied: ${e.forModel}` : errorDetail(e) }, '');
-        }
+        return;
+      }
+      try {
+        const out = await tool.run(input);
+        await repo.updateAction(id, { status: 'done', input, result: out.data, summary: out.summary });
+        await this.addToolResult(action.sessionId, call, { ok: true, result: out.data, ...(changes ? { note: `The user changed these fields before confirming: ${changes}` } : {}) }, '');
+        if (tool.kind !== 'question') this.deps.onEvent?.('acted');
+      } catch (e) {
+        const denied = e instanceof ToolPermissionError;
+        await repo.updateAction(id, { status: 'failed', input, note: describeError(e), ...(denied ? { result: { error: 'permission_denied' } } : {}) });
+        await this.addToolResult(action.sessionId, call, { ok: false, error: denied ? `permission_denied: ${e.forModel}` : errorDetail(e) }, '');
       }
     } finally {
       this.actionBusy.delete(id);
     }
-    await this.afterAction(action.sessionId);
   }
 
   /** 使用者按了「不要」（reason：想改成怎樣，可以不填） */
   async declineAction(id: string, reason = ''): Promise<void> {
+    await this.declineActions([id], reason);
+  }
+
+  /** 一次拒絕好幾件（清單卡的「全部不要」），全部記好才接著問模型 */
+  async declineActions(ids: string[], reason = ''): Promise<void> {
     const { repo } = this.deps;
-    const action = await repo.getAction(id);
-    if (!action || action.status !== 'pending' || this.actionBusy.has(id)) return;
-    await repo.updateAction(id, { status: 'declined', note: reason.trim() });
-    await this.addToolResult(
-      action.sessionId,
-      { id: action.callId, name: action.tool, arguments: action.input },
-      { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}) },
-      ''
-    );
-    await this.afterAction(action.sessionId);
+    let sessionId = '';
+    for (const id of ids) {
+      const action = await repo.getAction(id);
+      if (!action || action.status !== 'pending' || this.actionBusy.has(id)) continue;
+      sessionId = action.sessionId;
+      await repo.updateAction(id, { status: 'declined', note: reason.trim() });
+      await this.addToolResult(
+        action.sessionId,
+        { id: action.callId, name: action.tool, arguments: action.input },
+        { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}) },
+        ''
+      );
+    }
+    if (sessionId) await this.afterAction(sessionId);
   }
 
   /** 確認卡都處理完了就接著問模型 */
