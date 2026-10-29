@@ -54,7 +54,7 @@ export function diagnosisText(d: Diagnosis): string {
       return t('電腦沒有回應。這台電腦是透過 Tailscale 連的：請確認電腦開著、沒有睡著，電腦上的 Tailscale 也開著。');
     case 'refused':
       return d.helper
-        ? t('電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。')
+        ? t('電腦開著，但 Local AI 小幫手沒有開。請在電腦的應用程式選單（Windows 是「開始」功能表）打開「Local AI 小幫手」。')
         : t('電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。');
     case 'no-response':
       return d.helper

@@ -97,7 +97,7 @@ describe('送出時', () => {
     const { pc, store } = await helper();
     pc.online = false;
     await store.send('hi');
-    expect(store.getState().messages.at(-1)?.content).toBe('沒有得到回答：電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。');
+    expect(store.getState().messages.at(-1)?.content).toBe('沒有得到回答：電腦開著，但 Local AI 小幫手沒有開。請在電腦的應用程式選單（Windows 是「開始」功能表）打開「Local AI 小幫手」。');
   });
 
   test('電腦換了位址：自己找到、改好，再問一次', async () => {

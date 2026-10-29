@@ -340,7 +340,7 @@ export const en: Record<string, string> = {
   "電腦換了網路位址，已經自動改好了。": "The computer's network address changed. It's been updated automatically.",
   "手機沒有連 Wi-Fi。請連上跟電腦同一個 Wi-Fi；不在家時要用 Tailscale 這類工具才連得到。": "Your phone isn't on Wi-Fi. Join the same Wi-Fi as the computer; away from home you need a tool like Tailscale.",
   "手機（{p0}）和電腦（{p1}）不在同一個網路。請確認手機連的是家裡的 Wi-Fi，不是訪客網路或另一台路由器。": "Your phone ({p0}) and the computer ({p1}) are on different networks. Make sure your phone is on your home Wi-Fi, not a guest network or another router.",
-  "電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。": "The computer is on, but Local AI Helper isn't running. Open the helper on the computer.",
+  "電腦開著，但 Local AI 小幫手沒有開。請在電腦的應用程式選單（Windows 是「開始」功能表）打開「Local AI 小幫手」。": "The computer is on, but Local AI Helper isn't running. Open \"Local AI Helper\" from the computer's app menu (the Start menu on Windows).",
   "電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。": "The computer is on, but Ollama isn't running or doesn't accept connections from the local network.",
   "電腦沒有回應：可能睡著或關機了。電腦開著的話，可能是防火牆擋住手機，電腦上的小幫手畫面會教你怎麼放行。": "The computer isn't responding: it may be asleep or off. If it's on, a firewall may be blocking your phone; the helper on the computer shows how to allow it.",
   "電腦沒有回應：可能睡著或關機了，或是防火牆擋住手機。": "The computer isn't responding: it may be asleep or off, or a firewall may be blocking your phone.",
