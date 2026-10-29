@@ -3,7 +3,7 @@ import { TITLE_PROMPTS } from '../../src/state/chatStore';
 
 const isTitlePrompt = (s: unknown) => Object.values(TITLE_PROMPTS).includes(s as never);
 
-export type FakeModel = { name: string; vision?: boolean; think?: 'toggle' | 'levels'; ctx?: number; engine?: string; engineName?: string; canLoad?: boolean };
+export type FakeModel = { name: string; vision?: boolean; think?: 'toggle' | 'levels'; ctx?: number; engine?: string; engineName?: string; canLoad?: boolean; tools?: boolean };
 
 export type FakeHost = {
   version: string;
@@ -152,7 +152,7 @@ export class FakeOllamaNet {
       case '/api/show': {
         const model = host.models.find((x) => x.name === body.model);
         if (!model) return json({ error: 'not found' }, 404);
-        const caps = ['completion', ...(model.vision ? ['vision'] : []), ...(model.think ? ['thinking'] : [])];
+        const caps = ['completion', ...(model.vision ? ['vision'] : []), ...(model.think ? ['thinking'] : []), ...(model.tools ? ['tools'] : [])];
         return json({
           capabilities: caps,
           ...(model.think === 'toggle' ? { thinking: { values: [false, true], default: true } } : {}),

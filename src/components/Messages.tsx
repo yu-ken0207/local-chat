@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Image, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
 import { fmtElapsed } from '../lib/format';
@@ -23,6 +23,8 @@ type Handlers = {
   /** 切換回答版本（‹ ›） */
   onSwitchVersion?: (delta: number) => void;
   isLast?: boolean;
+  /** 放在 AI 訊息下面的東西（確認卡、做了什麼） */
+  extra?: ReactNode;
 };
 
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
@@ -43,10 +45,26 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     );
   }
 
+  if (m.role === 'tool') {
+    // 工具做了什麼，一行帶過（例如「看了行事曆（3 筆）」）；沒有要給使用者看的就不顯示
+    if (!m.detail) return null;
+    return (
+      <View style={styles.aiBlock} testID={`message-${m.id}`}>
+        <Text style={styles.aiMark}>•</Text>
+        <View style={styles.body}>
+          <Text style={[styles.small, styles.dim]}>{m.detail}</Text>
+        </View>
+      </View>
+    );
+  }
+
   if (m.role === 'assistant') {
     const live = streaming?.messageId === m.id ? streaming : null;
     const content = live ? live.content : m.content;
     const thinking = live ? live.thinking : m.thinking;
+    // 只是叫工具、沒有說話的那一輪：不顯示電腦和模型名稱，也不給複製、重新產生
+    const toolTurn = !live && !content && !!m.toolCalls?.length;
+    if (toolTurn && !thinking && !h.extra) return null;
     return (
       <Pressable onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.aiBlock}>
@@ -54,9 +72,10 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
           <View style={styles.body}>
             {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
+            {h.extra}
             {live ? (
               <Working streaming={live} />
-            ) : (
+            ) : toolTurn ? null : (
               <View style={styles.metaRow}>
                 {m.versions && h.onSwitchVersion ? <Versions versions={m.versions} onSwitch={h.onSwitchVersion} /> : null}
                 <Text style={[styles.meta, styles.flex]}>{metaLine(m)}</Text>

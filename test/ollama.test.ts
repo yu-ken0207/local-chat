@@ -40,6 +40,7 @@ describe('parseModelInfo', () => {
       engine: '',
       engineName: '',
       canLoad: true,
+      tools: true,
     });
   });
 
@@ -152,13 +153,35 @@ describe('OllamaClient', () => {
       );
       expect(deltas.filter((d) => d.thinking).map((d) => d.thinking).join('')).toBe('先算 3-1=2，再加 4');
       expect(deltas.filter((d) => d.content).map((d) => d.content).join('')).toBe('現在有六顆蘋果。');
-      expect(result).toEqual({ doneReason: 'stop', evalCount: 202, evalDurationNs: 1e9, promptEvalCount: 47, totalDurationNs: 1.8e9, loadDurationNs: 2e6 });
+      expect(result).toEqual({ toolCalls: [], doneReason: 'stop', evalCount: 202, evalDurationNs: 1e9, promptEvalCount: 47, totalDurationNs: 1.8e9, loadDurationNs: 2e6 });
       expect(f.calls[0].body).toEqual({
         model: 'gemma4:e2b',
         messages: [{ role: 'user', content: '算一下' }],
         stream: true,
         think: true,
       });
+    });
+
+    test('工具：有給才送；回來的工具呼叫收齊（arguments 可能是物件或文字，沒有編號就補）', async () => {
+      const f = fakeFetch({
+        '/api/chat': () => ({
+          chunks: [
+            line({ message: { role: 'assistant', content: '', tool_calls: [{ id: 'call_x', function: { index: 0, name: 'create_event', arguments: { title: '看牙醫' } } }] }, done: false }),
+            line({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'list_events', arguments: '{"day":"2026-11-04"}' } }, { function: { arguments: {} } }] }, done: false }),
+            line(FINAL),
+          ],
+        }),
+      });
+      const tools = [{ type: 'function', function: { name: 'create_event' } }];
+      const result = await new OllamaClient(URL, { fetch: f.fetch }).chat({ model: 'gemma4:12b', messages: [{ role: 'user', content: '加行程' }], tools }, () => {});
+      expect(f.calls[0].body.tools).toEqual(tools);
+      expect(result.toolCalls).toEqual([
+        { id: 'call_x', name: 'create_event', arguments: { title: '看牙醫' } },
+        { id: 'call_1', name: 'list_events', arguments: '{"day":"2026-11-04"}' },
+      ]);
+      const plain = fakeFetch({ '/api/chat': () => ({ chunks: [line(FINAL)] }) });
+      await new OllamaClient(URL, { fetch: plain.fetch }).chat({ model: 'llama3', messages: [], tools: [] }, () => {});
+      expect(plain.calls[0].body).not.toHaveProperty('tools');
     });
 
     test('沒有指定思考時不送 think 參數；照片照原樣送出', async () => {

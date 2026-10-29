@@ -17,7 +17,7 @@ import { SettingsView } from './SettingsSheet';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
 
-type ListItem = Session & { preview: string };
+type ListItem = Session & { preview: string; pending?: number };
 
 /** 刪除對話：直接移到最近刪除，畫面下方會出現「復原」，不用先確認 */
 export async function deleteSession(store: ChatStore, id: string, after?: () => void) {
@@ -132,7 +132,11 @@ export function SessionList({
                         </Text>
                         <Text style={styles.when}>{fmtWhen(s.updatedAt, now)}</Text>
                       </View>
-                      {s.preview && s.title ? (
+                      {s.pending ? (
+                        <Text style={[styles.preview, { color: C.accent }]} numberOfLines={1}>
+                          {t('等你確認')}
+                        </Text>
+                      ) : s.preview && s.title ? (
                         <Text style={styles.preview} numberOfLines={1}>
                           {s.preview.replace(/\s+/g, ' ')}
                         </Text>

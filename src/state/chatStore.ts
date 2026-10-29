@@ -6,7 +6,8 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
+import { describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolResultContent, toolSystemPrompt, validateInput, type PhoneTool, type ToolCall, type ToolInput } from '../lib/tools';
+import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
@@ -140,7 +141,7 @@ export type Prefs = {
 
 export const DEFAULT_PREFS: Prefs = { language: 'system' };
 
-export type ChatEvent = 'answered' | 'failed' | 'stopped' | 'downloaded';
+export type ChatEvent = 'answered' | 'failed' | 'stopped' | 'downloaded' | 'acted';
 
 export type ChatDeps = {
   repo: Repo;
@@ -167,6 +168,10 @@ export type ChatDeps = {
   pollMs?: number;
   /** 送出時順便確認電腦連不連得到的逾時（毫秒）；連不到就不用等到聊天逾時 */
   probeTimeoutMs?: number;
+  /** AI 可以在手機上叫的工具（行事曆、提醒事項…）；沒給就只聊天 */
+  tools?: PhoneTool[];
+  /** 手機的時區（告訴模型現在幾點用） */
+  timeZone?: () => string;
   onEvent?: (event: ChatEvent) => void;
 };
 
@@ -198,6 +203,8 @@ const SETTING_LAST_MODEL = 'lastModel';
 /** 發現「一定會思考」的模型（關掉思考還是會想）：記下來，之後直接開著思考送出 */
 const SETTING_ALWAYS_THINK = 'alwaysThinkModels';
 const PROBE_TIMEOUT_MS = 2500;
+/** 一次問題最多讓 AI 叫幾輪工具（小模型可能在原地打轉） */
+export const MAX_TOOL_ROUNDS = 5;
 const SCAN_TIMEOUT_MS = 800;
 const WIFI_TIMEOUT_MS = 3000;
 
@@ -1041,6 +1048,7 @@ export class ChatStore {
     if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     const content = text.trim() || (images.length > 0 ? defaultImageQuestion() : '');
     if (!content) return;
+    await this.declinePending(s.id);
     await this.deps.repo.addMessage(s.id, { role: 'user', content, attachments: images });
     this.set({ messages: await this.deps.repo.listMessages(s.id), notice: '' });
     await this.answer();
@@ -1153,9 +1161,10 @@ export class ChatStore {
     const url = s.hostUrl!;
     const model = s.model!;
     const info = this.currentModel();
+    const tools = this.toolsFor(info);
     const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
       vision: info ? info.vision : true,
-      systemPrompt: REPLY_PROMPTS[this.appLanguage()],
+      systemPrompt: REPLY_PROMPTS[this.appLanguage()] + (tools.length > 0 ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : ''),
     });
     if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
@@ -1205,9 +1214,10 @@ export class ChatStore {
       })
       .catch(() => {});
     let retryMoved = false;
+    let next: 'continue' | 'wait' | 'done' = 'done';
     try {
       const result = await this.clientFor(url).chat(
-        { model, messages: history, think: sentThink },
+        { model, messages: history, think: sentThink, ...(tools.length > 0 ? { tools: toOllamaTools(tools) } : {}) },
         (d) => {
           if (d.thinking) thinking += d.thinking;
           if (d.content) {
@@ -1231,12 +1241,15 @@ export class ChatStore {
         totalDurationNs: result.totalDurationNs,
       };
       thinking += leaked;
-      await repo.updateMessage(placeholder.id, { content, thinking, stats });
+      const toolCalls = tools.length > 0 ? result.toolCalls : [];
+      await repo.updateMessage(placeholder.id, { content, thinking, stats, ...(toolCalls.length > 0 ? { toolCalls } : {}) });
       if (leaked) await this.markAlwaysThinks(url, model);
       const limit = await this.contextLimit(url, model);
       const used = result.promptEvalCount + result.evalCount;
       this.set({ context: { used, limit, level: contextLevel(used, limit) } });
-      this.deps.onEvent?.('answered');
+      // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
+      if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls);
+      else this.deps.onEvent?.('answered');
       // 第一個回答出來後，請模型幫這段對話取標題（不擋住下一次輸入）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
       if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
@@ -1273,6 +1286,183 @@ export class ChatStore {
     }
     // 電腦換了位址：已經改好，自動再問一次
     if (retryMoved) await this.answer({ ...options, retried: true });
+    // 工具都做完了（不用等使用者）：把結果交回模型，接著回答
+    else if (next === 'continue') await this.continueAfterTools();
+  }
+
+  // ---- 手機上動手做事 ----
+
+  private timeZone(): string {
+    try {
+      return this.deps.timeZone?.() ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
+    } catch {
+      return 'UTC';
+    }
+  }
+
+  /** 這次可以給模型的工具：模型要會叫工具才給 */
+  private toolsFor(info: ModelInfo | undefined): PhoneTool[] {
+    return info?.tools ? (this.deps.tools ?? []) : [];
+  }
+
+  /** 照名稱找工具（畫面顯示確認卡也用） */
+  toolFor(name: string): PhoneTool | undefined {
+    return this.deps.tools?.find((tool) => tool.name === name);
+  }
+
+  /** 加一則工具結果（content 交給模型，detail 是給使用者看的一句話） */
+  private async addToolResult(sessionId: string, call: ToolCall, result: Parameters<typeof toolResultContent>[0], summary: string): Promise<void> {
+    await this.deps.repo.addMessage(sessionId, { role: 'tool', content: toolResultContent(result), detail: summary, toolName: call.name, toolCallId: call.id });
+  }
+
+  /**
+   * 處理 AI 這次叫的工具：先檢查名稱與輸入，只讀的直接做，會改東西的變成確認卡。
+   * 回傳 continue（全部做完，接著問模型）或 wait（有確認卡在等使用者）。
+   */
+  private async runToolCalls(sessionId: string, messageId: string, calls: ToolCall[]): Promise<'continue' | 'wait'> {
+    const { repo } = this.deps;
+    const ctx = { now: this.now() };
+    const results: { call: ToolCall; run: Promise<Parameters<typeof toolResultContent>[0] & { summary: string }> }[] = [];
+    let waiting = 0;
+    for (const call of calls) {
+      const tool = this.toolFor(call.name);
+      const reject = (error: string) => results.push({ call, run: Promise.resolve({ ok: false as const, error, summary: '' }) });
+      if (!tool) {
+        reject(`There is no tool named "${call.name}".`);
+        continue;
+      }
+      const parsed = parseArguments(call.arguments);
+      const checked = parsed.ok ? validateInput(tool.inputSchema, parsed.value) : parsed;
+      if (!checked.ok) {
+        reject(`Invalid arguments for ${tool.name}: ${checked.error} Fix them and call the tool again.`);
+        continue;
+      }
+      const problem = tool.check?.(checked.value, ctx);
+      if (problem) {
+        reject(problem);
+        continue;
+      }
+      if (!needsConfirmation(tool)) {
+        results.push({
+          call,
+          run: tool.run(checked.value).then(
+            (out) => ({ ok: true as const, result: out.data, summary: out.summary }),
+            (e) => ({ ok: false as const, error: errorDetail(e), summary: t('沒有做成：{p0}', { p0: tool.label }) })
+          ),
+        });
+        continue;
+      }
+      const filled = tool.fillDefaults?.(checked.value, ctx) ?? { input: checked.value, guessed: [] };
+      await repo.addAction({ sessionId, messageId, callId: call.id, tool: tool.name, input: filled.input, guessed: filled.guessed, status: 'pending' });
+      waiting++;
+    }
+    // 結果照叫的順序放進對話
+    for (const { call, run } of results) {
+      const { summary, ...result } = await run;
+      await this.addToolResult(sessionId, call, result, summary);
+    }
+    if (this.state.session?.id === sessionId) this.set({ messages: await repo.listMessages(sessionId) });
+    return waiting > 0 ? 'wait' : 'continue';
+  }
+
+  /** 從最後一則使用者訊息之後，AI 已經叫了幾輪工具 */
+  private toolRounds(): number {
+    const msgs = this.state.messages;
+    const lastUser = msgs.map((m) => m.role).lastIndexOf('user');
+    return msgs.slice(lastUser + 1).filter((m) => m.role === 'assistant' && m.toolCalls?.length).length;
+  }
+
+  /** 工具都有結果了：交回模型接著回答；叫太多輪就停下來 */
+  private async continueAfterTools(): Promise<void> {
+    const s = this.state.session;
+    if (!s || this.state.streaming) return;
+    if (this.state.messages.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
+    if (this.toolRounds() >= MAX_TOOL_ROUNDS) {
+      await this.deps.repo.addMessage(s.id, { role: 'note', content: t('做到一半停下來了：AI 叫了太多次工具。已經做的事在上面，可以復原。') });
+      this.set({ messages: await this.deps.repo.listMessages(s.id) });
+      return;
+    }
+    await this.answer();
+  }
+
+  private actionBusy = new Set<string>();
+
+  /** 使用者按了確認卡上的動詞按鈕（edited：按「修改」改過的內容） */
+  async approveAction(id: string, edited?: ToolInput): Promise<void> {
+    const { repo } = this.deps;
+    const action = await repo.getAction(id);
+    const tool = action && this.toolFor(action.tool);
+    if (!action || action.status !== 'pending' || this.actionBusy.has(id)) return;
+    this.actionBusy.add(id);
+    try {
+      const call: ToolCall = { id: action.callId, name: action.tool, arguments: action.input };
+      let input = action.input;
+      if (edited) {
+        const checked = tool ? validateInput(tool.inputSchema, { ...action.input, ...edited }) : null;
+        if (checked && !checked.ok) throw new Error(t('改過的內容格式不對，請再檢查一次。'));
+        if (checked?.ok) input = checked.value;
+      }
+      const changes = edited ? describeChanges(action.input, input) : '';
+      if (!tool) {
+        await repo.updateAction(id, { status: 'failed', note: t('這個 App 版本沒有這個功能。') });
+        await this.addToolResult(action.sessionId, call, { ok: false, error: `The tool "${action.tool}" is not available.` }, '');
+      } else {
+        try {
+          const out = await tool.run(input);
+          await repo.updateAction(id, { status: 'done', input, result: out.data, summary: out.summary });
+          await this.addToolResult(action.sessionId, call, { ok: true, result: out.data, ...(changes ? { note: `The user changed these fields before confirming: ${changes}` } : {}) }, '');
+          this.deps.onEvent?.('acted');
+        } catch (e) {
+          await repo.updateAction(id, { status: 'failed', input, note: describeError(e) });
+          await this.addToolResult(action.sessionId, call, { ok: false, error: errorDetail(e) }, '');
+        }
+      }
+    } finally {
+      this.actionBusy.delete(id);
+    }
+    await this.afterAction(action.sessionId);
+  }
+
+  /** 使用者按了「不要」（reason：想改成怎樣，可以不填） */
+  async declineAction(id: string, reason = ''): Promise<void> {
+    const { repo } = this.deps;
+    const action = await repo.getAction(id);
+    if (!action || action.status !== 'pending' || this.actionBusy.has(id)) return;
+    await repo.updateAction(id, { status: 'declined', note: reason.trim() });
+    await this.addToolResult(
+      action.sessionId,
+      { id: action.callId, name: action.tool, arguments: action.input },
+      { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}) },
+      ''
+    );
+    await this.afterAction(action.sessionId);
+  }
+
+  /** 確認卡都處理完了就接著問模型 */
+  private async afterAction(sessionId: string): Promise<void> {
+    if (this.state.session?.id !== sessionId) return;
+    this.set({ messages: await this.deps.repo.listMessages(sessionId) });
+    await this.continueAfterTools();
+  }
+
+  /** 復原做過的動作（例如刪掉剛加的行程） */
+  async undoAction(id: string): Promise<void> {
+    const { repo } = this.deps;
+    const action = await repo.getAction(id);
+    const tool = action && this.toolFor(action.tool);
+    if (!action || action.status !== 'done' || !tool?.undo) return;
+    await tool.undo(action.result);
+    await repo.updateAction(id, { status: 'undone' });
+    if (this.state.session?.id === action.sessionId) this.set({ messages: await repo.listMessages(action.sessionId) });
+  }
+
+  /** 使用者沒按確認卡就說了別的：還在等的動作都當作不要 */
+  private async declinePending(sessionId: string): Promise<void> {
+    const pending = this.state.messages.flatMap((m) => m.actions ?? []).filter((a: Action) => a.status === 'pending');
+    for (const a of pending) {
+      await this.deps.repo.updateAction(a.id, { status: 'declined' });
+      await this.addToolResult(sessionId, { id: a.callId, name: a.tool, arguments: a.input }, { ok: false, error: 'The user did not confirm and sent a new message instead.' }, '');
+    }
   }
 
   /** 請模型取標題；失敗就用第一句話的開頭。使用者這段時間自己改了標題就不蓋掉 */

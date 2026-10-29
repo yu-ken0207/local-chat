@@ -15,6 +15,7 @@ import { C, TEXT } from '../ui/theme';
 import { Composer, chooseOption, type PickSource } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
+import { ActionView } from './ActionCard';
 import { MessageView } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
@@ -224,6 +225,16 @@ export function ChatScreen(p: ChatScreenProps) {
                   onCopy={() => copy(m.content)}
                   onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
                   onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+                  extra={m.actions?.map((a) => (
+                    <ActionView
+                      key={a.id}
+                      action={a}
+                      tool={store.toolFor(a.tool)}
+                      onApprove={(id, edited) => store.approveAction(id, edited).catch((e) => Alert.alert(t('沒有做成'), e instanceof Error ? e.message : String(e)))}
+                      onDecline={(id, reason) => store.declineAction(id, reason)}
+                      onUndo={(id) => store.undoAction(id).catch((e) => Alert.alert(t('沒辦法復原'), e instanceof Error ? e.message : String(e)))}
+                    />
+                  ))}
                 />
               ))
             )}

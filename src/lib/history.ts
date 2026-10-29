@@ -13,6 +13,7 @@ export const defaultImageQuestion = () => t('這張照片裡有什麼？');
  * - 錯誤、提示這類訊息不送
  * - 模型看不懂圖時拿掉照片，並回報拿掉幾張（畫面要提示使用者）
  * - 思考過程不送回去，只送回答
+ * - 叫過的工具與工具結果要送回去，模型才知道做了什麼
  */
 export function buildChatMessages(
   messages: Message[],
@@ -29,8 +30,13 @@ export function buildChatMessages(
         content: m.content,
         ...(images.length > 0 && options.vision ? { images } : {}),
       });
+    } else if (m.role === 'assistant' && m.toolCalls?.length) {
+      // 叫過工具的回答：連同叫了什麼一起送回去（工具結果在後面的 tool 訊息）
+      out.push({ role: 'assistant', content: m.content, tool_calls: m.toolCalls.map((c) => ({ id: c.id, function: { name: c.name, arguments: c.arguments } })) });
     } else if (m.role === 'assistant' && m.content.trim()) {
       out.push({ role: 'assistant', content: m.content });
+    } else if (m.role === 'tool') {
+      out.push({ role: 'tool', content: m.content, ...(m.toolName ? { tool_name: m.toolName } : {}), ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}) });
     }
   }
   return { messages: out, droppedImages };

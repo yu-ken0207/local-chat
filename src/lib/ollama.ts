@@ -1,6 +1,7 @@
 import { fetch as expoFetch } from 'expo/fetch';
 
 import { NdjsonSplitter } from './ndjson';
+import type { ToolCall } from './tools';
 import { t } from '../i18n';
 
 // ---- 型別 ----
@@ -37,6 +38,8 @@ export type ModelInfo = {
   engineName: string;
   /** 能不能預先載入／卸載（OpenAI 格式的伺服器不行） */
   canLoad: boolean;
+  /** 會不會叫工具（/api/show 的 capabilities 有 tools） */
+  tools: boolean;
 };
 
 /** 電腦的配備（小幫手回報）；手機用來判斷哪些模型跑得動 */
@@ -61,11 +64,22 @@ export type DownloadJob = {
 
 export type LoadedModel = { name: string; sizeVram: number; contextLength: number | null; expiresAt: string };
 
-export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string; images?: string[] };
+export type ChatMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  images?: string[];
+  /** 模型上一輪叫的工具（assistant） */
+  tool_calls?: { id?: string; function: { name: string; arguments: unknown } }[];
+  /** 工具結果（tool）屬於哪個工具、哪一次呼叫 */
+  tool_name?: string;
+  tool_call_id?: string;
+};
 
 export type ChatDelta = { content?: string; thinking?: string };
 
 export type ChatResult = {
+  /** 模型這次要叫的工具（沒有就是空的） */
+  toolCalls: ToolCall[];
   doneReason: string;
   evalCount: number;
   evalDurationNs: number;
@@ -131,6 +145,7 @@ export function parseModelInfo(name: string, show: any): ModelInfo | null {
   return {
     name,
     vision: caps.includes('vision'),
+    tools: caps.includes('tools'),
     think: caps.includes('thinking') ? parseThink(show, details.family) : null,
     contextLength: findContextLength(show?.model_info),
     family: String(details.family ?? ''),
@@ -431,12 +446,13 @@ export class OllamaClient {
 
   /** 串流聊天：每收到一段字就呼叫 onDelta，結束時回傳統計數字 */
   async chat(
-    params: { model: string; messages: ChatMessage[]; think?: ThinkSetting },
+    params: { model: string; messages: ChatMessage[]; think?: ThinkSetting; tools?: unknown[] },
     onDelta: (delta: ChatDelta) => void,
     signal?: AbortSignal
   ): Promise<ChatResult> {
     const body: Record<string, unknown> = { model: params.model, messages: params.messages, stream: true };
     if (params.think !== undefined) body.think = params.think;
+    if (params.tools && params.tools.length > 0) body.tools = params.tools;
 
     const abort = makeAbort(this.firstTokenTimeout, signal);
     let waitingMs = this.firstTokenTimeout;
@@ -454,11 +470,18 @@ export class OllamaClient {
       const decoder = new TextDecoder();
       const splitter = new NdjsonSplitter();
       let final: any = null;
+      const toolCalls: ToolCall[] = [];
       const handle = (obj: any) => {
         if (obj?.error) throw new OllamaError('server', String(obj.error));
         const m = obj?.message;
         if (m?.thinking) onDelta({ thinking: String(m.thinking) });
         if (m?.content) onDelta({ content: String(m.content) });
+        if (Array.isArray(m?.tool_calls)) {
+          for (const c of m.tool_calls) {
+            const name = String(c?.function?.name ?? '');
+            if (name) toolCalls.push({ id: String(c?.id ?? `call_${toolCalls.length}`), name, arguments: c?.function?.arguments ?? {} });
+          }
+        }
         if (obj?.done) final = obj;
       };
       for (;;) {
@@ -472,6 +495,7 @@ export class OllamaClient {
       splitter.flush().forEach(handle);
       if (!final) throw new OllamaError('network', t('回答還沒結束連線就斷了'));
       return {
+        toolCalls,
         doneReason: String(final.done_reason ?? ''),
         evalCount: Number(final.eval_count ?? 0),
         evalDurationNs: Number(final.eval_duration ?? 0),
