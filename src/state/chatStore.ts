@@ -6,7 +6,7 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import { describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolResultContent, toolSystemPrompt, validateInput, type PhoneTool, type ToolCall, type ToolInput } from '../lib/tools';
+import { ToolPermissionError, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolResultContent, toolSystemPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
 
@@ -137,9 +137,11 @@ export type AppLanguage = 'zh-Hant' | 'en';
 export type Prefs = {
   /** App 語言：跟著系統，或指定（AI 也用這個語言回答） */
   language: 'system' | AppLanguage;
+  /** 設定頁「AI 可以做的事」關掉的分類 */
+  toolsOff: ToolGroup[];
 };
 
-export const DEFAULT_PREFS: Prefs = { language: 'system' };
+export const DEFAULT_PREFS: Prefs = { language: 'system', toolsOff: [] };
 
 export type ChatEvent = 'answered' | 'failed' | 'stopped' | 'downloaded' | 'acted';
 
@@ -1300,9 +1302,28 @@ export class ChatStore {
     }
   }
 
-  /** 這次可以給模型的工具：模型要會叫工具才給 */
+  /** 這次可以給模型的工具：模型要會叫工具才給；設定裡關掉的分類不給 */
   private toolsFor(info: ModelInfo | undefined): PhoneTool[] {
-    return info?.tools ? (this.deps.tools ?? []) : [];
+    if (!info?.tools) return [];
+    const off = new Set(this.state.prefs.toolsOff ?? []);
+    return (this.deps.tools ?? []).filter((tool) => !tool.group || !off.has(tool.group));
+  }
+
+  /** 設定頁「AI 可以做的事」要列出的分類 */
+  toolGroups(): ToolGroup[] {
+    return [...new Set((this.deps.tools ?? []).map((tool) => tool.group).filter((g): g is ToolGroup => !!g))];
+  }
+
+  async setToolGroup(group: ToolGroup, on: boolean): Promise<void> {
+    const off = new Set(this.state.prefs.toolsOff ?? []);
+    if (on) off.delete(group);
+    else off.add(group);
+    await this.setPref('toolsOff', [...off]);
+  }
+
+  /** 做過的事（設定頁的清單） */
+  listDoneActions() {
+    return this.deps.repo.listDoneActions();
   }
 
   /** 照名稱找工具（畫面顯示確認卡也用） */
@@ -1347,7 +1368,10 @@ export class ChatStore {
           call,
           run: tool.run(checked.value).then(
             (out) => ({ ok: true as const, result: out.data, summary: out.summary }),
-            (e) => ({ ok: false as const, error: errorDetail(e), summary: t('沒有做成：{p0}', { p0: tool.label }) })
+            (e) =>
+              e instanceof ToolPermissionError
+                ? { ok: false as const, error: `permission_denied: ${e.forModel}`, summary: e.message }
+                : { ok: false as const, error: errorDetail(e), summary: t('沒有做成：{p0}', { p0: tool.label }) }
           ),
         });
         continue;
@@ -1413,8 +1437,9 @@ export class ChatStore {
           await this.addToolResult(action.sessionId, call, { ok: true, result: out.data, ...(changes ? { note: `The user changed these fields before confirming: ${changes}` } : {}) }, '');
           this.deps.onEvent?.('acted');
         } catch (e) {
-          await repo.updateAction(id, { status: 'failed', input, note: describeError(e) });
-          await this.addToolResult(action.sessionId, call, { ok: false, error: errorDetail(e) }, '');
+          const denied = e instanceof ToolPermissionError;
+          await repo.updateAction(id, { status: 'failed', input, note: describeError(e), ...(denied ? { result: { error: 'permission_denied' } } : {}) });
+          await this.addToolResult(action.sessionId, call, { ok: false, error: denied ? `permission_denied: ${e.forModel}` : errorDetail(e) }, '');
         }
       }
     } finally {

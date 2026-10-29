@@ -744,11 +744,11 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
 describe('設定', () => {
   test('偏好設定會存起來，重開 App 還在', async () => {
     const { net, store, repo } = await ready();
-    expect(store.getState().prefs).toEqual({ language: 'system' });
+    expect(store.getState().prefs).toEqual({ language: 'system', toolsOff: [] });
     await store.setPref('language', 'en');
     const again = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false });
     await again.init();
-    expect(again.getState().prefs).toEqual({ language: 'en' });
+    expect(again.getState().prefs).toEqual({ language: 'en', toolsOff: [] });
     await again.setPref('language', 'system');
   });
 

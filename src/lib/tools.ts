@@ -42,7 +42,37 @@ export type PhoneTool = {
   run(input: ToolInput): Promise<ToolOutput>;
   /** 復原：照執行結果把事情還原 */
   undo?(data: unknown): Promise<void>;
+  /** 設定頁「AI 可以做的事」的分類（關掉就不給模型這個工具） */
+  group?: ToolGroup;
 };
+
+export type ToolGroup = 'calendar' | 'reminders';
+
+/** 使用者沒給權限（行事曆、提醒事項）：畫面給「打開設定」，交給模型的是 permission_denied */
+export class ToolPermissionError extends Error {
+  readonly code = 'permission_denied';
+  constructor(
+    message: string,
+    /** 給模型看的說明（英文） */
+    readonly forModel: string
+  ) {
+    super(message);
+    this.name = 'ToolPermissionError';
+  }
+}
+
+/** 當地時間的文字（2026-11-04T15:00 或 2026-11-04）轉成 Date；只有日期時是那天 00:00 */
+export function parseLocal(text: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(text);
+  if (!m) return new Date(NaN);
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0));
+}
+
+/** Date 轉回當地時間的文字（2026-11-04T15:00） */
+export function toLocalText(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 /** 模型叫工具（從 Ollama 回來的樣子；arguments 可能是物件，也可能是一串文字） */
 export type ToolCall = { id: string; name: string; arguments: unknown };
@@ -96,6 +126,7 @@ export function validateInput(schema: InputSchema, input: ToolInput): Checked {
     if (field.enum && !field.enum.includes(v as string)) return { ok: false, error: `"${key}" must be one of: ${field.enum.join(', ')}.` };
     if (field.format === 'date-time' && typeof v === 'string') {
       v = v.trim().replace(/(Z|[+-]\d{2}:?\d{2})$/, '');
+      if (DATE.test(v as string)) v = `${v}T00:00`; // 只給日期（整天的事）：當作那天 00:00
       if (!DATE_TIME.test(v as string) || isNaN(Date.parse(v as string))) return { ok: false, error: `"${key}" must be a local date and time like 2026-11-04T15:00.` };
     }
     if (field.format === 'date' && typeof v === 'string' && (!DATE.test(v) || isNaN(Date.parse(v)))) return { ok: false, error: `"${key}" must be a date like 2026-11-04.` };

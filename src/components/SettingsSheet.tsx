@@ -2,14 +2,15 @@ import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import appJson from '../../app.json';
-import { fmtBytes } from '../lib/format';
+import { fmtBytes, fmtWhen } from '../lib/format';
+import type { ToolGroup } from '../lib/tools';
 import type { AppLanguage, ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
-import { TRASH_DAYS } from '../store/repo';
+import { TRASH_DAYS, type Action } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
@@ -19,6 +20,9 @@ import { t } from '../i18n';
 
 /** 語言名稱：繁體中文、English 用各自的寫法，不翻譯 */
 const languageName = (k: 'system' | AppLanguage) => ({ system: t('跟著系統'), 'zh-Hant': '繁體中文', en: 'English' })[k]; // i18n-ignore
+
+const groupName = (g: ToolGroup) => ({ calendar: t('看行事曆、加行程'), reminders: t('加提醒事項') })[g];
+const groupIcon = (g: ToolGroup): SFSymbol => ({ calendar: 'calendar', reminders: 'checklist' } as const)[g];
 
 type Props = {
   store: ChatStore;
@@ -35,6 +39,8 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
   const { prefs } = state;
   const [info, setInfo] = useState<{ path: string | null; bytes: number; sessions: number; trash: number } | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [doneOpen, setDoneOpen] = useState(false);
+  const groups = store.toolGroups();
 
   useEffect(() => {
     store.dataInfo().then(setInfo).catch(() => setInfo(null));
@@ -111,6 +117,18 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
         </Section>
         <Text style={styles.footnote}>{t('AI 也會用這個語言回答。')}</Text>
 
+        {groups.length > 0 ? (
+          <>
+            <Section title={t('AI 可以做的事')}>
+              {groups.map((g) => (
+                <SwitchRow key={g} icon={groupIcon(g)} label={groupName(g)} value={!prefs.toolsOff.includes(g)} onChange={(on) => void store.setToolGroup(g, on)} />
+              ))}
+              <Row icon="clock.arrow.circlepath" label={t('做過的事')} onPress={() => setDoneOpen(true)} last />
+            </Section>
+            <Text style={styles.footnote}>{t('AI 改任何東西之前都會先問你，做完也可以復原。要用會叫工具的模型才有這些功能。')}</Text>
+          </>
+        ) : null}
+
         <Section title={t('資料')}>
           <Row icon="trash.slash" label={t('最近刪除')} value={info ? t('{p0} 段', { p0: info.trash }) : ''} onPress={onOpenTrash} accessibilityLabel={t('最近刪除，{p0} 段', { p0: info?.trash ?? 0 })} />
           <Row icon="square.and.arrow.up" label={t('備份所有對話')} onPress={backup} />
@@ -146,7 +164,83 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
       <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnectOpen(false)}>
         <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} />
       </Modal>
+      <Modal visible={doneOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDoneOpen(false)}>
+        <DoneActions store={store} onClose={() => setDoneOpen(false)} />
+      </Modal>
     </View>
+  );
+}
+
+/** 做過的事：AI 加的行程、提醒，最近的在上面，還沒復原的可以復原 */
+function DoneActions({ store, onClose }: { store: ChatStore; onClose: () => void }) {
+  const [items, setItems] = useState<Action[] | null>(null);
+  const reload = () => store.listDoneActions().then(setItems).catch(() => setItems([]));
+  useEffect(() => {
+    void reload();
+  }, []);
+  const now = Date.now();
+  return (
+    <View style={styles.sheet}>
+      <View style={styles.header}>
+        <View style={styles.headerSide} />
+        <Text style={styles.title} accessibilityRole="header">
+          {t('做過的事')}
+        </Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.headerSide, styles.headerRight, pressed && styles.pressed]}>
+          <Text style={styles.done}>{t('完成')}</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          {items === null ? null : items.length === 0 ? (
+            <Text style={[styles.rowTitle, styles.empty]}>{t('AI 還沒有幫你做過事。')}</Text>
+          ) : (
+            items.map((a, i) => {
+              const undone = a.status === 'undone';
+              const canUndo = !undone && !!store.toolFor(a.tool)?.undo;
+              return (
+                <View key={a.id}>
+                  <View style={styles.row}>
+                    <View style={styles.flex}>
+                      <Text style={[styles.rowTitle, undone && { color: C.secondary }]}>{a.summary || store.toolFor(a.tool)?.label || a.tool}</Text>
+                      <Text style={styles.path}>{undone ? t('{p0} · 已復原', { p0: fmtWhen(a.createdAt, now) }) : fmtWhen(a.createdAt, now)}</Text>
+                    </View>
+                    {canUndo ? (
+                      <Pressable
+                        onPress={() =>
+                          store
+                            .undoAction(a.id)
+                            .then(reload)
+                            .catch((e) => Alert.alert(t('沒辦法復原'), e instanceof Error ? e.message : String(e)))
+                        }
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={t('復原：{p0}', { p0: a.summary })}>
+                        <Text style={styles.undo}>{t('復原')}</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  {i < items.length - 1 ? <View style={styles.separator} /> : null}
+                </View>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+function SwitchRow({ icon, label, value, onChange }: { icon: SFSymbol; label: string; value: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <>
+      <View style={styles.row}>
+        <SymbolView name={icon} size={18} tintColor={C.accent} />
+        <Text style={[styles.rowTitle, styles.flex]}>{label}</Text>
+        <Switch value={value} onValueChange={onChange} accessibilityLabel={label} />
+      </View>
+      <View style={styles.separator} />
+    </>
   );
 }
 
@@ -218,4 +312,6 @@ const styles = StyleSheet.create({
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   infoBox: { padding: 16, gap: 6 },
   path: { ...TEXT.meta, color: C.secondary },
+  empty: { padding: 16, color: C.secondary },
+  undo: { ...TEXT.small, color: C.accent, fontWeight: '600' },
 });

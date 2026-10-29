@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Linking, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import type { PhoneTool, ToolInput } from '../lib/tools';
 import type { Action } from '../store/repo';
@@ -33,6 +33,9 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
     <View style={styles.doneRow} testID={`action-${action.id}`}>
       <Text style={[styles.small, action.status === 'failed' ? styles.red : styles.dim, styles.flex]}>{text}</Text>
       {action.status === 'done' && tool?.undo ? <ActionButton text={t('復原')} onPress={() => void h.onUndo(action.id)} /> : null}
+      {action.status === 'failed' && (action.result as { error?: string } | null)?.error === 'permission_denied' ? (
+        <ActionButton text={t('打開設定')} onPress={() => void Linking.openSettings()} />
+      ) : null}
     </View>
   );
 }

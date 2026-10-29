@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Image, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { AccessibilityInfo, Image, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
 import { fmtElapsed } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
@@ -53,6 +53,11 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
         <Text style={styles.aiMark}>•</Text>
         <View style={styles.body}>
           <Text style={[styles.small, styles.dim]}>{m.detail}</Text>
+          {m.content.includes('"permission_denied') ? (
+            <View style={styles.actions}>
+              <ActionButton text={t('打開設定')} onPress={() => void Linking.openSettings()} />
+            </View>
+          ) : null}
         </View>
       </View>
     );

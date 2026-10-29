@@ -32,7 +32,14 @@
           "photosPermission": "從相簿選照片傳給模型看"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "讓 AI 幫你看行事曆、加行程（每次加之前都會先問你）",
+          "remindersPermission": "讓 AI 幫你加提醒事項（每次加之前都會先問你）"
+        }
+      ]
     ]
   }
 }

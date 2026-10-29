@@ -19,9 +19,11 @@ import { openBackupBytes, openMemoryDb, openPhoneDb, type Db } from './src/store
 import { Repo } from './src/store/repo';
 import { C, TEXT } from './src/ui/theme';
 import { t } from './src/i18n';
+import { calendarTools } from './src/tools/calendar';
+import { expoCalendarApi } from './src/tools/expoCalendar';
 
 function haptic(event: ChatEvent) {
-  if (event === 'answered' || event === 'downloaded') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  if (event === 'answered' || event === 'downloaded' || event === 'acted') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   if (event === 'failed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   if (event === 'stopped') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }
@@ -61,7 +63,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const repo = new Repo(await openPhoneDb());
-      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, vpnOn, onEvent: haptic, deviceLanguage, openMemoryDb });
+      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, vpnOn, onEvent: haptic, deviceLanguage, openMemoryDb, tools: calendarTools(expoCalendarApi()) });
       await s.init();
       setStore(s);
     })().catch((e) => setError(e instanceof Error ? e.message : String(e)));

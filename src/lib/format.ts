@@ -45,3 +45,23 @@ export function fmtWhen(ts: number, now: number): string {
   if (d.getFullYear() === n.getFullYear()) return `${d.getMonth() + 1}/${d.getDate()}`;
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
+
+/**
+ * 行程時間的白話：中文「11/4（週三）15:00–16:00」，英文「Wed 11/4 15:00–16:00」；整天的只寫日期。
+ * 跨天時結束也寫日期。
+ */
+export function fmtEventTime(start: Date, end: Date | null, allDay: boolean, lang: 'zh-Hant' | 'en'): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  const day = (d: Date) => {
+    const md = `${d.getMonth() + 1}/${d.getDate()}`;
+    const wd = new Intl.DateTimeFormat(lang === 'en' ? 'en-US' : 'zh-TW', { weekday: 'short' }).format(d);
+    return lang === 'en' ? `${wd} ${md}` : `${md}\uff08${wd}\uff09`;
+  };
+  const time = (d: Date) => `${p(d.getHours())}:${p(d.getMinutes())}`;
+  // 中文的括號後面不空格；英文要空格
+  const sep = lang === 'en' ? ' ' : '';
+  if (allDay) return end && end.toDateString() !== start.toDateString() ? `${day(start)}–${day(end)}` : day(start);
+  if (!end) return `${day(start)}${sep}${time(start)}`;
+  const sameDay = end.toDateString() === start.toDateString();
+  return `${day(start)}${sep}${time(start)}–${sameDay ? '' : day(end) + sep}${time(end)}`;
+}
