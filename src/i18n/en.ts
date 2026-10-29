@@ -365,6 +365,8 @@ export const en: Record<string, string> = {
   "沒有做：{p0}": "Not done: {p0}",
   "沒有做：「{p0}」在設定裡關掉了": "Not done: \"{p0}\" is turned off in Settings",
   "跳過：{p0}（你直接打字了）": "Skipped: {p0} (you typed a new message)",
+  "加上": "Add",
+  "拿掉": "Remove",
   "{p0}「{p1}」": "{p0} \"{p1}\"",
   "（{p0}）": " ({p0})",
   "確定": "OK",

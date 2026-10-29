@@ -33,3 +33,11 @@ jest.mock('expo-secure-store', () => {
   };
 });
 jest.mock('expo-device', () => ({ deviceName: '測試 iPhone', modelName: 'iPhone 15' }));
+// 時間選擇器：測試用 fireEvent(元件, 'valueChange', 新的時間) 模擬選了一個時間；mode 放在 accessibilityHint 方便檢查
+jest.mock('@react-native-community/datetimepicker', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    default: (p: any) => <View accessibilityLabel={p.accessibilityLabel} accessibilityHint={p.mode} onValueChange={(d: Date) => p.onValueChange?.({ type: 'set' }, d)} />,
+  };
+});

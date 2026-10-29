@@ -39,7 +39,8 @@
           "calendarPermission": "讓 AI 幫你看行事曆、加行程（每次加之前都會先問你）",
           "remindersPermission": "讓 AI 幫你加提醒事項（每次加之前都會先問你）"
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

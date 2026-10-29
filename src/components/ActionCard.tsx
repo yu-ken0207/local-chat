@@ -1,8 +1,9 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { fmtEventTime } from '../lib/format';
-import { parseLocal, type PhoneTool, type ToolInput } from '../lib/tools';
+import { parseLocal, toLocalText, type PhoneTool, type ToolInput } from '../lib/tools';
 import type { Action } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { ActionButton } from './Messages';
@@ -191,9 +192,43 @@ function shown(tool: PhoneTool | undefined, key: string, v: unknown): string {
   return fmtEventTime(d, null, format === 'date' || (format === 'date-time' && v.endsWith('T00:00')), getLanguage());
 }
 
-/** 確認卡上可以改的欄位（文字、數字、是非） */
+/**
+ * 時間欄位：iPhone 內建的時間選擇器（跟「行事曆」App 一樣，點日期跳出月曆、點時間跳出滾輪）。
+ * 值一樣是當地時間的文字（2026-11-04T15:00，只要日期的是 2026-11-04）。
+ */
+function TimeField({ value, dateOnly, label, onChange }: { value: string; dateOnly: boolean; label: string; onChange: (value: string) => void }) {
+  const d = parseLocal(value);
+  return (
+    <DateTimePicker
+      value={isNaN(d.getTime()) ? new Date() : d}
+      mode={dateOnly ? 'date' : 'datetime'}
+      display="compact"
+      minuteInterval={5}
+      locale={getLanguage() === 'en' ? 'en-US' : 'zh-TW'}
+      accessibilityLabel={label}
+      onValueChange={(_, next) => {
+        if (!dateOnly) return onChange(toLocalText(next));
+        next.setHours(0, 0, 0, 0);
+        onChange(toLocalText(next));
+      }}
+    />
+  );
+}
+
+/** 還沒填的時間要加上時：結束接在開始後 1 小時，其他用下一個整點 */
+function defaultTime(values: Record<string, string | boolean>): string {
+  const start = typeof values.start === 'string' ? parseLocal(values.start) : new Date(NaN);
+  if (!isNaN(start.getTime())) return toLocalText(new Date(start.getTime() + 60 * 60 * 1000));
+  const d = new Date();
+  d.setHours(d.getHours() + 1, 0, 0, 0);
+  return toLocalText(d);
+}
+
+/** 確認卡上可以改的欄位（文字、數字、是非；時間用時間選擇器） */
 function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool; input: ToolInput; done: string; onDone: (values: ToolInput) => void; onCancel: () => void }) {
   const fields = Object.entries(tool.fields ?? {});
+  const required = new Set(tool.inputSchema.required ?? []);
+  // 全天：可能在欄位裡（可以切換），也可能只在 AI 給的輸入裡
   const [values, setValues] = useState<Record<string, string | boolean>>(() =>
     Object.fromEntries(fields.map(([key]) => [key, tool.inputSchema.properties[key]?.type === 'boolean' ? !!input[key] : toText(input[key])]))
   );
@@ -208,8 +243,23 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
   return (
     <View style={styles.editor}>
       {fields.map(([key, label]) => {
-        const type = tool.inputSchema.properties[key]?.type;
+        const { type, format } = tool.inputSchema.properties[key] ?? {};
         const v = values[key];
+        const set = (next: string | boolean) => setValues((s) => ({ ...s, [key]: next }));
+        if (format === 'date-time' || format === 'date') {
+          // 全天的行程只選日期；選填的時間可以拿掉、沒填的可以加上
+          const text = String(v);
+          return (
+            <View key={key} style={styles.field}>
+              <Text style={[styles.small, styles.dim]}>{label}</Text>
+              <View style={styles.timeRow}>
+                {text ? <TimeField value={text} dateOnly={format === 'date' || ('allDay' in values ? values.allDay : input.allDay) === true} label={label} onChange={set} /> : null}
+                {!text ? <ActionButton text={t('加上')} onPress={() => set(defaultTime(values))} /> : null}
+                {text && !required.has(key) ? <ActionButton text={t('拿掉')} onPress={() => set('')} /> : null}
+              </View>
+            </View>
+          );
+        }
         return (
           <View key={key} style={styles.field}>
             <Text style={[styles.small, styles.dim]}>{label}</Text>
@@ -364,6 +414,7 @@ const styles = StyleSheet.create({
   red: { color: C.red },
   flex: { flex: 1 },
   field: { gap: 2 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   editor: { gap: 6, paddingLeft: 24 },
   input: { ...TEXT.body, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },

@@ -188,6 +188,21 @@ describe('接上 App', () => {
     open.mockRestore();
   });
 
+  test('全天的行程按修改：時間選擇器只選日期，選了就是那天的全天', async () => {
+    const { host, store, api } = await setup();
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '戶外教學', start: '2026-11-20', allDay: true }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '11/20 戶外教學');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await fireEvent.press(await screen.findByText('修改'));
+    expect(screen.getByLabelText('開始').props.accessibilityHint).toBe('date');
+    await fireEvent(screen.getByLabelText('開始'), 'valueChange', new Date(2026, 10, 27, 13, 45));
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(api.created).toHaveLength(1));
+    expect(api.created[0].event).toMatchObject({ title: '戶外教學', allDay: true, start: at(2026, 11, 27) });
+  });
+
   test('設定裡關掉了，模型照前面的對話還是去叫：不出確認卡，跟模型說關掉了，畫面寫一行', async () => {
     const { net, host, store } = await setup();
     await store.setToolGroup('calendar', false);

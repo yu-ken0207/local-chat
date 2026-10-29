@@ -255,6 +255,22 @@ describe('畫面', () => {
     expect(await screen.findByText('已復原：新增 1 個行程')).toBeTruthy();
   });
 
+  test('修改時間用時間選擇器：選了就照選的做；選填的結束時間可以拿掉再加上', async () => {
+    const { cal } = await screenWithCard();
+    await fireEvent.press(screen.getByText('修改'));
+    expect(screen.getByLabelText('開始').props.accessibilityHint).toBe('datetime');
+    await fireEvent(screen.getByLabelText('開始'), 'valueChange', new Date(2026, 10, 5, 16, 0));
+    // 開始是必填，不能拿掉；結束可以
+    expect(screen.getAllByText('拿掉')).toHaveLength(1);
+    await fireEvent.press(screen.getByText('拿掉'));
+    expect(screen.queryByLabelText('結束')).toBeNull();
+    await fireEvent.press(screen.getByText('加上'));
+    await fireEvent(screen.getByLabelText('結束'), 'valueChange', new Date(2026, 10, 5, 18, 30));
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(cal.created).toHaveLength(1));
+    expect(cal.created[0]).toMatchObject({ start: '2026-11-05T16:00', end: '2026-11-05T18:30' });
+  });
+
   test('沒按確認卡就直接打字：那一行寫「跳過」，跟按「不要」分開', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改成兩小時');
