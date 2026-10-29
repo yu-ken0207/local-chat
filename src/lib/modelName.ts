@@ -34,7 +34,8 @@ const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
 /** 好讀的模型名稱，例如 gemma4:12b → Gemma 4 · 12B；latest 不顯示 */
 export function friendlyModelName(name: string): string {
-  const [path, tag = ''] = name.split(':');
+  // 小幫手上撞名的模型叫「名稱@引擎」，引擎另外顯示
+  const [path, tag = ''] = name.replace(/@[\w:.-]+$/, '').split(':');
   const base = path.split('/').at(-1) ?? path;
   const pretty = prettyBase(base);
   const t = tag.toLowerCase();

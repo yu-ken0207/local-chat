@@ -3,7 +3,7 @@ import { TITLE_PROMPTS } from '../../src/state/chatStore';
 
 const isTitlePrompt = (s: unknown) => Object.values(TITLE_PROMPTS).includes(s as never);
 
-export type FakeModel = { name: string; vision?: boolean; think?: 'toggle' | 'levels'; ctx?: number };
+export type FakeModel = { name: string; vision?: boolean; think?: 'toggle' | 'levels'; ctx?: number; engine?: string; engineName?: string; canLoad?: boolean };
 
 export type FakeHost = {
   version: string;
@@ -29,6 +29,11 @@ export type FakeHelper = {
   tokens: string[];
   /** 配對時手機報的名字 */
   devices: string[];
+  /** /helper/v1/info 回報的配備與可以下載的引擎 */
+  hardware?: unknown;
+  downloadEngines?: string[];
+  /** 下載工作：每問一次進度多一半，完成時模型加進清單；名稱 nope 會失敗 */
+  jobs?: any[];
 };
 
 /**
@@ -85,6 +90,31 @@ export class FakeOllamaNet {
       }
       const auth = init.headers?.Authorization ?? '';
       if (!helper.tokens.some((tk) => auth === `Bearer ${tk}`)) return json({ error: 'pair this phone first', code: 'not_paired' }, 401);
+      const jobs = (helper.jobs ??= []);
+      if (path === '/helper/v1/info') return json({ id: helper.id, name: helper.name, download_engines: helper.downloadEngines ?? ['ollama'], hardware: helper.hardware ?? { memory_bytes: 32e9, gpus: [], unified: false } });
+      if (path === '/helper/v1/downloads' && init.method === 'GET') {
+        for (const j of jobs) {
+          if (j.status !== 'downloading') continue;
+          if (j.model === 'nope') Object.assign(j, { status: 'failed', code: 'not_found', error: 'file does not exist' });
+          else if ((j.completed += j.total / 2) >= j.total) {
+            j.status = 'done';
+            host.models.push({ name: j.model });
+          }
+        }
+        return json({ downloads: jobs });
+      }
+      if (path === '/helper/v1/downloads') {
+        const job = { id: `j${jobs.length + 1}`, model: body.model, engine: body.engine ?? 'ollama', status: 'downloading', completed: 0, total: 1000, cancellable: body.engine !== 'lmstudio' };
+        jobs.push(job);
+        return json(job, 202);
+      }
+      const stop = /^\/helper\/v1\/downloads\/(.+)$/.exec(path);
+      if (stop && init.method === 'DELETE') {
+        const j = jobs.find((x) => x.id === stop[1]);
+        if (j?.status === 'downloading') j.status = 'cancelled';
+        else helper.jobs = jobs.filter((x) => x !== j);
+        return respond(204, [], init.signal);
+      }
     } else if (path.startsWith('/helper/')) {
       return json({ error: 'not found' }, 404);
     }
@@ -93,7 +123,21 @@ export class FakeOllamaNet {
       case '/api/version':
         return json({ version: host.version });
       case '/api/tags':
-        return json({ models: host.models.map((x) => ({ name: x.name })) });
+        return json({
+          models: host.models.map((x) => ({ name: x.name, ...(x.engine ? { engine: x.engine, engine_name: x.engineName ?? '', can_load: x.canLoad ?? true } : {}) })),
+        });
+      case '/api/pull': {
+        if (body.model === 'nope') return respond(200, [JSON.stringify({ status: 'pulling manifest' }) + '\n', JSON.stringify({ error: 'pull model manifest: file does not exist' }) + '\n'], init.signal);
+        host.models.push({ name: body.model });
+        const lines = [
+          { status: 'pulling manifest' },
+          { status: 'pulling a', digest: 'a', total: 800, completed: 400 },
+          { status: 'pulling b', digest: 'b', total: 200, completed: 200 },
+          { status: 'pulling a', digest: 'a', total: 800, completed: 800 },
+          { status: 'success' },
+        ];
+        return respond(200, lines.map((l) => JSON.stringify(l) + '\n'), init.signal);
+      }
       case '/api/show': {
         const model = host.models.find((x) => x.name === body.model);
         if (!model) return json({ error: 'not found' }, 404);

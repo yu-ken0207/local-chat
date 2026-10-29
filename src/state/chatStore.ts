@@ -4,7 +4,7 @@ import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
-import { OllamaError, type HelperHello, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import { OllamaError, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import type { Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { setLanguage, t } from '../i18n';
@@ -69,6 +69,10 @@ export type ChatState = {
   scan: ScanState | null;
   models: Record<string, ModelsEntry>;
   loaded: Record<string, LoadedModel[]>;
+  /** 電腦能下載到哪個引擎、配備（直接連 Ollama：只能下載到 Ollama、不知道配備） */
+  helperInfo: Record<string, HelperInfo>;
+  /** 每台電腦的下載工作 */
+  downloads: Record<string, DownloadJob[]>;
   session: Session | null;
   messages: Message[];
   streaming: Streaming | null;
@@ -91,7 +95,7 @@ export type Prefs = {
 
 export const DEFAULT_PREFS: Prefs = { language: 'system' };
 
-export type ChatEvent = 'answered' | 'failed' | 'stopped';
+export type ChatEvent = 'answered' | 'failed' | 'stopped' | 'downloaded';
 
 export type ChatDeps = {
   repo: Repo;
@@ -112,6 +116,8 @@ export type ChatDeps = {
   deviceLanguage?: () => AppLanguage;
   /** 開一個暫時的記憶體資料庫（從備份還原前，先把目前的資料存一份給「復原」用） */
   openMemoryDb?: () => Promise<Db>;
+  /** 下載中多久問一次進度（毫秒） */
+  pollMs?: number;
   onEvent?: (event: ChatEvent) => void;
 };
 
@@ -177,6 +183,8 @@ export class ChatStore {
     scan: null,
     models: {},
     loaded: {},
+    helperInfo: {},
+    downloads: {},
     session: null,
     messages: [],
     streaming: null,
@@ -194,6 +202,12 @@ export class ChatStore {
   /** 開 App 時的檢查主機＋自動掃描（測試用來等它完成） */
   startupTask: Promise<void> | null = null;
   private scanAbort: AbortController | null = null;
+  /** 正在問下載進度的電腦 */
+  private polling = new Set<string>();
+  /** 手機直接叫 Ollama 下載的工作（可以取消） */
+  private pullAborts = new Map<string, AbortController>();
+  /** 手機直接下載的工作（測試用來等它完成） */
+  downloadTask: Promise<void> | null = null;
   private readonly now: () => number;
   private readonly throttleMs: number;
 
@@ -618,6 +632,7 @@ export class ChatStore {
         models: { ...this.state.models, [url]: { list, loading: false, error: '' } },
         loaded: { ...this.state.loaded, [url]: loaded },
       });
+      void this.loadHelperInfo(url);
       // 對話記得的模型如果原本沒有思考設定，補上預設值
       const s = this.state.session;
       if (s && s.hostUrl === url && s.model && s.think === null) {
@@ -674,6 +689,131 @@ export class ChatStore {
   async unload(url: string, model: string): Promise<void> {
     await this.clientFor(url).unload(model);
     await this.refreshLoaded(url);
+  }
+
+  // ---- 下載模型 ----
+
+  private isHelper(url: string): boolean {
+    return !!this.state.hosts.find((h) => h.url === url)?.helperId;
+  }
+
+  /** 問小幫手能下載到哪個引擎、電腦配備；順便接上還在下載中的工作（例如 App 重開） */
+  async loadHelperInfo(url: string): Promise<void> {
+    if (!this.isHelper(url)) {
+      this.set({ helperInfo: { ...this.state.helperInfo, [url]: { downloadEngines: ['ollama'], hardware: null } } });
+      return;
+    }
+    try {
+      const info = await this.clientFor(url).helperInfo();
+      this.set({ helperInfo: { ...this.state.helperInfo, [url]: info } });
+      await this.syncDownloads(url);
+    } catch {
+      // 舊版小幫手或暫時連不到：下次再問
+    }
+  }
+
+  private setDownloads(url: string, list: DownloadJob[]) {
+    this.set({ downloads: { ...this.state.downloads, [url]: list } });
+  }
+
+  /** 跟小幫手拿下載進度；有下載中的就一直問，到全部結束為止 */
+  private async syncDownloads(url: string): Promise<void> {
+    if (this.polling.has(url)) return;
+    this.polling.add(url);
+    try {
+      for (;;) {
+        let list: DownloadJob[];
+        try {
+          list = await this.clientFor(url).downloads();
+        } catch {
+          return;
+        }
+        if (!this.state.hosts.some((h) => h.url === url)) return;
+        const before = this.state.downloads[url] ?? [];
+        this.setDownloads(url, list);
+        const finished = list.filter((j) => j.status === 'done' && before.some((b) => b.id === j.id && b.status === 'downloading'));
+        if (finished.length > 0) await this.downloadFinished(url, finished.map((j) => j.model));
+        if (!list.some((j) => j.status === 'downloading')) return;
+        await new Promise((r) => setTimeout(r, this.deps.pollMs ?? 1000));
+      }
+    } finally {
+      this.polling.delete(url);
+    }
+  }
+
+  /** 下載好了：更新模型清單；這段對話還沒選模型就直接用它 */
+  private async downloadFinished(url: string, names: string[]): Promise<void> {
+    await this.loadModels(url);
+    this.deps.onEvent?.('downloaded');
+    const s = this.state.session;
+    if (!s || s.model) return;
+    const list = this.state.models[url]?.list ?? [];
+    const m = list.find((x) => names.some((n) => x.name === n || x.name === `${n}:latest` || x.name.startsWith(`${n}@`)));
+    if (m) await this.selectModel(url, m.name);
+  }
+
+  /**
+   * 下載模型。透過小幫手：在電腦上下載，手機關掉也會繼續；
+   * 直接連 Ollama：手機自己叫 Ollama 下載，App 要開著。
+   */
+  async startDownload(url: string, model: string): Promise<void> {
+    const current = this.state.downloads[url] ?? [];
+    if (this.isHelper(url)) {
+      const job = await this.clientFor(url).startDownload(model, this.state.helperInfo[url]?.downloadEngines[0]);
+      this.setDownloads(url, [...(this.state.downloads[url] ?? []).filter((j) => j.id !== job.id), job]);
+      void this.syncDownloads(url);
+      return;
+    }
+    if (current.some((j) => j.model === model && j.status === 'downloading')) return;
+    const id = `local-${this.now()}`;
+    const job: DownloadJob = { id, model, engine: 'ollama', status: 'downloading', completed: 0, total: 0, code: '', error: '', cancellable: true };
+    const update = (patch: Partial<DownloadJob>) =>
+      this.setDownloads(url, (this.state.downloads[url] ?? []).map((j) => (j.id === id ? { ...j, ...patch } : j)));
+    this.setDownloads(url, [...current, job]);
+    const controller = new AbortController();
+    this.pullAborts.set(id, controller);
+    let shownAt = 0;
+    let total = 0;
+    this.downloadTask = this.clientFor(url)
+      .pull(
+        model,
+        (completed, all) => {
+          total = all;
+          // 進度一秒更新好幾次就夠了
+          if (this.now() - shownAt < 250) return;
+          shownAt = this.now();
+          update({ completed, total });
+        },
+        controller.signal
+      )
+      .then(async () => {
+        update({ status: 'done', completed: total, total });
+        await this.downloadFinished(url, [model]);
+      })
+      .catch((e) => {
+        if (e instanceof OllamaError && e.kind === 'cancelled') update({ status: 'cancelled' });
+        else update({ status: 'failed', code: e instanceof OllamaError ? e.code : '', error: describeError(e) });
+      })
+      .finally(() => {
+        this.pullAborts.delete(id);
+      });
+  }
+
+  /** 取消下載中的工作 */
+  async cancelDownload(url: string, id: string): Promise<void> {
+    const local = this.pullAborts.get(id);
+    if (local) {
+      local.abort();
+      return;
+    }
+    await this.clientFor(url).stopDownload(id);
+    await this.syncDownloads(url);
+  }
+
+  /** 結束的工作從清單拿掉 */
+  async dismissDownload(url: string, id: string): Promise<void> {
+    this.setDownloads(url, (this.state.downloads[url] ?? []).filter((j) => j.id !== id));
+    if (this.isHelper(url) && !id.startsWith('local-')) await this.clientFor(url).stopDownload(id).catch(() => {});
   }
 
   // ---- 對話 ----
@@ -1011,6 +1151,8 @@ export class ChatStore {
       scan: null,
       models: {},
       loaded: {},
+      helperInfo: {},
+      downloads: {},
       session: await repo.createSession(),
       messages: [],
       context: null,

@@ -19,6 +19,31 @@ export type ModelInfo = {
   family: string;
   parameterSize: string;
   quantization: string;
+  /** 透過小幫手時：模型在哪個引擎（ollama、lmstudio、其他伺服器）；直接連 Ollama 是空的 */
+  engine: string;
+  engineName: string;
+  /** 能不能預先載入／卸載（OpenAI 格式的伺服器不行） */
+  canLoad: boolean;
+};
+
+/** 電腦的配備（小幫手回報）；手機用來判斷哪些模型跑得動 */
+export type Hardware = { memoryBytes: number; gpus: { name: string; vramBytes: number }[]; unified: boolean };
+
+/** 小幫手的資訊：可以下載模型的引擎（第一個是預設）、配備 */
+export type HelperInfo = { downloadEngines: string[]; hardware: Hardware | null };
+
+/** 下載模型的工作（小幫手在電腦上跑，或手機直接叫 Ollama 下載） */
+export type DownloadJob = {
+  id: string;
+  model: string;
+  engine: string;
+  status: 'downloading' | 'done' | 'failed' | 'cancelled';
+  completed: number;
+  total: number;
+  /** 失敗原因：not_found（沒有這個模型）或其他 */
+  code: string;
+  error: string;
+  cancellable: boolean;
 };
 
 export type LoadedModel = { name: string; sizeVram: number; contextLength: number | null; expiresAt: string };
@@ -98,6 +123,33 @@ export function parseModelInfo(name: string, show: any): ModelInfo | null {
     family: String(details.family ?? ''),
     parameterSize: String(details.parameter_size ?? ''),
     quantization: String(details.quantization_level ?? ''),
+    engine: '',
+    engineName: '',
+    canLoad: true,
+  };
+}
+
+function parseHardware(h: any): Hardware | null {
+  if (!h || typeof h.memory_bytes !== 'number' || h.memory_bytes <= 0) return null;
+  return {
+    memoryBytes: h.memory_bytes,
+    gpus: (Array.isArray(h.gpus) ? h.gpus : []).map((g: any) => ({ name: String(g?.name ?? ''), vramBytes: Number(g?.vram_bytes ?? 0) })),
+    unified: !!h.unified,
+  };
+}
+
+export function parseDownload(d: any): DownloadJob {
+  const status = ['downloading', 'done', 'failed', 'cancelled'].includes(d?.status) ? d.status : 'failed';
+  return {
+    id: String(d?.id ?? ''),
+    model: String(d?.model ?? ''),
+    engine: String(d?.engine ?? ''),
+    status,
+    completed: Number(d?.completed ?? 0),
+    total: Number(d?.total ?? 0),
+    code: String(d?.code ?? ''),
+    error: String(d?.error ?? ''),
+    cancellable: !!d?.cancellable,
   };
 }
 
@@ -167,6 +219,8 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 export const FIRST_TOKEN_TIMEOUT_MS = 180_000;
 /** 開始回答之後，超過這麼久沒有新字就當作斷線 */
 export const IDLE_TIMEOUT_MS = 60_000;
+/** 下載模型時，超過這麼久沒有新進度就當作斷線 */
+const PULL_IDLE_MS = 300_000;
 
 export type ClientOptions = {
   fetch?: FetchLike;
@@ -193,16 +247,17 @@ export class OllamaClient {
     this.idleTimeout = options.timeouts?.idle ?? IDLE_TIMEOUT_MS;
   }
 
-  private async json(path: string, body?: unknown, timeoutMs = this.requestTimeout, signal?: AbortSignal): Promise<any> {
+  private async json(path: string, body?: unknown, timeoutMs = this.requestTimeout, signal?: AbortSignal, method?: string): Promise<any> {
     const abort = makeAbort(timeoutMs, signal);
     try {
       const res = await this.fetchImpl(this.baseUrl + path, {
-        method: body === undefined ? 'GET' : 'POST',
+        method: method ?? (body === undefined ? 'GET' : 'POST'),
         headers: this.headers,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: abort.signal,
       });
       if (!res.ok) throw await httpError(res);
+      if (res.status === 204) return null;
       return await res.json();
     } catch (e) {
       throw toOllamaError(e, abort, timeoutMs);
@@ -230,6 +285,79 @@ export class OllamaClient {
     return { token: data.token, helperId: String(data.helper?.id ?? ''), name: String(data.helper?.name ?? '') };
   }
 
+  /** 小幫手的資訊（能下載到哪個引擎、電腦配備） */
+  async helperInfo(): Promise<HelperInfo> {
+    const data = await this.json('/helper/v1/info');
+    return {
+      downloadEngines: (Array.isArray(data?.download_engines) ? data.download_engines : []).map(String),
+      hardware: parseHardware(data?.hardware),
+    };
+  }
+
+  /** 小幫手上的下載工作 */
+  async downloads(): Promise<DownloadJob[]> {
+    const data = await this.json('/helper/v1/downloads');
+    return (data?.downloads ?? []).map(parseDownload);
+  }
+
+  /** 叫小幫手下載模型（在電腦上跑，手機關掉也會繼續）；engine 不給就用預設 */
+  async startDownload(model: string, engine?: string): Promise<DownloadJob> {
+    return parseDownload(await this.json('/helper/v1/downloads', { model, ...(engine ? { engine } : {}) }));
+  }
+
+  /** 取消下載中的工作；已經結束的從清單拿掉 */
+  async stopDownload(id: string): Promise<void> {
+    await this.json(`/helper/v1/downloads/${encodeURIComponent(id)}`, undefined, this.requestTimeout, undefined, 'DELETE');
+  }
+
+  /** 直接叫 Ollama 下載（沒有小幫手時）；各層進度加起來回報 */
+  async pull(model: string, onProgress: (completed: number, total: number) => void, signal?: AbortSignal): Promise<void> {
+    // 大模型下載完要驗證檔案，可能好幾分鐘沒有新進度
+    const abort = makeAbort(PULL_IDLE_MS, signal);
+    try {
+      const res = await this.fetchImpl(this.baseUrl + '/api/pull', {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ model, stream: true }),
+        signal: abort.signal,
+      });
+      if (!res.ok) throw await httpError(res);
+      if (!res.body) throw new OllamaError('server', t('主機沒有回傳串流資料'));
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      const splitter = new NdjsonSplitter();
+      const layers = new Map<string, { total: number; completed: number }>();
+      let success = false;
+      const handle = (obj: any) => {
+        if (obj?.error) throw new OllamaError('server', String(obj.error), /file does not exist|not found/i.test(String(obj.error)) ? 'not_found' : '');
+        if (obj?.digest && obj.total > 0) {
+          layers.set(obj.digest, { total: Number(obj.total), completed: Number(obj.completed ?? 0) });
+          let total = 0;
+          let completed = 0;
+          layers.forEach((l) => {
+            total += l.total;
+            completed += l.completed;
+          });
+          onProgress(completed, total);
+        }
+        if (obj?.status === 'success') success = true;
+      };
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        abort.touch();
+        if (value) splitter.push(decoder.decode(value, { stream: true })).forEach(handle);
+      }
+      splitter.push(decoder.decode()).forEach(handle);
+      splitter.flush().forEach(handle);
+      if (!success) throw new OllamaError('network', t('下載還沒完成連線就斷了'));
+    } catch (e) {
+      throw toOllamaError(e, abort, PULL_IDLE_MS);
+    } finally {
+      abort.done();
+    }
+  }
+
   /** 確認是不是 Ollama，並量回應時間 */
   async version(timeoutMs = this.requestTimeout, signal?: AbortSignal): Promise<{ version: string; latencyMs: number }> {
     const start = Date.now();
@@ -241,13 +369,17 @@ export class OllamaClient {
   /** 列出可以聊天的模型（含能力），依名稱排序 */
   async listModels(): Promise<ModelInfo[]> {
     const tags = await this.json('/api/tags');
-    const names = [...new Set<string>((tags?.models ?? []).map((m: any) => String(m.name)))].filter(
-      (name) => !isHashName(name)
-    );
+    // 透過小幫手時，每個模型多帶 engine、engine_name、can_load
+    const extra = new Map<string, { engine: string; engineName: string; canLoad: boolean }>();
+    for (const m of tags?.models ?? []) {
+      extra.set(String(m.name), { engine: String(m.engine ?? ''), engineName: String(m.engine_name ?? ''), canLoad: m.can_load !== false });
+    }
+    const names = [...extra.keys()].filter((name) => !isHashName(name));
     const infos = await Promise.all(
       names.map(async (name) => {
         try {
-          return parseModelInfo(name, await this.json('/api/show', { model: name }));
+          const info = parseModelInfo(name, await this.json('/api/show', { model: name }));
+          return info && { ...info, ...extra.get(name)! };
         } catch {
           return null; // 查不到的模型就略過
         }

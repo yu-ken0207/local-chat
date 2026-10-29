@@ -21,7 +21,7 @@ import { C, TEXT } from './src/ui/theme';
 import { t } from './src/i18n';
 
 function haptic(event: ChatEvent) {
-  if (event === 'answered') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  if (event === 'answered' || event === 'downloaded') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   if (event === 'failed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   if (event === 'stopped') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 }

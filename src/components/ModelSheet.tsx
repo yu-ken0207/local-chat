@@ -9,7 +9,8 @@ import type { ModelInfo } from '../lib/ollama';
 import type { ChatState, ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
-import { CommandBox, ConnectSheet } from './ConnectSheet';
+import { ConnectSheet } from './ConnectSheet';
+import { DownloadProgress, DownloadSheet, downloadError } from './DownloadSheet';
 import { t } from '../i18n';
 
 /** 選擇模型：上面選電腦，下面選模型。主要任務只有「選一個模型」 */
@@ -17,6 +18,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   const [viewing, setViewing] = useState<string | null>(state.session?.hostUrl ?? state.hosts[0]?.url ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   /** 正在預先載入或卸載的模型（載入大模型要幾十秒） */
   const [working, setWorking] = useState<{ name: string; text: string } | null>(null);
 
@@ -50,12 +52,15 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   function modelMenu(url: string, m: ModelInfo, loadedBytes: number | null) {
     const name = m.name;
     const loaded = loadedBytes !== null;
-    chooseOption(friendlyModelName(name), [t('詳細資訊'), loaded ? t('卸載（釋放電腦的顯示卡記憶體）') : t('預先載入（之後第一次回答比較快）')], async (i) => {
+    // 預先載入／卸載只有 Ollama 與 LM Studio 做得到
+    const options = [t('詳細資訊'), ...(m.canLoad ? [loaded ? t('卸載（釋放電腦的顯示卡記憶體）') : t('預先載入（之後第一次回答比較快）')] : [])];
+    chooseOption(friendlyModelName(name), options, async (i) => {
       if (i === 0) {
         Alert.alert(
           t('詳細資訊'),
           [
             t('原始名稱：{p0}', { p0: name }),
+            m.engineName ? t('在電腦的：{p0}', { p0: m.engineName }) : '',
             m.parameterSize ? t('大小：{p0} 參數', { p0: m.parameterSize }) : '',
             m.quantization ? t('壓縮格式：{p0}', { p0: m.quantization }) : '',
             m.contextLength ? t('最多能記住：{p0} tokens', { p0: m.contextLength.toLocaleString() }) : '',
@@ -79,6 +84,11 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
 
   const models = viewing ? state.models[viewing] : undefined;
   const loaded = viewing ? (state.loaded[viewing] ?? []) : [];
+  // 還沒問到小幫手前先當作可以下載（小幫手會說清楚做不到的原因）
+  const canDownload = !!viewing && (state.helperInfo[viewing]?.downloadEngines.length ?? 1) > 0;
+  const jobs = viewing ? (state.downloads[viewing] ?? []).filter((j) => j.status === 'downloading' || j.status === 'failed') : [];
+  // 模型來自不只一個引擎時，標出是哪個（例如 LM Studio）
+  const multiEngine = new Set((models?.list ?? []).map((m) => m.engine)).size > 1;
   const session = state.session;
   const status = viewing ? state.hostStatus[viewing]?.state : undefined;
 
@@ -133,14 +143,41 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                     <TextButton text={t('連線說明')} onPress={() => setConnectOpen(true)} />
                   </View>
                 </View>
-              ) : models && models.list.length === 0 ? (
+              ) : models && models.list.length === 0 && jobs.length === 0 ? (
                 <View style={styles.empty}>
-                  <Text style={styles.emptyText}>{t('這台電腦還沒有模型。在電腦的終端機執行下面這行，就會下載一個：')}</Text>
-                  <CommandBox command="ollama pull gemma3" copyText={copyText} />
-                  <TextButton text={t('下載好了，重新整理')} onPress={() => store.loadModels(viewing)} />
+                  {canDownload ? (
+                    <>
+                      <Text style={styles.emptyText}>{t('這台電腦還沒有模型。從手機下載一個就可以開始聊天。')}</Text>
+                      <Pressable onPress={() => setDownloadOpen(true)} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressed]}>
+                        <Text style={styles.primaryText}>{t('選一個模型下載')}</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.emptyText}>{t('這台電腦還沒有模型。請在電腦上的 AI 程式裡下載模型，再回來重新整理。')}</Text>
+                      <TextButton text={t('重新整理')} onPress={() => store.loadModels(viewing)} />
+                    </>
+                  )}
                 </View>
               ) : (
-                (models?.list ?? []).map((m, i) => {
+                <>
+                {jobs.map((j) => (
+                  <View key={j.id}>
+                    <View style={styles.jobRow}>
+                      <View style={styles.flex}>
+                        <Text style={styles.rowTitle}>{friendlyModelName(j.model)}</Text>
+                        {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.red }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={viewing} />}
+                      </View>
+                      {j.status === 'failed' ? (
+                        <Pressable onPress={() => void store.dismissDownload(viewing, j.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('移除這個下載')}>
+                          <SymbolView name="xmark.circle.fill" size={18} tintColor={C.secondary} />
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    <View style={styles.separator} />
+                  </View>
+                ))}
+                {(models?.list ?? []).map((m, i) => {
                   const isLoaded = loaded.find((x) => x.name === m.name);
                   const current = session?.hostUrl === viewing && session?.model === m.name;
                   return (
@@ -159,6 +196,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                         <View style={styles.flex}>
                           <Text style={styles.rowTitle}>{friendlyModelName(m.name)}</Text>
                           <View style={styles.badges}>
+                            {multiEngine && m.engineName ? <Badge icon="desktopcomputer" text={m.engineName} /> : null}
                             {m.vision ? <Badge icon="eye" text={t('看得懂圖片')} /> : null}
                             {m.think ? <Badge icon="lightbulb" text={t('可以深入思考')} /> : null}
                             {isLoaded && working?.name !== m.name ? <Badge icon="bolt.fill" text={t('回答較快')} color={C.green} /> : null}
@@ -175,10 +213,19 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                           <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
                         </Pressable>
                       </View>
-                      {i < (models?.list.length ?? 0) - 1 ? <View style={styles.separator} /> : null}
+                      {i < (models?.list.length ?? 0) - 1 || canDownload ? <View style={styles.separator} /> : null}
                     </Pressable>
                   );
-                })
+                })}
+                {canDownload ? (
+                  <Pressable onPress={() => setDownloadOpen(true)} accessibilityRole="button" style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+                    <View style={styles.row}>
+                      <SymbolView name="arrow.down.circle" size={20} tintColor={C.accent} />
+                      <Text style={[styles.rowTitle, { color: C.accent }]}>{t('下載更多模型')}</Text>
+                    </View>
+                  </Pressable>
+                ) : null}
+                </>
               )}
             </View>
           </>
@@ -187,6 +234,22 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
         )}
       </ScrollView>
 
+      <Modal visible={downloadOpen && !!viewing} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDownloadOpen(false)}>
+        {viewing ? (
+          <DownloadSheet
+            store={store}
+            state={state}
+            url={viewing}
+            onClose={() => setDownloadOpen(false)}
+            onUse={async (model) => {
+              Haptics.selectionAsync();
+              await store.selectModel(viewing, model);
+              setDownloadOpen(false);
+              onClose();
+            }}
+          />
+        ) : null}
+      </Modal>
       <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnectOpen(false)}>
         <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} showHelp={!!models?.error || status === 'offline'} />
       </Modal>
@@ -194,7 +257,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   );
 }
 
-function Badge({ icon, text, color }: { icon: 'eye' | 'lightbulb' | 'bolt.fill'; text: string; color?: typeof C.green }) {
+function Badge({ icon, text, color }: { icon: 'eye' | 'lightbulb' | 'bolt.fill' | 'desktopcomputer'; text: string; color?: typeof C.green }) {
   return (
     <View style={styles.badge}>
       <SymbolView name={icon} size={11} tintColor={color ?? C.secondary} />
@@ -236,6 +299,9 @@ const styles = StyleSheet.create({
   empty: { padding: 16, gap: 10 },
   emptyText: { ...TEXT.small, color: C.label },
   inlineButtons: { flexDirection: 'row', gap: 20 },
+  jobRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  primary: { alignSelf: 'stretch', alignItems: 'center', paddingVertical: 11, borderRadius: 10, backgroundColor: C.accent },
+  primaryText: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   pressed: { opacity: 0.4 },
 });

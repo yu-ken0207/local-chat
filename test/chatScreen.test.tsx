@@ -124,7 +124,7 @@ describe('第一次使用', () => {
     expect(copyText).toHaveBeenCalledWith('ollama pull gemma3');
   });
 
-  test('已經連上電腦但還沒有模型：空白畫面給「選擇模型」，面板裡告訴他怎麼下載', async () => {
+  test('已經連上電腦但還沒有模型：空白畫面給「選擇模型」，面板裡直接從手機下載', async () => {
     const net = new FakeOllamaNet();
     net.addHost(A, { models: [] });
     const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
@@ -133,9 +133,15 @@ describe('第一次使用', () => {
     await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
     await fireEvent.press(screen.getByRole('button', { name: '選擇模型' }));
     expect(await screen.findByText(/這台電腦還沒有模型/)).toBeTruthy();
-    net.hosts.get(A)!.models = [{ name: 'gemma3:4b', vision: true }];
-    await fireEvent.press(screen.getByText('下載好了，重新整理'));
-    expect(await screen.findByLabelText(/模型 Gemma 3 · 4B/)).toBeTruthy();
+    await fireEvent.press(screen.getByText('選一個模型下載'));
+    // 直接連 Ollama 不知道配備：推薦中等大小的
+    expect(await screen.findByText(/不知道這台電腦的配備/)).toBeTruthy();
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.[1]?.onPress?.());
+    await fireEvent.press(screen.getByLabelText('下載 Gemma 4 · E4B'));
+    expect(alert.mock.calls[0][1]).toMatch(/請讓 App 開著/);
+    await fireEvent.press(await screen.findByLabelText('使用 Gemma 4 · E4B'));
+    await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:e4b'));
+    alert.mockRestore();
   });
 });
 

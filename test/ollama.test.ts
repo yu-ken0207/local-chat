@@ -37,6 +37,9 @@ describe('parseModelInfo', () => {
       family: 'gemma4',
       parameterSize: '31.3B',
       quantization: 'Q4_K_M',
+      engine: '',
+      engineName: '',
+      canLoad: true,
     });
   });
 
