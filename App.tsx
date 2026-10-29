@@ -11,7 +11,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChatScreen } from './src/components/ChatScreen';
-import { wifiIp } from './src/lib/network';
+import { vpnOn, wifiIp } from './src/lib/network';
 import { OllamaClient } from './src/lib/ollama';
 import { pickPhotos } from './src/lib/photos';
 import { ChatStore, type AppLanguage, type ChatEvent, type SecretStore } from './src/state/chatStore';
@@ -61,7 +61,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const repo = new Repo(await openPhoneDb());
-      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, onEvent: haptic, deviceLanguage, openMemoryDb });
+      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, vpnOn, onEvent: haptic, deviceLanguage, openMemoryDb });
       await s.init();
       setStore(s);
     })().catch((e) => setError(e instanceof Error ? e.message : String(e)));

@@ -19,3 +19,17 @@ export async function wifiIp(): Promise<string | null> {
   const ip = await Network.getIpAddressAsync();
   return lanIpFrom(state.type, ip);
 }
+
+/**
+ * 手機有沒有開 VPN（Tailscale）：iOS 開著 VPN 時網路類型回報 VPN 或 UNKNOWN；Wi-Fi、行動網路代表沒開。
+ * 判斷不出來回 null。
+ */
+export function vpnFrom(type: string | undefined): boolean | null {
+  if (type === 'VPN' || type === 'UNKNOWN') return true;
+  if (type === 'WIFI' || type === 'CELLULAR' || type === 'ETHERNET') return false;
+  return null;
+}
+
+export async function vpnOn(): Promise<boolean | null> {
+  return vpnFrom((await Network.getNetworkStateAsync()).type);
+}

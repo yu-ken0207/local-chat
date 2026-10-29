@@ -340,7 +340,6 @@ export const en: Record<string, string> = {
   "電腦換了網路位址，已經自動改好了。": "The computer's network address changed. It's been updated automatically.",
   "手機沒有連 Wi-Fi。請連上跟電腦同一個 Wi-Fi；不在家時要用 Tailscale 這類工具才連得到。": "Your phone isn't on Wi-Fi. Join the same Wi-Fi as the computer; away from home you need a tool like Tailscale.",
   "手機（{p0}）和電腦（{p1}）不在同一個網路。請確認手機連的是家裡的 Wi-Fi，不是訪客網路或另一台路由器。": "Your phone ({p0}) and the computer ({p1}) are on different networks. Make sure your phone is on your home Wi-Fi, not a guest network or another router.",
-  "這是透過 Tailscale 連的位址。請確認手機和電腦的 Tailscale 都開著，而且登入同一個帳號。": "This is a Tailscale address. Make sure Tailscale is on for both your phone and the computer, signed in to the same account.",
   "電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。": "The computer is on, but Local AI Helper isn't running. Open the helper on the computer.",
   "電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。": "The computer is on, but Ollama isn't running or doesn't accept connections from the local network.",
   "電腦沒有回應：可能睡著或關機了。電腦開著的話，可能是防火牆擋住手機，電腦上的小幫手畫面會教你怎麼放行。": "The computer isn't responding: it may be asleep or off. If it's on, a firewall may be blocking your phone; the helper on the computer shows how to allow it.",
@@ -356,4 +355,6 @@ export const en: Record<string, string> = {
   "沒辦法下載「{p0}」": "Couldn't download \"{p0}\"",
   "其他下載": "Other downloads",
   "確認這個名稱…": "Checking this name…",
+  "手機的 Tailscale 沒有開。這台電腦是透過 Tailscale 連的，請打開手機上的 Tailscale。": "Tailscale is off on your phone. This computer is reached through Tailscale, so turn on Tailscale on your phone.",
+  "電腦沒有回應。這台電腦是透過 Tailscale 連的：請確認電腦開著、沒有睡著，電腦上的 Tailscale 也開著。": "The computer isn't responding. It's reached through Tailscale: make sure the computer is on and awake, and that Tailscale is on there too.",
 };

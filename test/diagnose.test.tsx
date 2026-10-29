@@ -58,14 +58,20 @@ describe('找原因', () => {
     expect(await store.diagnose(A)).toEqual({ kind: 'no-response', helper: false });
   });
 
-  test('Tailscale 的位址：提醒兩邊的 Tailscale 都要開', async () => {
+  test('Tailscale 的位址：手機的 Tailscale 沒開、被拒絕（小幫手沒開）、沒回應', async () => {
+    const T = 'http://100.100.1.17:11434';
     const net = new FakeOllamaNet();
-    net.addHost('http://100.100.1.17:11434', { models: [{ name: 'm' }] });
-    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false, probeTimeoutMs: 150 });
+    const pc = net.addHost(T, { models: [{ name: 'm' }] });
+    let vpn: boolean | null = false;
+    const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, vpnOn: async () => vpn, autoScan: false, probeTimeoutMs: 150 });
     await store.init();
     await store.addHost('100.100.1.17');
-    net.hosts.get('http://100.100.1.17:11434')!.online = false;
-    expect(await store.diagnose('http://100.100.1.17:11434')).toEqual({ kind: 'vpn' });
+    pc.online = false;
+    expect(await store.diagnose(T)).toEqual({ kind: 'vpn-off' });
+    vpn = true;
+    expect(await store.diagnose(T)).toEqual({ kind: 'refused', helper: false });
+    pc.silent = true;
+    expect(await store.diagnose(T)).toEqual({ kind: 'vpn-no-response' });
   });
 
   test('連得到：沒事', async () => {

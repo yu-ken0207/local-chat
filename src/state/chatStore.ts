@@ -32,7 +32,8 @@ export type Diagnosis =
   | { kind: 'moved'; url: string }
   | { kind: 'no-wifi' }
   | { kind: 'other-network'; phoneIp: string; hostIp: string }
-  | { kind: 'vpn' }
+  | { kind: 'vpn-off' }
+  | { kind: 'vpn-no-response' }
   | { kind: 'refused'; helper: boolean }
   | { kind: 'no-response'; helper: boolean };
 
@@ -47,8 +48,10 @@ export function diagnosisText(d: Diagnosis): string {
       return t('手機沒有連 Wi-Fi。請連上跟電腦同一個 Wi-Fi；不在家時要用 Tailscale 這類工具才連得到。');
     case 'other-network':
       return t('手機（{p0}）和電腦（{p1}）不在同一個網路。請確認手機連的是家裡的 Wi-Fi，不是訪客網路或另一台路由器。', { p0: d.phoneIp, p1: d.hostIp });
-    case 'vpn':
-      return t('這是透過 Tailscale 連的位址。請確認手機和電腦的 Tailscale 都開著，而且登入同一個帳號。');
+    case 'vpn-off':
+      return t('手機的 Tailscale 沒有開。這台電腦是透過 Tailscale 連的，請打開手機上的 Tailscale。');
+    case 'vpn-no-response':
+      return t('電腦沒有回應。這台電腦是透過 Tailscale 連的：請確認電腦開著、沒有睡著，電腦上的 Tailscale 也開著。');
     case 'refused':
       return d.helper
         ? t('電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。')
@@ -149,6 +152,8 @@ export type ChatDeps = {
   deviceName?: () => string;
   /** 手機目前的 Wi-Fi 位址；沒連 Wi-Fi 回 null（不掃描） */
   wifiIp: () => Promise<string | null>;
+  /** 手機有沒有開 VPN（Tailscale）；不知道回 null */
+  vpnOn?: () => Promise<boolean | null>;
   now?: () => number;
   /** 串流更新畫面的最短間隔（毫秒），太頻繁會讓 Markdown 一直重排 */
   throttleMs?: number;
@@ -803,7 +808,12 @@ export class ChatStore {
       refused = e instanceof OllamaError && e.kind === 'network' && Date.now() - started < 1500;
     }
     const ip = /^https?:\/\/([^:/]+)/.exec(url)?.[1] ?? '';
-    if (isTailscaleIp(ip)) return { kind: 'vpn' };
+    if (isTailscaleIp(ip)) {
+      // 透過 Tailscale 連的：手機的 Tailscale 沒開最常見；被拒絕代表連到電腦了，只是小幫手沒開
+      const vpn = await this.deps.vpnOn?.().catch(() => null);
+      if (vpn === false) return { kind: 'vpn-off' };
+      return refused ? { kind: 'refused', helper } : { kind: 'vpn-no-response' };
+    }
     const phone = await this.phoneIp();
     if (phone === null) return { kind: 'no-wifi' };
     if (host?.helperId && phone && this.tokens.has(host.helperId)) {

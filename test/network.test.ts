@@ -1,4 +1,4 @@
-import { lanIpFrom } from '../src/lib/network';
+import { lanIpFrom, vpnFrom } from '../src/lib/network';
 
 test.each([
   ['WIFI', '192.168.1.23', '192.168.1.23'],
@@ -12,4 +12,12 @@ test.each([
   [undefined, null, null],
 ])('網路類型 %s、位址 %s → %s', (type, ip, expected) => {
   expect(lanIpFrom(type as string | undefined, ip)).toBe(expected);
+});
+
+test('手機有沒有開 VPN：iOS 開著時回報 VPN 或 UNKNOWN', () => {
+  expect(vpnFrom('UNKNOWN')).toBe(true);
+  expect(vpnFrom('VPN')).toBe(true);
+  expect(vpnFrom('CELLULAR')).toBe(false);
+  expect(vpnFrom('WIFI')).toBe(false);
+  expect(vpnFrom(undefined)).toBeNull();
 });
