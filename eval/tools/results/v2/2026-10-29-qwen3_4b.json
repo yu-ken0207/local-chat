@@ -1,0 +1,439 @@
+[
+  {
+    "id": "event-next-wed",
+    "ms": 41698,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "帶小孩看牙醫",
+          "start": "2026-11-04T15:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-tomorrow",
+    "ms": 23554,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "繳電費",
+          "due": "2026-10-30T09:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-saturday",
+    "ms": 26038,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-10-31",
+          "end": "2026-10-31"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-date",
+    "ms": 21790,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-11-04"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-titled",
+    "ms": 17029,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "家族聚餐",
+          "start": "2026-11-12T19:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-range",
+    "ms": 36257,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "家長會",
+          "start": "2026-10-31T14:00",
+          "end": "2026-10-31T16:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-no-time",
+    "ms": 30019,
+    "calls": [
+      {
+        "name": "ask_user",
+        "args": {
+          "question": "您希望提醒我買牛奶的時間是？",
+          "options": [
+            "今天（2026-10-29）",
+            "明天（2026-10-30）",
+            "後天（2026-11-01）"
+          ]
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "event-all-day",
+    "ms": 29252,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "媽媽生日",
+          "start": "2026-11-05T00:00",
+          "allDay": true
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "chat-weather",
+    "ms": 5302,
+    "calls": [],
+    "text": "今天天氣我無法提供，因為我目前只能協助處理日曆和提醒事項，沒有天氣查詢功能。",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "chat-poem",
+    "ms": 12857,
+    "calls": [],
+    "text": "秋風輕，葉黃落，  \n稻田金浪映斜陽。  \n寒露深，夜漸寒，  \n雁聲斷，月如霜。",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "vague-meeting",
+    "ms": 31062,
+    "calls": [
+      {
+        "name": "ask_user",
+        "args": {
+          "question": "請問會議的標題和開始時間是什麼？（例如：週會 2026-10-30 10:00）",
+          "options": [
+            "團隊討論 2026-10-30 10:00",
+            "技術會議 2026-10-31 14:00",
+            "週會 2026-11-01 09:00",
+            "其他"
+          ]
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "vague-tomorrow",
+    "ms": 12176,
+    "calls": [
+      {
+        "name": "ask_user",
+        "args": {
+          "question": "您要約什麼事件？請選擇：1. 會議 2. 約會 3. 買東西 4. 其他",
+          "options": [
+            "會議",
+            "約會",
+            "買東西",
+            "其他"
+          ]
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-daily",
+    "ms": 13663,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "吃藥",
+          "due": "2026-10-30T07:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-week",
+    "ms": 17841,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-11-02",
+          "end": "2026-11-06"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-alert",
+    "ms": 33993,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "這週五晚上八點半看電影",
+          "start": "2026-10-30T20:30",
+          "alertMinutesBefore": 60
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-calendar",
+    "ms": 58250,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "戶外教學",
+          "start": "2026-11-20T08:00",
+          "calendar": "家庭"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-today",
+    "ms": 23213,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "接小孩",
+          "due": "2026-10-29T17:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-free",
+    "ms": 35301,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-11-03",
+          "end": "2026-11-03"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "cancel-no-tool",
+    "ms": 27419,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-10-30"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-next-year",
+    "ms": 23930,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "新年聚會",
+          "start": "2027-01-01T10:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-and-reminder",
+    "ms": 55922,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "帶小孩看牙醫",
+          "start": "2026-11-04T15:00"
+        },
+        "valid": true,
+        "problem": ""
+      },
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "準備健保卡",
+          "due": "2026-11-03T20:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "en-reminder",
+    "ms": 23996,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "Call grandma",
+          "due": "2026-10-30T18:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "en-event",
+    "ms": 34386,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "Lunch with Amy",
+          "start": "2026-11-06T12:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "photo-notice",
+    "ms": 177,
+    "calls": [],
+    "text": "",
+    "toolOk": false,
+    "argsOk": false,
+    "error": "{\"error\":{\"code\":400,\"message\":\"Multimodal data provided, but model does not support multimodal requests.\",\"type\":\"invalid_request_error\"}}"
+  },
+  {
+    "id": "photo-dental",
+    "ms": 220,
+    "calls": [],
+    "text": "",
+    "toolOk": false,
+    "argsOk": false,
+    "error": "{\"error\":{\"code\":400,\"message\":\"Multimodal data provided, but model does not support multimodal requests.\",\"type\":\"invalid_request_error\"}}"
+  }
+]

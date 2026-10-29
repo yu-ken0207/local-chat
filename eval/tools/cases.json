@@ -1,0 +1,43 @@
+{
+  "now": "2026-10-29T16:40",
+  "timeZone": "Asia/Taipei",
+  "note": "今天是 2026-10-29（四）16:40。expect：tools 是一定要叫的工具（照順序不重要）；none 代表不應該叫任何工具；noWrite 代表不能叫會改東西的工具（可以反問或只回話）。args 裡的時間比對開頭、title 比對包含。",
+  "cases": [
+    { "id": "event-next-wed", "say": "下週三下午三點帶小孩看牙醫", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-04T15:00", "title": "牙醫" } }] } },
+    { "id": "reminder-tomorrow", "say": "明天早上九點提醒我繳電費", "expect": { "tools": [{ "name": "create_reminder", "args": { "due": "2026-10-30T09:00", "title": "電費" } }] } },
+    { "id": "list-saturday", "say": "我這週六有什麼行程？", "expect": { "tools": [{ "name": "list_events", "args": { "start": "2026-10-31" } }] } },
+    { "id": "list-date", "say": "11月4號有什麼事", "expect": { "tools": [{ "name": "list_events", "args": { "start": "2026-11-04" } }] } },
+    { "id": "event-titled", "say": "幫我在 11/12 晚上 7 點加「家族聚餐」", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-12T19:00", "title": "聚餐" } }] } },
+    { "id": "event-range", "say": "後天下午兩點到四點開家長會", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-10-31T14:00", "end": "2026-10-31T16:00", "title": "家長會" } }] } },
+    { "id": "reminder-no-time", "say": "提醒我買牛奶", "expect": { "tools": [{ "name": "create_reminder", "args": { "title": "牛奶" } }] } },
+    { "id": "event-all-day", "say": "下個月 5 號是媽媽生日，幫我記在行事曆上", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-05", "title": "生日" } }] } },
+    { "id": "chat-weather", "say": "今天天氣怎麼樣？", "expect": { "none": true } },
+    { "id": "chat-poem", "say": "寫一首關於秋天的短詩", "expect": { "none": true } },
+    { "id": "vague-meeting", "say": "幫我加一個會議", "expect": { "noWrite": true } },
+    { "id": "vague-tomorrow", "say": "明天幫我約一下", "expect": { "noWrite": true } },
+    { "id": "reminder-daily", "say": "提醒我明天早上七點吃藥", "expect": { "tools": [{ "name": "create_reminder", "args": { "due": "2026-10-30T07:00", "title": "藥" } }] } },
+    { "id": "list-week", "say": "下週一到下週五都有什麼行程", "expect": { "tools": [{ "name": "list_events", "args": { "start": "2026-11-02", "end": "2026-11-06" } }] } },
+    { "id": "event-alert", "say": "這週五晚上八點半看電影，提前一小時提醒我", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-10-30T20:30", "alertMinutesBefore": 60, "title": "電影" } }] } },
+    { "id": "event-calendar", "say": "11 月 20 號早上 8 點戶外教學，加到家庭行事曆", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-20T08:00", "calendar": "家庭" } }] } },
+    { "id": "reminder-today", "say": "今天下午五點要去接小孩，提醒我", "expect": { "tools": [{ "name": "create_reminder", "args": { "due": "2026-10-29T17:00", "title": "小孩" } }] } },
+    { "id": "list-free", "say": "我下週二有空嗎？", "expect": { "tools": [{ "name": "list_events", "args": { "start": "2026-11-03" } }] } },
+    { "id": "cancel-no-tool", "say": "幫我取消明天的牙醫", "expect": { "noWrite": true } },
+    { "id": "event-next-year", "say": "明年一月一號早上十點新年聚會", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2027-01-01T10:00", "title": "聚會" } }] } },
+    { "id": "event-and-reminder", "say": "下週三下午三點帶小孩看牙醫，也提醒我前一天晚上八點準備健保卡", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-04T15:00" } }, { "name": "create_reminder", "args": { "due": "2026-11-03T20:00" } }] } },
+    { "id": "en-reminder", "say": "Remind me to call grandma tomorrow at 6pm", "lang": "en", "expect": { "tools": [{ "name": "create_reminder", "args": { "due": "2026-10-30T18:00" } }] } },
+    { "id": "en-event", "say": "Add lunch with Amy on November 6 at noon", "lang": "en", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-06T12:00", "title": "Amy" } }] } },
+    {
+      "id": "photo-notice",
+      "say": "通知單上的活動幫我加到行事曆",
+      "image": "images/notice.jpg",
+      "expect": {
+        "tools": [
+          { "name": "create_event", "args": { "start": "2026-11-07T09:00", "title": "運動會" } },
+          { "name": "create_event", "args": { "start": "2026-11-13T18:30", "title": "座談會" } },
+          { "name": "create_event", "args": { "start": "2026-11-20", "title": "戶外教學" } }
+        ]
+      }
+    },
+    { "id": "photo-dental", "say": "幫我把這個加到行事曆", "image": "images/dental.jpg", "expect": { "tools": [{ "name": "create_event", "args": { "start": "2026-11-18T10:30" } }] } }
+  ]
+}

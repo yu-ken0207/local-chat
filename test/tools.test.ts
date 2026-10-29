@@ -76,5 +76,11 @@ describe('審核與結果', () => {
     const text = toolSystemPrompt(now, 'Asia/Taipei');
     expect(text).toContain('2026-10-29 16:40 (Thursday), time zone Asia/Taipei');
     expect(text).toContain('Never invent missing details');
+    // 日期對照表：今天是週四，這週六是 10/31，下週三是 11/4
+    expect(text).toContain('today: 2026-10-29 Thu; tomorrow: 2026-10-30 Fri; day after tomorrow: 2026-10-31 Sat');
+    expect(text).toContain('this week: 2026-10-26 Mon, 2026-10-27 Tue, 2026-10-28 Wed, 2026-10-29 Thu, 2026-10-30 Fri, 2026-10-31 Sat, 2026-11-01 Sun');
+    expect(text).toContain('next week: 2026-11-02 Mon, 2026-11-03 Tue, 2026-11-04 Wed');
+    // 週日時「這週」還是週一開始的那一週
+    expect(toolSystemPrompt(new Date(2026, 10, 1, 9, 0).getTime(), 'Asia/Taipei')).toContain('this week: 2026-10-26 Mon');
   });
 });

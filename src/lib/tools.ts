@@ -178,17 +178,30 @@ export function describeChanges(before: ToolInput, after: ToolInput): string {
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const pad = (n: number) => String(n).padStart(2, '0');
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayLine = (d: Date) => `${ymd(d)} ${WEEKDAYS[d.getDay()].slice(0, 3)}`;
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
-/** 有工具時加在系統提示詞後面的規則（英文，給模型看）：現在時間、什麼時候該叫工具 */
+/**
+ * 有工具時加在系統提示詞後面的規則（英文，給模型看）：現在時間、日期對照表、什麼時候該叫工具。
+ * 小模型很會算錯「這週六」「下週三」，所以直接列出這週和下週每一天的日期讓它查。
+ */
 export function toolSystemPrompt(now: number, timeZone: string): string {
   const d = new Date(now);
-  const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const local = `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const monday = addDays(d, -((d.getDay() + 6) % 7));
+  const week = (offset: number) => Array.from({ length: 7 }, (_, i) => dayLine(addDays(monday, offset + i))).join(', ');
   return [
     `You can use tools to do things on the user's phone. Current local time: ${local} (${WEEKDAYS[d.getDay()]}), time zone ${timeZone}.`,
+    'Date lookup (weeks start on Monday; use these dates instead of calculating):',
+    `- today: ${dayLine(d)}; tomorrow: ${dayLine(addDays(d, 1))}; day after tomorrow: ${dayLine(addDays(d, 2))}`,
+    `- this week: ${week(0)}`,
+    `- next week: ${week(7)}`,
     'Rules:',
     '- Use a tool only when the user asks you to do something; otherwise just answer.',
-    '- Use only dates and times the user said or that appear in their photos. Work out relative dates (like "next Wednesday") from the current date above. Never invent missing details; leave optional fields out.',
-    '- If something required is unclear, ask the user with ask_user instead of guessing.',
+    '- Use only dates and times the user said or that appear in their photos. Never invent missing details; leave optional fields out.',
+    '- Optional details (end time, calendar, location, when to remind) are not needed. Do not ask about them; just leave them out.',
+    '- Only if something required (what, or which day) is truly unclear, ask the user with ask_user instead of guessing.',
     '- The app asks the user to confirm every change. After a tool result, tell the user in one short sentence what was done.',
   ].join('\n');
 }

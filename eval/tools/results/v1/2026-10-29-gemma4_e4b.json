@@ -1,0 +1,333 @@
+[
+  {
+    "id": "event-next-wed",
+    "ms": 2004,
+    "calls": [],
+    "text": "請問您指的「下週三」是哪一天呢？因為我需要一個確切的日期才能幫您預約。\n\n如果方便，我可以幫您查一下您是否有其他行程可以參考喔！",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "reminder-tomorrow",
+    "ms": 1552,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "繳電費",
+          "due": "2026-10-30T09:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-saturday",
+    "ms": 1111,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-10-31"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-date",
+    "ms": 1126,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-11-04"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-titled",
+    "ms": 1457,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "家族聚餐",
+          "start": "2026-11-12T19:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-range",
+    "ms": 1255,
+    "calls": [],
+    "text": "請問您指的是哪一週的「後天」呢？另外，這場家長會需要設定在您的哪些日曆中呢？",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "reminder-no-time",
+    "ms": 1169,
+    "calls": [],
+    "text": "請問您希望在哪個時間點收到「買牛奶」的提醒呢？例如：明天早上、下午三點等等。",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "event-all-day",
+    "ms": 1614,
+    "calls": [],
+    "text": "請問您希望在哪一年份的「下個月 5 號」？另外，這是一個活動（event）還是提醒（reminder），還有需要包含哪些資訊（例如時間、地點等）呢？",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "chat-weather",
+    "ms": 1419,
+    "calls": [],
+    "text": "抱歉，我無法提供即時的天氣資訊。我是一個語言模型，沒有接入即時天氣資料庫。您可以用手機上的天氣應用程式查詢喔！",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "chat-poem",
+    "ms": 2370,
+    "calls": [],
+    "text": "這是一個為您準備的關於秋天的短詩：\n\n**【秋日輕語】**\n\n微風拂過黃葉舞，\n腳下窸窣伴時流。\n天邊點綴淡淡紅，\n層層渲染過歲秋。\n\n願您有個美好、寧靜的秋天！🍂🍁",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "vague-meeting",
+    "ms": 1560,
+    "calls": [],
+    "text": "請問這次的會議是什麼主題呢？還有，您希望將會議安排在什麼日期和時間呢？如果可以，也請告訴我地點或是否有任何需要特別注意的備註。",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "vague-tomorrow",
+    "ms": 1219,
+    "calls": [],
+    "text": "請問您要預約什麼活動呢？另外，您希望的時間點和地點是否也有相關的資訊可以告訴我呢？",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-daily",
+    "ms": 1481,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "吃藥",
+          "due": "2026-10-30T07:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-week",
+    "ms": 1161,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-10-30"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": false
+  },
+  {
+    "id": "event-alert",
+    "ms": 2219,
+    "calls": [
+      {
+        "name": "ask_user",
+        "args": {
+          "question": "請問本週五的電影是幾月幾日呢？另外，您是否要告訴我這部電影的名字或是在哪個地方看呢？",
+          "options": [
+            "電影名稱或地點",
+            "預計開始的確切日期"
+          ]
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "event-calendar",
+    "ms": 1716,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "戶外教學",
+          "start": "2026-11-20T08:00:00",
+          "calendar": "家庭"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "reminder-today",
+    "ms": 1445,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "去接小孩",
+          "due": "2026-10-29T17:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "list-free",
+    "ms": 1132,
+    "calls": [
+      {
+        "name": "list_events",
+        "args": {
+          "start": "2026-11-10"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": false
+  },
+  {
+    "id": "cancel-no-tool",
+    "ms": 2916,
+    "calls": [],
+    "text": "請問您要取消的是「預約」還是「活動」呢？另外，為了能正確地為您處理，是否能告訴我一下**明天（2026-10-30）的具體時間和地點**呢？\n\n一般來說，我目前的功能無法直接用「取消」某個預約。如果您知道這個預約是哪一個行程，我可以幫您查看並詢問後續操作。",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "event-next-year",
+    "ms": 2191,
+    "calls": [],
+    "text": "請問您希望我將「新年聚會」新增到您的行事曆嗎？\n\n如果您可以告訴我想加到哪一個日曆，以及是否有其他細節（例如地點、活動結束時間），我可以幫您設定。否則，我就會預設使用您的主要日曆。",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "event-and-reminder",
+    "ms": 3353,
+    "calls": [],
+    "text": "請問您希望我將這兩個事項分別以「**行程 (Event)**」還是「**待辦事項/提醒 (Reminder)**」的方式記錄呢？\n\n另外，為了幫您設定日期，我想確認一下：\n1.  您說的「下週三」是幾月幾日呢？（根據目前的日期 2026-10-29 星期四）\n2.  請問看牙醫的診所名稱或地點會不會有特別需要記錄的嗎？",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "en-reminder",
+    "ms": 1709,
+    "calls": [
+      {
+        "name": "create_reminder",
+        "args": {
+          "title": "Call Grandma",
+          "due": "2026-10-30T18:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "en-event",
+    "ms": 1489,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "Lunch with Amy",
+          "start": "2026-11-06T12:00"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  },
+  {
+    "id": "photo-notice",
+    "ms": 15741,
+    "calls": [],
+    "text": "這份通知單上有三個活動，請問您要將哪些活動加入行事曆呢？\n\n1. **校慶運動會**：11月7日 (星期六) 上午 9:00\n2. **師恩座談會**：11月13日 (星期五) 晚上 6:30\n3. **戶外教學**：11月20日 (星期五) 全天\n\n另外，您希望這些活動是當天的「終點時間」還是只設定開始時間呢？（例如活動一的結束時間？）",
+    "toolOk": false,
+    "argsOk": false
+  },
+  {
+    "id": "photo-dental",
+    "ms": 12621,
+    "calls": [
+      {
+        "name": "create_event",
+        "args": {
+          "title": "預約回診卡 (洗牙)",
+          "start": "2026-11-18T10:30",
+          "location": "微笑牙醫診所"
+        },
+        "valid": true,
+        "problem": ""
+      }
+    ],
+    "text": "",
+    "toolOk": true,
+    "argsOk": true
+  }
+]
