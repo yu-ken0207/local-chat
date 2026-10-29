@@ -1308,7 +1308,7 @@ export class ChatStore {
     if (this.state.session?.id === sessionId) this.set({ session: { ...this.state.session, title } });
   }
 
-  /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦、範本與模型設定；換成一段新的空白對話 */
+  /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦與模型設定；換成一段新的空白對話 */
   async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
     this.stop();
@@ -1322,7 +1322,7 @@ export class ChatStore {
   }
 
   /**
-   * 清除全部資料（對話、電腦、範本、設定），回到第一次打開的樣子。
+   * 清除全部資料（對話、電腦、設定），回到第一次打開的樣子。
    * 畫面上那幾秒內可以復原；時間到才真的刪掉並壓縮檔案（中途關掉 App，下次打開時刪）。
    */
   async resetAll(): Promise<void> {

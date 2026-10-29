@@ -65,7 +65,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
       return;
     }
     if (!source) return;
-    Alert.alert(t('用備份取代目前的資料？'), t('手機上目前的對話、電腦、範本和設定都會換成備份裡的。還原後幾秒內可以按「復原」換回來。'), [
+    Alert.alert(t('用備份取代目前的資料？'), t('手機上目前的對話、電腦和設定都會換成備份裡的。還原後幾秒內可以按「復原」換回來。'), [
       { text: t('取消'), style: 'cancel' },
       {
         text: t('還原'),
@@ -85,7 +85,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
   function resetAll() {
     Alert.alert(
       t('清除全部資料？'),
-      t('對話、照片、電腦、範本和設定全部刪除，回到第一次打開的樣子。按下後幾秒內還可以復原，之後就救不回來。\n\n建議先「備份所有對話」。'),
+      t('對話、照片、電腦和設定全部刪除，回到第一次打開的樣子。按下後幾秒內還可以復原，之後就救不回來。\n\n建議先「備份所有對話」。'),
       [
         { text: t('取消'), style: 'cancel' },
         { text: t('清除'), style: 'destructive', onPress: () => void store.resetAll() },
@@ -119,7 +119,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
           <Row icon="arrow.counterclockwise" label={t('清除全部資料')} danger onPress={resetAll} last />
         </Section>
         <Text style={styles.footnote}>
-          {t('對話只存在這支手機。刪除的對話會在「最近刪除」保留 {n} 天。「清除全部資料」連電腦、範本、設定一起刪，只有按下後幾秒內可以復原。', { n: TRASH_DAYS })}
+          {t('對話只存在這支手機。刪除的對話會在「最近刪除」保留 {n} 天。「清除全部資料」連電腦、設定一起刪，只有按下後幾秒內可以復原。', { n: TRASH_DAYS })}
         </Text>
 
         <Section title={t('進階')}>
