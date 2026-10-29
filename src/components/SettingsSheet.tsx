@@ -6,7 +6,7 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } f
 
 import appJson from '../../app.json';
 import { fmtBytes, fmtWhen } from '../lib/format';
-import type { ToolGroup } from '../lib/tools';
+import { toolGroupName, type ToolGroup } from '../lib/tools';
 import type { AppLanguage, ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
@@ -21,7 +21,6 @@ import { t } from '../i18n';
 /** 語言名稱：繁體中文、English 用各自的寫法，不翻譯 */
 const languageName = (k: 'system' | AppLanguage) => ({ system: t('跟著系統'), 'zh-Hant': '繁體中文', en: 'English' })[k]; // i18n-ignore
 
-const groupName = (g: ToolGroup) => ({ calendar: t('看行事曆、加行程'), reminders: t('加提醒事項') })[g];
 const groupIcon = (g: ToolGroup): SFSymbol => ({ calendar: 'calendar', reminders: 'checklist' } as const)[g];
 
 type Props = {
@@ -121,7 +120,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
           <>
             <Section title={t('AI 可以做的事')}>
               {groups.map((g) => (
-                <SwitchRow key={g} icon={groupIcon(g)} label={groupName(g)} value={!prefs.toolsOff.includes(g)} onChange={(on) => void store.setToolGroup(g, on)} />
+                <SwitchRow key={g} icon={groupIcon(g)} label={toolGroupName(g)} value={!prefs.toolsOff.includes(g)} onChange={(on) => void store.setToolGroup(g, on)} />
               ))}
               <Row icon="clock.arrow.circlepath" label={t('做過的事')} onPress={() => setDoneOpen(true)} last />
             </Section>

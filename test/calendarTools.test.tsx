@@ -188,6 +188,37 @@ describe('接上 App', () => {
     open.mockRestore();
   });
 
+  test('設定裡關掉了，模型照前面的對話還是去叫：不出確認卡，跟模型說關掉了，畫面寫一行', async () => {
+    const { net, host, store } = await setup();
+    await store.setToolGroup('calendar', false);
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '戶外教學', start: '2026-11-20', allDay: true }), done] : [{ message: { role: 'assistant', content: '行事曆在設定裡關掉了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '試試看');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('行事曆在設定裡關掉了')).toBeTruthy();
+    expect(screen.getByText('沒有做：「看行事曆、加行程」在設定裡關掉了')).toBeTruthy();
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])).toEqual([]);
+    const [first, second] = net.chatBodies();
+    expect(first.tools.map((x: any) => x.function.name)).toEqual(['create_reminder', 'ask_user']);
+    expect(first.messages[0].content).toContain('turned off these');
+    expect(JSON.parse(second.messages.at(-1).content).error).toContain('create_event is turned off');
+  });
+
+  test('全部關掉：不送工具，但模型還是叫了也要接住，不會變成空的回答', async () => {
+    const { net, host, store } = await setup();
+    await store.setToolGroup('calendar', false);
+    await store.setToolGroup('reminders', false);
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '戶外教學', start: '2026-11-20', allDay: true }), done] : [{ message: { role: 'assistant', content: '都關掉了' }, done: false }, done] });
+    await store.send('幫我加入日曆');
+    await waitFor(() => expect(store.getState().messages.at(-1)?.content).toBe('都關掉了'));
+    const [first, second] = net.chatBodies();
+    expect(first.tools).toBeUndefined();
+    expect(first.messages[0].content).toContain('turned off these');
+    expect(JSON.parse(second.messages.at(-1).content).error).toContain('turned off');
+  });
+
   test('設定裡關掉「加提醒事項」：不給模型提醒工具；做過的事可以在設定裡復原', async () => {
     const { net, host, store, api } = await setup();
     expect(store.toolGroups()).toEqual(['calendar', 'reminders']);

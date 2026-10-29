@@ -363,6 +363,7 @@ export const en: Record<string, string> = {
   "這個 App 版本沒有這個功能。": "This version of the app can't do this.",
   "已復原：{p0}": "Undone: {p0}",
   "沒有做：{p0}": "Skipped: {p0}",
+  "沒有做：「{p0}」在設定裡關掉了": "Skipped: \"{p0}\" is turned off in Settings",
   "{p0}「{p1}」": "{p0} \"{p1}\"",
   "（{p0}）": " ({p0})",
   "確定": "OK",

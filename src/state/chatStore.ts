@@ -6,7 +6,7 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import { ToolPermissionError, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolResultContent, toolSystemPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
+import { ToolPermissionError, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
@@ -1168,9 +1168,14 @@ export class ChatStore {
     const model = s.model!;
     const info = this.currentModel();
     const tools = this.toolsFor(info);
+    // 設定裡關掉的：模型還是可能照前面的對話去叫，所以先跟它說
+    const toolsOff = info?.tools ? this.toolGroups().filter((g) => this.state.prefs.toolsOff?.includes(g)) : [];
     const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
       vision: info ? info.vision : true,
-      systemPrompt: REPLY_PROMPTS[this.appLanguage()] + (tools.length > 0 ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : ''),
+      systemPrompt:
+        REPLY_PROMPTS[this.appLanguage()] +
+        (tools.length > 0 ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') +
+        (toolsOff.length > 0 ? '\n\n' + toolsOffPrompt(toolsOff) : ''),
     });
     if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
@@ -1247,7 +1252,8 @@ export class ChatStore {
         totalDurationNs: result.totalDurationNs,
       };
       thinking += leaked;
-      const toolCalls = tools.length > 0 ? result.toolCalls : [];
+      // 全部關掉時也要接：模型照前面的對話還是會叫，丟掉的話回答就是空的
+      const toolCalls = tools.length > 0 || toolsOff.length > 0 ? result.toolCalls : [];
       await repo.updateMessage(placeholder.id, { content, thinking, stats, ...(toolCalls.length > 0 ? { toolCalls } : {}) });
       if (leaked) await this.markAlwaysThinks(url, model);
       const limit = await this.contextLimit(url, model);
@@ -1355,9 +1361,13 @@ export class ChatStore {
     let waiting = 0;
     for (const call of calls) {
       const tool = this.toolFor(call.name);
-      const reject = (error: string) => results.push({ call, run: Promise.resolve({ ok: false as const, error, summary: '' }) });
+      const reject = (error: string, summary = '') => results.push({ call, run: Promise.resolve({ ok: false as const, error, summary }) });
       if (!tool) {
         reject(`There is no tool named "${call.name}".`);
+        continue;
+      }
+      if (tool.group && this.state.prefs.toolsOff?.includes(tool.group)) {
+        reject(toolOffError(tool.name, tool.group), t('沒有做：「{p0}」在設定裡關掉了', { p0: toolGroupName(tool.group) }));
         continue;
       }
       const parsed = parseArguments(call.arguments);

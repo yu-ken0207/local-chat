@@ -1,6 +1,8 @@
 // 手機上動手做事：AI 可以叫的工具（照 MCP 的格式定義），以及叫工具前的檢查與審核。
 // 設計見 docs/設計_手機上動手做事.md。工具本身（行事曆、提醒事項）在別的檔案，這裡只管共通的部分。
 
+import { t } from '../i18n';
+
 /** 工具輸入的格式（JSON Schema 的一小部分：一層物件，欄位是字串、數字、整數、是非、字串清單） */
 export type FieldSchema = {
   type: 'string' | 'number' | 'integer' | 'boolean' | 'array';
@@ -53,6 +55,20 @@ export type PhoneTool = {
 };
 
 export type ToolGroup = 'calendar' | 'reminders';
+
+/** 設定頁「AI 可以做的事」每一類的名稱 */
+export const toolGroupName = (g: ToolGroup) => ({ calendar: t('看行事曆、加行程'), reminders: t('加提醒事項') })[g];
+
+/** 使用者在設定裡關掉的事：先跟模型說，被問到時請使用者自己去打開 */
+export function toolsOffPrompt(groups: ToolGroup[]): string {
+  const names = groups.map((g) => `「${toolGroupName(g)}」`).join(', ');
+  return `The user turned off these in the app's Settings, so you cannot do them now: ${names}. If the user asks for them, say they are turned off and can be turned on in Settings > 「${t('AI 可以做的事')}」.`;
+}
+
+/** 模型還是叫了關掉的工具（前面的對話用過，模型會照著叫）：交回去的說明 */
+export function toolOffError(name: string, g: ToolGroup): string {
+  return `${name} is turned off: the user switched off 「${toolGroupName(g)}」 in the app's Settings. Do not call it again. Tell the user they can turn it on in Settings > 「${t('AI 可以做的事')}」.`;
+}
 
 /** 使用者沒給權限（行事曆、提醒事項）：畫面給「打開設定」，交給模型的是 permission_denied */
 export class ToolPermissionError extends Error {
