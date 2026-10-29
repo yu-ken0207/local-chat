@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { fmtBytes } from '../lib/format';
@@ -19,6 +19,13 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   const [refreshing, setRefreshing] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  /** 下載畫面關好之後要做的事（iOS 兩層畫面同時關會卡住，要等裡面那層關好） */
+  const afterDownload = useRef<(() => void) | null>(null);
+  const downloadClosed = () => {
+    const next = afterDownload.current;
+    afterDownload.current = null;
+    next?.();
+  };
   /** 正在預先載入或卸載的模型（載入大模型要幾十秒） */
   const [working, setWorking] = useState<{ name: string; text: string } | null>(null);
 
@@ -240,7 +247,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
         )}
       </ScrollView>
 
-      <Modal visible={downloadOpen && !!viewing} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDownloadOpen(false)}>
+      <Modal visible={downloadOpen && !!viewing} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDownloadOpen(false)} onDismiss={downloadClosed}>
         {viewing ? (
           <DownloadSheet
             store={store}
@@ -250,8 +257,9 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
             onUse={async (model) => {
               Haptics.selectionAsync();
               await store.selectModel(viewing, model);
+              afterDownload.current = onClose;
               setDownloadOpen(false);
-              onClose();
+              setTimeout(downloadClosed, 1500);
             }}
           />
         ) : null}

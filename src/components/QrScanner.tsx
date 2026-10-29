@@ -11,12 +11,14 @@ import { t } from '../i18n';
 type Props = {
   visible: boolean;
   onClose: () => void;
+  /** iOS 回報掃描畫面完全關好了（外面要等這個才能關自己，兩層同時關 iOS 會卡住） */
+  onDismissed?: () => void;
   /** 掃到東西：回傳 null 代表成功（外面會關掉），回傳文字就是錯誤說明（留在畫面上可以再掃） */
   onScanned: (data: string) => Promise<string | null>;
 };
 
 /** 全螢幕掃 QR code：對準電腦上小幫手畫面裡的 QR code */
-export function QrScanner({ visible, onClose, onScanned }: Props) {
+export function QrScanner({ visible, onClose, onDismissed, onScanned }: Props) {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,7 @@ export function QrScanner({ visible, onClose, onScanned }: Props) {
   const denied = permission && !permission.granted && !permission.canAskAgain;
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose} onDismiss={onDismissed}>
       <View style={styles.root}>
         {permission?.granted ? (
           <CameraView

@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { HostOfflineError, NeedsPairingError, PairError, type ChatState, type ChatStore } from '../state/chatStore';
@@ -26,6 +26,13 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
   const [adding, setAdding] = useState<string | null>(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  /** 掃描畫面關好之後要做的事（iOS 兩層畫面同時關會卡住，要等裡面那層關好） */
+  const afterScanner = useRef<(() => void) | null>(null);
+  const scannerClosed = () => {
+    const next = afterScanner.current;
+    afterScanner.current = null;
+    next?.();
+  };
   const scan = state.scan;
   const failed = !!scan && !scan.running && (!!scan.error || (scan.total > 0 && scan.found === 0));
   const current = state.session?.hostUrl;
@@ -51,8 +58,10 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   async function scanned(data: string): Promise<string | null> {
     try {
       await store.pairFromQr(data);
+      afterScanner.current = paired;
       setScannerOpen(false);
-      paired();
+      // 保險：iOS 沒回報關好時也要繼續
+      setTimeout(scannerClosed, 1500);
       return null;
     } catch (e) {
       return e instanceof PairError ? e.message : String(e instanceof Error ? e.message : e);
@@ -249,7 +258,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         {helpOpen ? <ConnectHelp copyText={copyText} /> : null}
       </ScrollView>
       <UndoToast store={store} />
-      <QrScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onScanned={scanned} />
+      <QrScanner visible={scannerOpen} onClose={() => setScannerOpen(false)} onDismissed={scannerClosed} onScanned={scanned} />
     </View>
   );
 }

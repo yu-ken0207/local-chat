@@ -146,6 +146,8 @@ describe('連接面板', () => {
     await fireEvent(await screen.findByTestId('qr-camera'), 'barcodeScanned', { data: payload('123456') });
     await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:12b'));
     await waitFor(() => expect(screen.queryByTestId('qr-camera')).toBeNull());
+    // 掃描畫面關好之後才關連接面板（iOS 兩層同時關會卡住）
+    await waitFor(() => expect(screen.queryByText('掃描 QR code')).toBeNull(), { timeout: 3000 });
     expect(await screen.findByText(/直接在下面輸入問題/)).toBeTruthy();
   });
 
