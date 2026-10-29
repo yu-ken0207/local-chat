@@ -245,7 +245,8 @@ describe('畫面', () => {
   test('確認卡在對話裡：一句話、欄位、AI 猜的欄位有標出來；按加入後變成一行，可以復原', async () => {
     const { cal } = await screenWithCard();
     expect(screen.getByText('新增「帶小孩看牙醫」')).toBeTruthy();
-    expect(screen.getByLabelText('結束：2026-11-04T16:00（AI 猜的）')).toBeTruthy();
+    expect(screen.getByLabelText('結束：11/4（週三）16:00（AI 猜的）')).toBeTruthy();
+    expect(screen.getByText('開始：11/4（週三）15:00')).toBeTruthy();
     await fireEvent.press(screen.getByText('加入'));
     expect(await screen.findByText('✓ 新增 1 個行程')).toBeTruthy();
     expect(await screen.findByText('好了')).toBeTruthy();

@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import type { PhoneTool, ToolInput } from '../lib/tools';
+import { fmtEventTime } from '../lib/format';
+import { parseLocal, type PhoneTool, type ToolInput } from '../lib/tools';
 import type { Action } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { ActionButton } from './Messages';
-import { t } from '../i18n';
+import { getLanguage, t } from '../i18n';
 
 type Handlers = {
   onApprove: (id: string, edited?: ToolInput) => Promise<void>;
@@ -177,6 +178,15 @@ export function ActionListCard({
 
 const toText = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 
+/** 確認卡上顯示的值：時間改成白話（11/4（週三）15:00），其他照原樣 */
+function shown(tool: PhoneTool | undefined, key: string, v: unknown): string {
+  const format = tool?.inputSchema.properties[key]?.format;
+  if (typeof v !== 'string' || !format) return toText(v);
+  const d = parseLocal(v);
+  if (isNaN(d.getTime())) return v;
+  return fmtEventTime(d, null, format === 'date' || (format === 'date-time' && v.endsWith('T00:00')), getLanguage());
+}
+
 /** 確認卡上可以改的欄位（文字、數字、是非） */
 function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool; input: ToolInput; done: string; onDone: (values: ToolInput) => void; onCancel: () => void }) {
   const fields = Object.entries(tool.fields ?? {});
@@ -248,8 +258,8 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
         ? fields
             .filter(([key]) => action.input[key] !== undefined && action.input[key] !== '')
             .map(([key, label]) => (
-              <Text key={key} style={[styles.small, guessed.has(key) ? styles.guessed : styles.dim]} accessibilityLabel={guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: toText(action.input[key]) }) : undefined}>
-                {label}：{toText(action.input[key])}
+              <Text key={key} style={[styles.small, guessed.has(key) ? styles.guessed : styles.dim]} accessibilityLabel={guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: shown(tool, key, action.input[key]) }) : undefined}>
+                {label}：{shown(tool, key, action.input[key])}
               </Text>
             ))
         : null}

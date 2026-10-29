@@ -91,6 +91,15 @@ describe('看行事曆', () => {
     const { listCalendars } = tools();
     expect((await listCalendars.run({})).data).toEqual(['家庭', 'Work']);
   });
+
+  test('同一個行程同步在兩個行事曆：只算一筆', async () => {
+    const { api, listEvents } = tools();
+    const e = { title: 'D200 部門會議', start: at(2026, 11, 2, 14), end: at(2026, 11, 2, 15), allDay: false };
+    api.stored = [{ ...e, id: 'a', calendarId: 'home' }, { ...e, id: 'b', calendarId: 'work' }];
+    const out = await listEvents.run({ start: '2026-11-02' });
+    expect((out.data as { events: unknown[] }).events).toHaveLength(1);
+    expect(out.summary).toBe('看了行事曆（1 筆）');
+  });
 });
 
 describe('加行程', () => {

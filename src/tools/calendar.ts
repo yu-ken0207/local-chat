@@ -107,7 +107,16 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
       const calendars = await api.calendars();
       const from = parseLocal(str(input.start));
       const to = new Date(parseLocal(str(input.end || input.start)).getTime() + DAY);
-      const all = (await api.events(calendars.map((c) => c.id), from, to)).sort((a, b) => a.start.getTime() - b.start.getTime());
+      // 同一個行程同步在好幾個行事曆（例如公司和 iCloud）時只算一筆
+      const seen = new Set<string>();
+      const all = (await api.events(calendars.map((c) => c.id), from, to))
+        .sort((a, b) => a.start.getTime() - b.start.getTime())
+        .filter((e) => {
+          const key = `${e.title}|${e.start.getTime()}|${e.end.getTime()}|${e.allDay}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       const name = (id: string) => calendars.find((c) => c.id === id)?.title ?? '';
       const events = all.slice(0, MAX_EVENTS).map((e) => ({
         title: e.title,
