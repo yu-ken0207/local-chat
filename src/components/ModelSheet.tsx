@@ -6,7 +6,7 @@ import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView,
 import { fmtBytes } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
 import type { ModelInfo } from '../lib/ollama';
-import type { ChatState, ChatStore } from '../state/chatStore';
+import { diagnosisText, type ChatState, type ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
@@ -141,13 +141,14 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                   <TextButton text={t('重試')} onPress={() => store.connectHost(viewing)} />
                 </View>
               ) : models?.error || (status === 'offline' && !models?.list.length) ? (
-                <View style={styles.empty}>
-                  <Text style={[styles.emptyText, { color: C.orange }]}>{t('連不到這台電腦。')}</Text>
-                  <View style={styles.inlineButtons}>
-                    <TextButton text={t('重試')} onPress={() => store.connectHost(viewing)} />
-                    <TextButton text={t('連線說明')} onPress={() => setConnectOpen(true)} />
-                  </View>
-                </View>
+                <Unreachable
+                  key={viewing}
+                  store={store}
+                  url={viewing}
+                  message={models?.error}
+                  onMoved={(url) => setViewing(url)}
+                  onHelp={() => setConnectOpen(true)}
+                />
               ) : models && models.list.length === 0 && jobs.length === 0 ? (
                 <View style={styles.empty}>
                   {canDownload ? (
@@ -258,6 +259,51 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
       <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnectOpen(false)}>
         <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} showHelp={!!models?.error || status === 'offline'} />
       </Modal>
+    </View>
+  );
+}
+
+/** 連不到這台電腦：先找原因（手機沒連 Wi-Fi、小幫手沒開、電腦沒回應…），電腦換了位址就直接改好 */
+function Unreachable({ store, url, message, onMoved, onHelp }: { store: ChatStore; url: string; message?: string; onMoved: (url: string) => void; onHelp: () => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [tries, setTries] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setText(null);
+    void store.diagnose(url).then(async (d) => {
+      if (!alive) return;
+      if (d.kind === 'moved') {
+        onMoved(d.url);
+        await store.loadModels(d.url);
+        return;
+      }
+      if (d.kind === 'ok') {
+        await store.connectHost(url);
+        if (alive) setText(message || t('連不到這台電腦。'));
+        return;
+      }
+      setText(diagnosisText(d));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [url, tries]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <View style={styles.empty} accessibilityLiveRegion="polite">
+      {text === null ? (
+        <View style={styles.badge}>
+          <ActivityIndicator size="small" />
+          <Text style={styles.rowSub}>{t('連不到這台電腦，正在找原因…')}</Text>
+        </View>
+      ) : (
+        <>
+          <Text style={[styles.emptyText, { color: C.orange }]}>{text}</Text>
+          <View style={styles.inlineButtons}>
+            <TextButton text={t('重試')} onPress={() => setTries((n) => n + 1)} />
+            <TextButton text={t('連線說明')} onPress={onHelp} />
+          </View>
+        </>
+      )}
     </View>
   );
 }

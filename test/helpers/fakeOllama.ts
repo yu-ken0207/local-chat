@@ -12,6 +12,8 @@ export type FakeHost = {
   /** /api/ps 回報的實際上下文長度 */
   runtimeCtx: number;
   online: boolean;
+  /** 連不到時是「沒有回應」（睡著、防火牆丟掉封包），不是馬上被拒絕 */
+  silent?: boolean;
   /** 自訂回答：回傳要串流送出的 JSON 物件；hang 代表送完後一直不結束（測停止） */
   reply?: (body: any) => { lines: unknown[]; hang?: boolean };
   /** 自動取標題的回答；沒設定時固定回「測試對話」 */
@@ -75,6 +77,9 @@ export class FakeOllamaNet {
     const body = init.body ? JSON.parse(init.body) : undefined;
     this.calls.push({ url: base, path, body });
     const host = this.hosts.get(base);
+    if (host && !host.online && host.silent) {
+      return new Promise<never>((_, reject) => init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('Aborted'), { name: 'AbortError' }))));
+    }
     if (!host || !host.online) throw new TypeError('Network request failed');
     const json = (data: unknown, status = 200) => respond(status, [JSON.stringify(data)], init.signal);
 

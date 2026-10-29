@@ -273,7 +273,7 @@ describe('傳送與串流', () => {
     net.hosts.get(A)!.online = false;
     await store.send('hi');
     expect(store.getState().messages.map((m) => m.role)).toEqual(['user', 'error']);
-    expect(store.getState().messages[1]).toMatchObject({ content: '沒有得到回答：連不到你的電腦。', detail: expect.stringContaining('Network request failed') });
+    expect(store.getState().messages[1]).toMatchObject({ content: '沒有得到回答：電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。', detail: expect.stringContaining('Network request failed') });
     expect(events).toEqual(['failed']);
   });
 

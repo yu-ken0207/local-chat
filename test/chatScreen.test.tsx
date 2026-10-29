@@ -280,7 +280,7 @@ describe('對話', () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.online = false;
     await send(store, 'hi');
-    expect(await screen.findByText('沒有得到回答：連不到你的電腦。')).toBeTruthy();
+    expect(await screen.findByText('沒有得到回答：電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。')).toBeTruthy();
     await fireEvent.press(screen.getByText('詳細資訊'));
     expect(screen.getByText(/Network request failed/)).toBeTruthy();
     await fireEvent.press(screen.getByText('連線說明'));

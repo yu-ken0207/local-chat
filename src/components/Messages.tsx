@@ -203,14 +203,25 @@ function Working({ streaming }: { streaming: Streaming }) {
     return () => clearInterval(timer);
   }, []);
   const seconds = Math.max(0, (now - streaming.startedAt) / 1000);
-  const label = streaming.phase === 'waiting' ? t('等待模型') : streaming.phase === 'thinking' ? t('思考中') : t('回答中');
+  const waiting = streaming.phase === 'waiting';
+  const label = waiting ? (streaming.loading ? t('正在載入模型') : t('等待模型')) : streaming.phase === 'thinking' ? t('思考中') : t('回答中');
+  // 等第一個字比較久時說明在等什麼
+  const hint = !waiting
+    ? null
+    : seconds > 90
+      ? t('比平常久很多：電腦可能很忙，或記憶體不夠，模型只能用比較慢的方式跑。')
+      : streaming.loading && seconds > 3
+        ? t('第一次用這個模型，電腦要先把它載入記憶體，大模型可能要 30 秒到 1 分鐘，之後就快了。')
+        : streaming.loading === false && seconds > 10
+          ? t('電腦正在讀前面的對話，對話越長要越久。')
+          : null;
   return (
-    <View style={styles.working} accessibilityLiveRegion="polite" accessibilityLabel={t('{p0}，{p1} 秒', { p0: label, p1: Math.floor(seconds) })}>
-      <Shimmer text={label} seconds={seconds} />
-      <Text style={[styles.small, styles.dim]}> ({fmtElapsed(seconds)})</Text>
-      {streaming.phase === 'waiting' && seconds > 8 ? (
-        <Text style={[styles.small, styles.dim]}>　{t('第一次用這個模型要先載入')}</Text>
-      ) : null}
+    <View accessibilityLiveRegion="polite">
+      <View style={styles.working} accessible accessibilityLabel={t('{p0}，{p1} 秒', { p0: label, p1: Math.floor(seconds) })}>
+        <Shimmer text={label} seconds={seconds} />
+        <Text style={[styles.small, styles.dim]}> ({fmtElapsed(seconds)})</Text>
+      </View>
+      {hint ? <Text style={[styles.small, styles.dim, styles.waitHint]}>{hint}</Text> : null}
     </View>
   );
 }
@@ -260,6 +271,7 @@ const styles = StyleSheet.create({
   thinking: { gap: 6 },
   thinkingHeader: { ...TEXT.small, color: C.secondary, fontWeight: '600' },
   working: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  waitHint: { marginTop: 2 },
   shimmer: { ...TEXT.body, fontWeight: '700' },
   errorActions: { gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

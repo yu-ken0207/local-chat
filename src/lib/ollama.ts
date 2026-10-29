@@ -278,6 +278,11 @@ export class OllamaClient {
     }
   }
 
+  /** 只確認連不連得到（不經過 AI 引擎，引擎忙的時候也馬上回）：小幫手問 hello，直接連 Ollama 問版本 */
+  async ping(helper: boolean, timeoutMs = this.requestTimeout, signal?: AbortSignal): Promise<void> {
+    await this.json(helper ? '/helper/v1/hello' : '/api/version', undefined, timeoutMs, signal);
+  }
+
   /** 用電腦上顯示的配對碼換權杖 */
   async pair(code: string, deviceName: string): Promise<{ token: string; helperId: string; name: string }> {
     const data = await this.json('/helper/v1/pair', { code: code.replace(/\s+/g, ''), deviceName });
@@ -389,8 +394,8 @@ export class OllamaClient {
   }
 
   /** 目前已載入顯示卡的模型 */
-  async loaded(): Promise<LoadedModel[]> {
-    const data = await this.json('/api/ps');
+  async loaded(timeoutMs = this.requestTimeout): Promise<LoadedModel[]> {
+    const data = await this.json('/api/ps', undefined, timeoutMs);
     return (data?.models ?? []).map((m: any) => ({
       name: String(m.name),
       sizeVram: Number(m.size_vram ?? 0),

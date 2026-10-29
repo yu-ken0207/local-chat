@@ -22,7 +22,49 @@ export type Streaming = {
   startedAt: number;
   /** waiting：等模型開始回、thinking：正在思考、answering：正在回答 */
   phase: 'waiting' | 'thinking' | 'answering';
+  /** 模型還沒載入，電腦要先把它載入記憶體（第一次用要等比較久）；還不知道是 undefined */
+  loading?: boolean;
 };
+
+/** 連不到電腦的原因（白話說明在 diagnosisText） */
+export type Diagnosis =
+  | { kind: 'ok' }
+  | { kind: 'moved'; url: string }
+  | { kind: 'no-wifi' }
+  | { kind: 'other-network'; phoneIp: string; hostIp: string }
+  | { kind: 'vpn' }
+  | { kind: 'refused'; helper: boolean }
+  | { kind: 'no-response'; helper: boolean };
+
+/** 給使用者看的原因與下一步 */
+export function diagnosisText(d: Diagnosis): string {
+  switch (d.kind) {
+    case 'ok':
+      return t('現在連得到了。');
+    case 'moved':
+      return t('電腦換了網路位址，已經自動改好了。');
+    case 'no-wifi':
+      return t('手機沒有連 Wi-Fi。請連上跟電腦同一個 Wi-Fi；不在家時要用 Tailscale 這類工具才連得到。');
+    case 'other-network':
+      return t('手機（{p0}）和電腦（{p1}）不在同一個網路。請確認手機連的是家裡的 Wi-Fi，不是訪客網路或另一台路由器。', { p0: d.phoneIp, p1: d.hostIp });
+    case 'vpn':
+      return t('這是透過 Tailscale 連的位址。請確認手機和電腦的 Tailscale 都開著，而且登入同一個帳號。');
+    case 'refused':
+      return d.helper
+        ? t('電腦開著，但 Local AI 小幫手沒有開。請在電腦上打開小幫手。')
+        : t('電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。');
+    case 'no-response':
+      return d.helper
+        ? t('電腦沒有回應：可能睡著或關機了。電腦開著的話，可能是防火牆擋住手機，電腦上的小幫手畫面會教你怎麼放行。')
+        : t('電腦沒有回應：可能睡著或關機了，或是防火牆擋住手機。');
+  }
+}
+
+const isTailscaleIp = (ip: string) => {
+  const m = /^100\.(\d+)\./.exec(ip);
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+};
+const sameSubnet = (a: string, b: string) => a.split('.').slice(0, 3).join('.') === b.split('.').slice(0, 3).join('.');
 
 export type ContextInfo = { used: number; limit: number | null; level: ContextLevel };
 
@@ -118,6 +160,8 @@ export type ChatDeps = {
   openMemoryDb?: () => Promise<Db>;
   /** 下載中多久問一次進度（毫秒） */
   pollMs?: number;
+  /** 送出時順便確認電腦連不連得到的逾時（毫秒）；連不到就不用等到聊天逾時 */
+  probeTimeoutMs?: number;
   onEvent?: (event: ChatEvent) => void;
 };
 
@@ -692,6 +736,54 @@ export class ChatStore {
     await this.refreshLoaded(url);
   }
 
+  // ---- 連不到時找原因 ----
+
+  /** 手機的 Wi-Fi 位址；沒連 Wi-Fi 是 null，問不到（逾時）是 undefined */
+  private async phoneIp(): Promise<string | null | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.deps.wifiIp(),
+        new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), WIFI_TIMEOUT_MS))),
+      ]);
+    } catch {
+      return undefined;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * 連不到電腦時找原因：手機沒連 Wi-Fi、不在同一個網路、電腦開著但小幫手沒開（馬上被拒絕）、電腦沒回應（睡著、關機、防火牆）。
+   * 小幫手換了位址（路由器重新分配）就順便找到並改好。
+   */
+  async diagnose(url: string): Promise<Diagnosis> {
+    const host = this.state.hosts.find((h) => h.url === url);
+    const helper = !!host?.helperId;
+    const started = Date.now();
+    let refused = false;
+    try {
+      await this.clientFor(url).ping(helper, this.deps.probeTimeoutMs ?? 5000);
+      return { kind: 'ok' };
+    } catch (e) {
+      // 有回應，只是回了錯誤：連線本身沒問題
+      if (e instanceof OllamaError && (e.kind === 'http' || e.kind === 'server' || e.kind === 'unpaired')) return { kind: 'ok' };
+      // 馬上被拒絕：電腦開著，只是那個連接埠沒有程式在聽；等到逾時是電腦沒回應
+      refused = e instanceof OllamaError && e.kind === 'network' && Date.now() - started < 1500;
+    }
+    const ip = /^https?:\/\/([^:/]+)/.exec(url)?.[1] ?? '';
+    if (isTailscaleIp(ip)) return { kind: 'vpn' };
+    const phone = await this.phoneIp();
+    if (phone === null) return { kind: 'no-wifi' };
+    if (host?.helperId && phone && this.tokens.has(host.helperId)) {
+      await this.scanLan();
+      const moved = this.state.hosts.find((h) => h.helperId === host.helperId && h.url !== url);
+      if (moved) return { kind: 'moved', url: moved.url };
+    }
+    if (phone && /^\d+\.\d+\.\d+\.\d+$/.test(ip) && !sameSubnet(phone, ip)) return { kind: 'other-network', phoneIp: phone, hostIp: ip };
+    return refused ? { kind: 'refused', helper } : { kind: 'no-response', helper };
+  }
+
   // ---- 下載模型 ----
 
   private isHelper(url: string): boolean {
@@ -1012,7 +1104,7 @@ export class ChatStore {
   }
 
   /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
-  private async answer(options: { altGroup?: string } = {}): Promise<void> {
+  private async answer(options: { altGroup?: string; retried?: boolean } = {}): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session!;
     const url = s.hostUrl!;
@@ -1043,6 +1135,27 @@ export class ChatStore {
 
     this.abort = new AbortController();
     const signal = this.abort.signal;
+    // 同時確認連不連得到：根本連不到時馬上停下來找原因，不用等到聊天逾時（最多 3 分鐘）
+    let unreachable = false;
+    const abortForThis = this.abort;
+    const isHelper = !!this.state.hosts.find((h) => h.url === url)?.helperId;
+    this.clientFor(url)
+      .ping(isHelper, this.deps.probeTimeoutMs ?? 5000)
+      .catch((e) => {
+        if (e instanceof OllamaError && (e.kind === 'network' || e.kind === 'timeout') && !content && !thinking && this.abort === abortForThis) {
+          unreachable = true;
+          abortForThis.abort();
+        }
+      });
+    // 模型載入了沒：沒有的話畫面說明第一次比較久
+    this.clientFor(url)
+      .loaded()
+      .then((list) => {
+        const st = this.state.streaming;
+        if (st?.messageId === placeholder.id) this.set({ streaming: { ...st, loading: !list.some((m) => m.name === model) } });
+      })
+      .catch(() => {});
+    let retryMoved = false;
     try {
       const result = await this.clientFor(url).chat(
         { model, messages: history, think: info?.think ? (s.think ?? defaultThink(info) ?? undefined) : undefined },
@@ -1069,23 +1182,36 @@ export class ChatStore {
       if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
       await this.notePairingLost(url, e);
-      const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
+      const cancelled = e instanceof OllamaError && e.kind === 'cancelled' && !unreachable;
+      const offline = unreachable || (e instanceof OllamaError && e.kind === 'network' && !content && !thinking);
       if (content || thinking) {
         await repo.updateMessage(placeholder.id, { content, thinking });
       } else {
         await repo.deleteMessage(placeholder.id);
       }
-      await repo.addMessage(
-        s.id,
-        cancelled ? { role: 'note', content: t('已停止') } : { role: 'error', content: t('沒有得到回答：{p0}', { p0: describeError(e) }), detail: errorDetail(e) }
-      );
-      this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
+      let reason = describeError(e);
+      if (offline) {
+        const d = await this.diagnose(url);
+        if (d.kind === 'moved' && !options.retried) retryMoved = true;
+        else if (d.kind !== 'ok') reason = diagnosisText(d);
+      }
+      if (retryMoved) {
+        this.set({ notice: diagnosisText({ kind: 'moved', url: '' }) });
+      } else {
+        await repo.addMessage(
+          s.id,
+          cancelled ? { role: 'note', content: t('已停止') } : { role: 'error', content: t('沒有得到回答：{p0}', { p0: reason }), detail: errorDetail(e) }
+        );
+        this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
+      }
     } finally {
       if (timer) clearTimeout(timer);
-      this.abort = null;
+      if (this.abort === abortForThis) this.abort = null;
       this.set({ streaming: null, messages: await repo.listMessages(s.id) });
       void this.refreshLoaded(url);
     }
+    // 電腦換了位址：已經改好，自動再問一次
+    if (retryMoved) await this.answer({ ...options, retried: true });
   }
 
   /** 請模型取標題；失敗就用第一句話的開頭。使用者這段時間自己改了標題就不蓋掉 */

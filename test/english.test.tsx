@@ -50,7 +50,7 @@ test('英文：錯誤訊息、連線說明都是英文', async () => {
   net.hosts.get(A)!.online = false;
   await fireEvent.changeText(screen.getByLabelText('Message'), 'hi');
   await fireEvent.press(screen.getByLabelText('Send'));
-  expect(await screen.findByText("No reply: Can't reach your computer.")).toBeTruthy();
+  expect(await screen.findByText("No reply: Your phone isn't on Wi-Fi. Join the same Wi-Fi as the computer; away from home you need a tool like Tailscale.")).toBeTruthy();
   expect(screen.getByText('Retry')).toBeTruthy();
   await fireEvent.press(screen.getByText('Connection help'));
   expect(await screen.findByText('Ollama must be running on the computer.')).toBeTruthy();
