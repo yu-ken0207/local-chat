@@ -43,6 +43,9 @@ export function chooseOption(title: string, options: string[], onPick: (index: n
   }
 }
 
+/** 輸入框的 nativeID：KeyboardGestureArea 靠它把「往下拖收鍵盤」的起點拉到輸入列上緣 */
+export const COMPOSER_INPUT_ID = 'composer-input';
+
 export function Composer(p: Props) {
   const [draft, setDraft] = useState('');
   const [photos, setPhotos] = useState<NewPhoto[]>([]);
@@ -172,6 +175,7 @@ export function Composer(p: Props) {
           />
           <TextInput
             ref={inputRef}
+            nativeID={COMPOSER_INPUT_ID}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}

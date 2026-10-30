@@ -1,7 +1,7 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
-import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
+import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
@@ -13,7 +13,7 @@ import type { Db } from '../store/db';
 import type { Attachment, Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
-import { Composer, chooseOption, type PickSource } from './Composer';
+import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView } from './ActionCard';
@@ -129,6 +129,10 @@ export function ChatScreen(p: ChatScreenProps) {
   // 只剩 8pt。用位移不用改留白，跟著鍵盤一格一格動，收鍵盤時不會跳
   const bottomInset = Math.max(insets.bottom, 8);
   const keyboardOffset = bottomInset - 8;
+  // 輸入列（含上面的提示）在鍵盤上方露出的高度：往下拖收鍵盤時，手指一碰到輸入列上緣鍵盤就開始跟（像 iMessage），
+  // 不用先越過整個輸入列
+  const [stickyHeight, setStickyHeight] = useState(0);
+  const gestureOffset = Math.max(0, stickyHeight - keyboardOffset);
 
   // 換對話時捲到最下面
   useEffect(() => {
@@ -231,6 +235,7 @@ export function ChatScreen(p: ChatScreenProps) {
             </View>
           </View>
 
+          <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
           {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
           <KeyboardChatScrollView
             ref={scrollRef}
@@ -288,7 +293,7 @@ export function ChatScreen(p: ChatScreenProps) {
           </KeyboardChatScrollView>
 
           {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
-          <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }}>
+          <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }} onLayout={(e) => setStickyHeight(e.nativeEvent.layout.height)}>
           {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
           {state.context && state.context.level !== 'ok' ? (
             <Banner
@@ -340,6 +345,7 @@ export function ChatScreen(p: ChatScreenProps) {
             notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
           />
           </KeyboardStickyView>
+          </KeyboardGestureArea>
 
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
             <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
