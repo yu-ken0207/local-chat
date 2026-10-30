@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert } from 'react-native';
+import { ActionSheetIOS, Alert, Keyboard, ScrollView } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import type { NewPhoto } from '../src/lib/photos';
@@ -180,6 +180,44 @@ describe('輸入列', () => {
     expect(disabled('送出')).toBe(true);
     await type('hi');
     expect(disabled('送出')).toBe(false);
+  });
+});
+
+describe('鍵盤與捲動', () => {
+  test('點訊息、用按鈕打開對話清單，都會收鍵盤', async () => {
+    const { store } = await setup();
+    await send(store, 'hi');
+    const dismiss = jest.spyOn(Keyboard, 'dismiss');
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent.press(screen.getByTestId(`message-${mine.id}`));
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByLabelText('對話清單'));
+    expect(dismiss).toHaveBeenCalledTimes(2);
+  });
+
+  test('手指在拖或放手後還在滑：內容變長也不自動捲到底；停下來在最底才跟著', async () => {
+    await setup();
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    // 只算「跟著最新」的捲動（有動畫）；換對話時那次無動畫的不算
+    const follows = () => toEnd.mock.calls.filter((c: any[]) => c[0]?.animated).length;
+    const list = screen.getByTestId('transcript');
+    const at = (y: number) => ({ nativeEvent: { contentOffset: { x: 0, y }, contentSize: { width: 390, height: 2000 }, layoutMeasurement: { width: 390, height: 600 } } });
+    await fireEvent(list, 'scrollBeginDrag', at(1400));
+    await fireEvent(list, 'contentSizeChange', 390, 2100);
+    expect(follows()).toBe(0);
+    await fireEvent(list, 'scrollEndDrag', at(1400));
+    await fireEvent(list, 'momentumScrollBegin', at(1400));
+    await fireEvent(list, 'contentSizeChange', 390, 2200);
+    expect(follows()).toBe(0);
+    // 停在最底：之後內容變長就跟著捲
+    await fireEvent(list, 'momentumScrollEnd', at(1400));
+    await fireEvent(list, 'contentSizeChange', 390, 2300);
+    expect(follows()).toBe(1);
+    // 停在上面看舊訊息：不跟
+    await fireEvent(list, 'scrollBeginDrag', at(200));
+    await fireEvent(list, 'scrollEndDrag', at(200));
+    await fireEvent(list, 'contentSizeChange', 390, 2400);
+    expect(follows()).toBe(1);
   });
 });
 

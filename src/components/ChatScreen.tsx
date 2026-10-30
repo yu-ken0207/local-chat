@@ -1,6 +1,6 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
@@ -38,6 +38,11 @@ export function ChatScreen(p: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const nearBottom = useRef(true);
+  const userScrolling = useRef(false);
+  const updateNearBottom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+  };
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
@@ -204,7 +209,16 @@ export function ChatScreen(p: ChatScreenProps) {
         <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
             <View style={styles.headerSide}>
-              <HeaderButton name="list.bullet" text={t('對話')} label={t('對話清單')} onPress={() => setListOpen(true)} />
+              <HeaderButton
+                name="list.bullet"
+                text={t('對話')}
+                label={t('對話清單')}
+                onPress={() => {
+                  // 跟用手勢打開一樣先收鍵盤
+                  Keyboard.dismiss();
+                  setListOpen(true);
+                }}
+              />
             </View>
             <Pressable
               style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
@@ -224,17 +238,27 @@ export function ChatScreen(p: ChatScreenProps) {
 
           <ScrollView
             ref={scrollRef}
+            testID="transcript"
             style={styles.flex}
             contentContainerStyle={styles.transcript}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={100}
-            onScroll={(e) => {
-              const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-              nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+            // 「跟著最新」只看使用者自己的捲動：程式捲動的動畫不算，手指在拖或放手後還在滑時也不自動捲到底
+            // （不然 AI 回答中往下拖收鍵盤，內容會被拉回最底，跟手指打架）
+            onScrollBeginDrag={() => (userScrolling.current = true)}
+            onScroll={(e) => userScrolling.current && updateNearBottom(e)}
+            onScrollEndDrag={(e) => {
+              updateNearBottom(e);
+              userScrolling.current = false;
+            }}
+            onMomentumScrollBegin={() => (userScrolling.current = true)}
+            onMomentumScrollEnd={(e) => {
+              updateNearBottom(e);
+              userScrolling.current = false;
             }}
             onContentSizeChange={() => {
-              if (nearBottom.current) scrollRef.current?.scrollToEnd({ animated: true });
+              if (nearBottom.current && !userScrolling.current) scrollRef.current?.scrollToEnd({ animated: true });
             }}>
             {state.messages.length === 0 ? (
               <EmptyState

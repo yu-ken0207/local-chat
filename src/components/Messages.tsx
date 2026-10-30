@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Image, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
 import { fmtElapsed } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
@@ -31,7 +31,7 @@ type Handlers = {
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
   if (m.role === 'user') {
     return (
-      <Pressable onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.userBlock}>
           <Text style={styles.userMark}>›</Text>
           <View style={styles.body}>
@@ -71,7 +71,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     const toolTurn = !live && !content && !!m.toolCalls?.length;
     if (toolTurn && !thinking && !h.extra) return null;
     return (
-      <Pressable onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.aiBlock}>
           <Text style={styles.aiMark}>•</Text>
           <View style={styles.body}>
@@ -99,7 +99,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   return (
-    <Pressable onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+    <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]}>■</Text>
         <View style={styles.body}>
