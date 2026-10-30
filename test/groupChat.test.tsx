@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, ScrollView } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, ScrollView } from 'react-native';
 
 import { getEntry } from '../src/agents/catalog';
 import { ChatScreen } from '../src/components/ChatScreen';
@@ -230,4 +230,118 @@ test('多人對話開討論串：剛開還沒問不顯示「大家說完了」�
   expect(await screen.findByText('以下是討論串')).toBeTruthy();
   expect(screen.queryByText('大家說完了')).toBeNull();
   expect(screen.queryByDisplayValue('@財務長 ')).toBeNull();
+});
+
+describe('審查修正：畫面與讀螢幕', () => {
+  /** 收尾用的回答 */
+  const concludeReply = (body: any) => {
+    const reply = (content: string) => ({ lines: [{ message: { content }, done: false }, done] });
+    if (body.format?.properties?.options) return reply(JSON.stringify({ question: '要不要換？', options: ['今年換', '先修再說'] }));
+    if (body.format?.properties?.choice) return reply(JSON.stringify({ choice: 2, reason: '省錢' }));
+    if (body.format?.properties?.consensus) return reply(JSON.stringify({ consensus: '先修再說', disagreements: [], todos: [] }));
+    return reply('筆記');
+  };
+
+  test('VoiceOver：你說的話、Agent 的名字上有「更多動作」，打開長按選單', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    const seen: string[][] = [];
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => {
+      seen.push(o.options);
+      cb(o.options.length - 1);
+    });
+    await fireEvent(screen.getByLabelText('財務長 說'), 'accessibilityAction', { nativeEvent: { actionName: 'more' } });
+    await fireEvent(screen.getByLabelText('你說：預算夠嗎'), 'accessibilityAction', { nativeEvent: { actionName: 'more' } });
+    expect(seen[0]).toContain('請他展開講');
+    expect(seen[1]).toContain('編輯並重送');
+  });
+
+  test('重新產生後的 ‹ ›：各自是按鈕，第一個時「上一個」停用', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await store.regenerate(store.getState().messages.at(-1)!.id);
+    await screenOf(store);
+    expect(screen.getByLabelText('第 2 個回答，共 2 個')).toBeTruthy();
+    expect(screen.getByLabelText('下一個回答').props.accessibilityState).toMatchObject({ disabled: true });
+    await fireEvent.press(screen.getByLabelText('上一個回答'));
+    expect(await screen.findByLabelText('第 1 個回答，共 2 個')).toBeTruthy();
+  });
+
+  test('成員全部拿掉：結論卡照樣畫成卡片，不會印出原文', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('要換伺服器嗎');
+    net.hosts.get(A)!.reply = concludeReply;
+    await store.conclude();
+    for (const a of Object.values(agents)) await store.removeMember(a.id);
+    await screenOf(store);
+    expect(screen.getByText('要不要換？')).toBeTruthy();
+    expect(screen.queryByText(/"question"/)).toBeNull();
+  });
+
+  test('討論停下、建議收尾時，讀螢幕唸一聲', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    await store.setGroupSettings({ maxStreak: 1 });
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    script(net, { 財務長: [8, 8], 工程師: [0, 0] }, { conclude: true });
+    await screenOf(store);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '開始');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await screen.findByText('大家覺得可以收尾了');
+    expect(announce).toHaveBeenCalledWith('大家覺得可以收尾了');
+  });
+
+  test('打字時（沒有 @）不會整個畫面重畫；打了 @ 才更新名單', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    const GroupChat = require('../src/components/GroupChat');
+    const spy = jest.spyOn(GroupChat, 'replyTargets');
+    await screenOf(store);
+    // 等畫面一開始的非同步載入（我的 Agent 等）跑完再算
+    await act(async () => await new Promise((r) => setTimeout(r, 100)));
+    const before = spy.mock.calls.length;
+    for (const text of ['那', '那就', '那就這樣']) await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), text);
+    expect(spy.mock.calls.length).toBe(before);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '那就這樣 @財');
+    expect(await screen.findByTestId('mention-picker')).toBeTruthy();
+  });
+
+  test('打了 @ 還沒送就開討論串：卡片裡的輸入框是空的，@ 名單也收起來', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '@財');
+    expect(await screen.findByTestId('mention-picker')).toBeTruthy();
+    await act(async () => {
+      await store.openThread(store.getState().messages[0].id);
+    });
+    expect(await screen.findByText('以下是討論串')).toBeTruthy();
+    expect(screen.queryByTestId('mention-picker')).toBeNull();
+  });
+
+  test('英文介面：結論卡、成員數用半形標點和單複數', async () => {
+    const { net, store, agents } = await setup(['財務長']);
+    await store.setPref('language', 'en');
+    await store.addMember(agents['財務長'].id);
+    script(net, { 財務長: [8, 0] });
+    await store.send('replace the server?');
+    net.hosts.get(A)!.reply = concludeReply;
+    await store.conclude();
+    await screenOf(store);
+    expect(screen.getByText('1 member · Free for all')).toBeTruthy();
+    expect(screen.getByLabelText('Option 2: 先修再說, 1 vote')).toBeTruthy();
+    expect(screen.getByText('Conclusion: 先修再說')).toBeTruthy();
+    await store.setPref('language', 'zh-Hant');
+  });
 });

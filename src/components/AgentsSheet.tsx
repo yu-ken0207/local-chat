@@ -7,7 +7,7 @@ import type { AgentDraft, ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Agent, AgentCard, AgentNote } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
-import { AgentAvatar, avatarId } from './AgentAvatar';
+import { AgentAvatar, EMOJI_AVATAR, avatarId } from './AgentAvatar';
 import { chooseOption } from './Composer';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
@@ -93,7 +93,7 @@ export function AgentsView({ store, onClose }: Props) {
 
 function AgentRow({ agent, onPress }: { agent: Agent; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`${agent.name}，${agent.intro}`} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={t('{p0}，{p1}', { p0: agent.name, p1: agent.intro })} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
       <View style={styles.row}>
         <AgentAvatar id={avatarId(agent)} emoji={agent.emoji} photo={agent.photo} size={36} />
         <View style={styles.flex}>
@@ -113,7 +113,23 @@ function AgentRow({ agent, onPress }: { agent: Agent; onPress: () => void }) {
 }
 
 /** 圖鑑：搜尋、分類、清單；右邊直接加到「我的 Agent」 */
-export function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry) => void; added: Set<string>; onAdd: (id: string) => void }) {
+/**
+ * 圖鑑清單。addLabel：「＋」做什麼（設定裡是加到我的 Agent、成員面板是加入討論）；openHint：點整列做什麼（讀螢幕唸）。
+ * 讀螢幕：整列是一個按鈕，唸名字、介紹、已加入；「＋」改成這一列的動作
+ */
+export function CatalogList({
+  onOpen,
+  added,
+  onAdd,
+  addLabel = (name) => t('加到我的 Agent：{p0}', { p0: name }),
+  openHint = t('點兩下看介紹'),
+}: {
+  onOpen: (e: CatalogEntry) => void;
+  added: Set<string>;
+  onAdd: (id: string) => void;
+  addLabel?: (name: string) => string;
+  openHint?: string;
+}) {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState<CategoryKey | null>(null);
   const list = useMemo(() => searchCatalog(query, cat), [query, cat]);
@@ -138,6 +154,7 @@ export function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry
           <Pressable
             key={c.key ?? 'all'}
             onPress={() => setCat(c.key)}
+            hitSlop={{ top: 6, bottom: 6 }}
             accessibilityRole="button"
             accessibilityState={{ selected: cat === c.key }}
             style={[styles.chip, cat === c.key && styles.chipOn]}>
@@ -154,7 +171,14 @@ export function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={<Text style={[styles.sub, styles.empty]}>{t('找不到符合的角色。')}</Text>}
         renderItem={({ item }) => (
-          <Pressable onPress={() => onOpen(item)} accessibilityRole="button" accessibilityLabel={`${entryName(item)}，${entryIntro(item)}`} style={({ pressed }) => [styles.catalogRow, pressed && { backgroundColor: C.pressed }]}>
+          <Pressable
+            onPress={() => onOpen(item)}
+            accessibilityRole="button"
+            accessibilityLabel={t('{p0}，{p1}', { p0: entryName(item), p1: entryIntro(item) }) + (added.has(item.id) ? t('，已加入') : '')}
+            accessibilityHint={openHint}
+            accessibilityActions={added.has(item.id) ? [] : [{ name: 'add', label: addLabel(entryName(item)) }]}
+            onAccessibilityAction={(e) => e.nativeEvent.actionName === 'add' && onAdd(item.id)}
+            style={({ pressed }) => [styles.catalogRow, pressed && { backgroundColor: C.pressed }]}>
             <AgentAvatar id={item.id} emoji={item.e} size={36} />
             <View style={styles.flex}>
               <Text style={styles.rowTitle} numberOfLines={1}>
@@ -167,7 +191,7 @@ export function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry
             {added.has(item.id) ? (
               <SymbolView name="checkmark.circle.fill" size={24} tintColor={C.secondary} accessibilityLabel={t('已加入')} />
             ) : (
-              <Pressable onPress={() => onAdd(item.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('加到我的 Agent：{p0}', { p0: entryName(item) })}>
+              <Pressable onPress={() => onAdd(item.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={addLabel(entryName(item))}>
                 <SymbolView name="plus.circle" size={24} tintColor={C.accent} />
               </Pressable>
             )}
@@ -208,7 +232,7 @@ function CatalogDetail({ store, entry, added, onClose }: { store: ChatStore; ent
         </View>
         <View style={[styles.card, styles.pad]}>
           <Text style={styles.rowTitle}>{entryIntro(entry)}</Text>
-          {vibe ? <Text style={[styles.sub, styles.vibe]}>「{vibe}」</Text> : null}
+          {vibe ? <Text style={[styles.sub, styles.vibe]}>{t('「{p0}」', { p0: vibe })}</Text> : null}
         </View>
         <Pressable
           disabled={isAdded}
@@ -351,8 +375,8 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
         {drafted ? (
           <>
             <View style={styles.hero}>
-              <AgentAvatar id={avatar ?? existing?.catalogId ?? existing?.id ?? name} emoji={emoji} photo={existing?.photo} size={64} />
-              <Pressable onPress={() => setPickingAvatar(true)} hitSlop={8} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+              <AgentAvatar id={avatarId({ id: existing?.id ?? name, catalogId: existing?.catalogId ?? null, avatar })} emoji={emoji} photo={existing?.photo} size={64} />
+              <Pressable onPress={() => setPickingAvatar(true)} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
                 <Text style={styles.link}>{t('換頭像')}</Text>
               </Pressable>
             </View>
@@ -393,6 +417,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
                     <Pressable
                       key={v}
                       onPress={() => setTalk(v)}
+                      hitSlop={{ top: 6, bottom: 6 }}
                       accessibilityRole="button"
                       accessibilityState={{ selected: nearestTalk(talk) === i }}
                       style={[styles.miniItem, nearestTalk(talk) === i && styles.segmentOn]}>
@@ -409,7 +434,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
               <View style={styles.separator} />
               <Pressable onPress={pickModel} accessibilityRole="button" accessibilityLabel={t('模型，{p0}', { p0: modelLabel })} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                 <View style={styles.row}>
-                  <Text style={[styles.rowTitle, styles.flex]}>{t('模型')}</Text>
+                  <Text style={[styles.rowTitle, styles.flex]}>{t('使用的模型')}</Text>
                   <Text style={styles.value} numberOfLines={1}>
                     {modelLabel}
                   </Text>
@@ -501,7 +526,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
 }
 
 /** 換頭像：從圖鑑的像素頭像挑一張（可以搜尋），或用 emoji */
-function AvatarPicker({ emoji, onPick, onClose }: { emoji: string; onPick: (id: string | null) => void; onClose: () => void }) {
+function AvatarPicker({ emoji, onPick, onClose }: { emoji: string; onPick: (id: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const list = useMemo(() => searchCatalog(query), [query]);
   return (
@@ -520,7 +545,7 @@ function AvatarPicker({ emoji, onPick, onClose }: { emoji: string; onPick: (id: 
         initialNumToRender={24}
         contentContainerStyle={styles.grid}
         ListHeaderComponent={
-          <Pressable onPress={() => onPick(null)} accessibilityRole="button" style={({ pressed }) => [styles.emojiOption, pressed && styles.pressed]}>
+          <Pressable onPress={() => onPick(EMOJI_AVATAR)} accessibilityRole="button" style={({ pressed }) => [styles.emojiOption, pressed && styles.pressed]}>
             <AgentAvatar id="emoji" emoji={emoji} size={40} />
             <Text style={styles.link}>{t('用 emoji')}</Text>
           </Pressable>
@@ -637,7 +662,7 @@ const styles = StyleSheet.create({
   chipsBar: { flexGrow: 0 },
   chips: { gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   chip: { minHeight: 32, paddingHorizontal: 12, borderRadius: 16, justifyContent: 'center', backgroundColor: C.groupedCard },
-  chipOn: { backgroundColor: C.accentFill },
+  chipOn: { backgroundColor: C.accentFillStrong },
   chipText: { fontSize: 13, color: C.label },
   chipTextOn: { color: '#fff', fontWeight: '600' },
   listContent: { paddingBottom: 48 },

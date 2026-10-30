@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import { PromptStore, getEntry } from '../src/agents/catalog';
+import { EMOJI_AVATAR, avatarId } from '../src/components/AgentAvatar';
 import { AgentsView } from '../src/components/AgentsSheet';
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
@@ -76,6 +77,19 @@ test('圖鑑：搜尋、分類、直接加；加過的打勾；切回「我的 A
   expect(screen.getByText('找不到符合的角色。')).toBeTruthy();
   await fireEvent.press(screen.getByText('我的 Agent'));
   expect(screen.getByText(name)).toBeTruthy();
+});
+
+test('VoiceOver：圖鑑每一列唸名字、介紹、已加入；「加到我的 Agent」是這一列的動作', async () => {
+  const { store } = await setup();
+  await render(<AgentsView store={store} onClose={jest.fn()} />);
+  await fireEvent.press(screen.getByText('圖鑑'));
+  await fireEvent.changeText(screen.getByLabelText('搜尋圖鑑'), 'historian');
+  const e = getEntry('agency:academic/academic-historian')!;
+  const row = await screen.findByLabelText(`${e.n[0]}，${e.d[0]}`);
+  expect(row.props.accessibilityActions).toEqual([{ name: 'add', label: `加到我的 Agent：${e.n[0]}` }]);
+  await fireEvent(row, 'accessibilityAction', { nativeEvent: { actionName: 'add' } });
+  expect(await screen.findByLabelText(`${e.n[0]}，${e.d[0]}，已加入`)).toBeTruthy();
+  expect(store.getState().myAgents.map((a) => a.catalogId)).toEqual([e.id]);
 });
 
 test('圖鑑的角色：看介紹、角色原文，從這裡加入', async () => {
@@ -153,5 +167,18 @@ test('換頭像：從圖鑑挑一張（可以搜尋），也可以改回 emoji',
   await fireEvent.press(await screen.findByText('換頭像'));
   await fireEvent.press(await screen.findByText('用 emoji'));
   await fireEvent.press(screen.getByText('儲存'));
-  await waitFor(() => expect(store.getState().myAgents[0].avatar).toBeNull());
+  await waitFor(() => expect(store.getState().myAgents[0].avatar).toBe(EMOJI_AVATAR));
+  expect(avatarId(store.getState().myAgents[0])).toBe(`emoji:${store.getState().myAgents[0].id}`);
+});
+
+test('從圖鑑加的 Agent 選「用 emoji」：不會落回圖鑑的像素頭像', async () => {
+  const { store } = await setup();
+  const a = (await store.addCatalogToMine('agency:academic/academic-historian'))!;
+  expect(avatarId(a)).toBe('agency:academic/academic-historian');
+  await render(<AgentsView store={store} onClose={jest.fn()} />);
+  await fireEvent.press(await screen.findByLabelText(`${a.name}，${a.intro}`));
+  await fireEvent.press(await screen.findByText('換頭像'));
+  await fireEvent.press(await screen.findByText('用 emoji'));
+  await fireEvent.press(screen.getByText('儲存'));
+  await waitFor(() => expect(avatarId(store.getState().myAgents[0])).toBe(`emoji:${a.id}`));
 });

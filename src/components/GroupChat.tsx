@@ -1,6 +1,6 @@
 import { SymbolView } from 'expo-symbols';
-import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { entryIntro, entryName, getEntry, type CatalogEntry } from '../agents/catalog';
 import { CONCLUSION, parseConclusion, type Conclusion } from '../agents/discussion';
@@ -11,11 +11,12 @@ import { AgentAvatar, avatarId } from './AgentAvatar';
 import { CatalogList } from './AgentsSheet';
 import { chooseOption } from './Composer';
 import { Markdown } from './Markdown';
-import { ActionButton, Thinking, Thumbnails, Working } from './Messages';
+import { ActionButton, Thinking, Thumbnails, Versions, Working, moreActions } from './Messages';
 import { t } from '../i18n';
 
 // 多 AI 討論的畫面：聊天氣泡（你在右、AI 在左帶頭像和名字）、成員列、討論進行到哪、@ 選人、成員面板
 
+const votes = (n: number) => (n === 1 ? t('1 票') : t('{p0} 票', { p0: n }));
 const speakModeName = (m: SpeakMode) => ({ free: t('自由搶話'), host: t('主持人點名'), round: t('輪流'), mention: t('只回被 @ 的') })[m];
 const joinedName = (j: JoinedBy) => ({ user: '', auto: t('自己加入'), mention: t('被 @ 拉進來'), thread: t('從原對話來') })[j];
 
@@ -60,13 +61,15 @@ export function BubbleView({
     []
   );
   const copyCode = useMemo(() => (code: string) => latest.current.onCopyCode(code), []);
+  // VoiceOver：長按選單改成「更多動作」，掛在你說的話、Agent 的名字上
+  const more = moreActions(h.onLongPress && (() => latest.current.onLongPress?.(latest.current.m)));
 
   if (m.role === 'user') {
     return (
       <Pressable accessible={false} {...press} delayLongPress={350} testID={`message-${m.id}`} style={styles.userRow}>
         <View style={styles.userBubble}>
           {m.attachments.length > 0 ? <Thumbnails images={m.attachments} onOpen={h.onOpenImage} /> : null}
-          <Text style={styles.userText} selectable accessibilityLabel={t('你說：{p0}', { p0: m.content })}>
+          <Text style={styles.userText} selectable accessibilityLabel={t('你說：{p0}', { p0: m.content })} {...more}>
             {m.content}
           </Text>
         </View>
@@ -93,24 +96,19 @@ export function BubbleView({
     <Pressable accessible={false} {...press} delayLongPress={350} testID={`message-${m.id}`} style={styles.aiRow}>
       <AgentAvatar id={agent ? avatarId(agent) : 'ai'} emoji={agent?.emoji || '🤖'} photo={agent?.photo} size={32} />
       <View style={styles.aiCol}>
-        <Text style={styles.name} numberOfLines={1}>
+        <Text style={styles.name} numberOfLines={1} accessibilityLabel={t('{p0} 說', { p0: name })} {...more}>
           {name}
         </Text>
         {replyTarget ? (
-          <Pressable onPress={() => h.onJump?.(replyTarget.id)} hitSlop={6} accessibilityRole="button" accessibilityLabel={t('回覆 {p0}，點一下看那則', { p0: replyTarget.name })}>
+          <Pressable onPress={() => h.onJump?.(replyTarget.id)} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} accessibilityRole="button" accessibilityLabel={t('回覆 {p0}，點一下看那則', { p0: replyTarget.name })}>
             <Text style={styles.quote} numberOfLines={1}>
-              {t('回覆 {p0}：', { p0: replyTarget.name })}
-              {replyTarget.content}
+              {t('回覆 {p0}：{p1}', { p0: replyTarget.name, p1: replyTarget.content })}
             </Text>
           </Pressable>
         ) : null}
         <View style={styles.aiBubble} accessible={false}>
           {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} onCopyCode={copyCode} /> : null}
-          {content ? (
-            <View accessibilityLabel={t('{p0} 說', { p0: name })}>
-              <Markdown text={content} onCopyCode={copyCode} {...press} />
-            </View>
-          ) : null}
+          {content ? <Markdown text={content} onCopyCode={copyCode} {...press} /> : null}
           {!live && !content ? <Text style={styles.dim}>{t('沒有說話。')}</Text> : null}
           {live ? <Working streaming={live} /> : null}
         </View>
@@ -118,17 +116,7 @@ export function BubbleView({
         {m.detail === ROLE_MISSING ? <Text style={styles.note}>{t('這次讀不到角色原文，暫時用簡短說明。')}</Text> : null}
         {!live && (m.versions || h.isLast) ? (
           <View style={styles.actions}>
-            {m.versions && h.onSwitchVersion ? (
-              <Text style={styles.note} accessibilityLabel={t('第 {p0} 個回答，共 {p1} 個', { p0: m.versions.index, p1: m.versions.total })}>
-                <Text onPress={() => h.onSwitchVersion!(-1)} style={styles.arrow}>
-                  ‹
-                </Text>{' '}
-                {m.versions.index} / {m.versions.total}{' '}
-                <Text onPress={() => h.onSwitchVersion!(1)} style={styles.arrow}>
-                  ›
-                </Text>
-              </Text>
-            ) : null}
+            {m.versions && h.onSwitchVersion ? <Versions versions={m.versions} onSwitch={h.onSwitchVersion} /> : null}
             {h.isLast && content && h.onCopy ? <ActionButton text={t('複製')} onPress={h.onCopy} /> : null}
             {h.isLast && h.onRegenerate ? <ActionButton text={t('重新產生')} onPress={h.onRegenerate} /> : null}
           </View>
@@ -140,14 +128,14 @@ export function BubbleView({
 
 /** 結論卡的文字版（複製、分享用） */
 export function conclusionText(c: Conclusion): string {
-  const lines = [`${t('結論')}：${c.question}`, ''];
+  const lines = [t('結論：{p0}', { p0: c.question }), ''];
   c.options.forEach((o, i) => {
-    lines.push(`${i + 1}. ${o.text}（${t('{p0} 票', { p0: o.votes.length })}）`);
-    for (const v of o.votes) lines.push(`   - ${v.name}${v.reason ? `：${v.reason}` : ''}`);
+    lines.push(`${i + 1}. ${t('{p0}（{p1}）', { p0: o.text, p1: votes(o.votes.length) })}`);
+    for (const v of o.votes) lines.push(`   - ${v.reason ? t('{p0}：{p1}', { p0: v.name, p1: v.reason }) : v.name}`);
   });
-  if (c.consensus) lines.push('', `${t('共識')}：${c.consensus}`);
-  if (c.disagreements.length) lines.push('', `${t('還有分歧')}：`, ...c.disagreements.map((x) => `- ${x}`));
-  if (c.todos.length) lines.push('', `${t('接下來')}：`, ...c.todos.map((x) => `- ${x}`));
+  if (c.consensus) lines.push('', t('共識：{p0}', { p0: c.consensus }));
+  if (c.disagreements.length) lines.push('', t('還有分歧：'), ...c.disagreements.map((x) => `- ${x}`));
+  if (c.todos.length) lines.push('', t('接下來：'), ...c.todos.map((x) => `- ${x}`));
   return lines.join('\n');
 }
 
@@ -177,7 +165,7 @@ export function ConclusionCard({
         <Text style={[styles.conclusionTitle, styles.flex]} accessibilityRole="header">
           {t('結論')}
         </Text>
-        <Pressable onPress={() => onPin(!pinned)} hitSlop={10} accessibilityRole="button" accessibilityLabel={pinned ? t('取消釘選') : t('釘在最上面')}>
+        <Pressable onPress={() => onPin(!pinned)} hitSlop={14} accessibilityRole="button" accessibilityLabel={pinned ? t('取消釘選') : t('釘在最上面')}>
           <SymbolView name={pinned ? 'pin.fill' : 'pin'} size={16} tintColor={C.secondary} />
         </Pressable>
       </View>
@@ -191,12 +179,12 @@ export function ConclusionCard({
               onPress={() => setOpen(open === i ? null : i)}
               accessibilityRole="button"
               accessibilityState={{ expanded: open === i }}
-              accessibilityLabel={t('方案 {p0}：{p1}，{p2} 票', { p0: i + 1, p1: o.text, p2: o.votes.length })}
+              accessibilityLabel={t('方案 {p0}：{p1}，{p2}', { p0: i + 1, p1: o.text, p2: votes(o.votes.length) })}
               style={styles.optionHead}>
               <Text style={[styles.optionText, styles.flex]}>
                 {i + 1}. {o.text}
               </Text>
-              <Text style={[styles.votes, lead && styles.accent]}>{t('{p0} 票', { p0: o.votes.length })}</Text>
+              <Text style={[styles.votes, lead && styles.accent]}>{votes(o.votes.length)}</Text>
             </Pressable>
             {total > 0 ? (
               <View style={styles.meter}>
@@ -217,7 +205,7 @@ export function ConclusionCard({
                   </View>
                 );
               })}
-              <Pressable onPress={() => onVote(i)} disabled={mine} hitSlop={8} accessibilityRole="button" accessibilityLabel={mine ? t('你投了方案 {p0}', { p0: i + 1 }) : t('投方案 {p0}', { p0: i + 1 })} style={({ pressed }) => [styles.voteButton, mine && styles.voteMine, pressed && styles.pressed]}>
+              <Pressable onPress={() => onVote(i)} disabled={mine} hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel={mine ? t('你投了方案 {p0}', { p0: i + 1 }) : t('投方案 {p0}', { p0: i + 1 })} style={({ pressed }) => [styles.voteButton, mine && styles.voteMine, pressed && styles.pressed]}>
                 <Text style={[styles.voteText, mine && styles.voteTextMine]}>{mine ? t('你投了這個') : t('投這個')}</Text>
               </Pressable>
             </View>
@@ -226,7 +214,7 @@ export function ConclusionCard({
                   .filter((v) => v.reason)
                   .map((v) => (
                     <Text key={v.who} style={styles.reason}>
-                      {v.name}：{v.reason}
+                      {t('{p0}：{p1}', { p0: v.name, p1: v.reason })}
                     </Text>
                   ))
               : null}
@@ -273,10 +261,10 @@ export function PinnedConclusion({ card, onPress, onUnpin }: { card: Conclusion;
       <SymbolView name="pin.fill" size={13} tintColor={C.accent} />
       <Pressable onPress={onPress} style={styles.flex} accessibilityRole="button" accessibilityLabel={t('釘選的結論：{p0}，點一下看完整內容', { p0: card.consensus || card.question })}>
         <Text style={styles.pinnedText} numberOfLines={1}>
-          {t('結論')}：{card.consensus || card.question}
+          {t('結論：{p0}', { p0: card.consensus || card.question })}
         </Text>
       </Pressable>
-      <Pressable onPress={onUnpin} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('取消釘選')}>
+      <Pressable onPress={onUnpin} hitSlop={17} accessibilityRole="button" accessibilityLabel={t('取消釘選')}>
         <SymbolView name="xmark" size={11} tintColor={C.secondary} />
       </Pressable>
     </View>
@@ -287,9 +275,9 @@ export function PinnedConclusion({ card, onPress, onUnpin }: { card: Conclusion;
 export function MembersBar({ members, group, onPress }: { members: Member[]; group: GroupSettings | null; onPress: () => void }) {
   const g = { ...DEFAULT_GROUP, ...group };
   const shown = members.slice(0, 5);
-  const summary = [t('{p0} 位成員', { p0: members.length }), speakModeName(g.mode), g.autopilot ? t('全自動') : ''].filter(Boolean).join(' · ');
+  const summary = [members.length === 1 ? t('1 位成員') : t('{p0} 位成員', { p0: members.length }), speakModeName(g.mode), g.autopilot ? t('全自動') : ''].filter(Boolean).join(' · ');
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={t('成員：{p0}。{p1}', { p0: members.map((m) => m.agent.name).join('、'), p1: summary })} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={t('成員：{p0}。{p1}', { p0: members.map((m) => m.agent.name).join(t('、')), p1: summary })} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
       <View style={styles.stack}>
         {shown.map((m, i) => (
           <View key={m.agent.id} style={[styles.stackItem, { marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i }]}>
@@ -327,6 +315,15 @@ export function DiscussionStatus({
   onConclude?: () => void;
   onDismissSuggest: () => void;
 }) {
+  // 讀螢幕：討論停下來、建議收尾時唸一聲（iPhone 不支援 accessibilityLiveRegion）；換人說話不唸，免得太吵
+  const prev = useRef({ running, suggest, canContinue });
+  useEffect(() => {
+    const was = prev.current;
+    prev.current = { running, suggest, canContinue };
+    if (running) return;
+    if (suggest && !was.suggest) AccessibilityInfo.announceForAccessibility(t('大家覺得可以收尾了'));
+    else if (canContinue && (was.running || !was.canContinue) && !suggest) AccessibilityInfo.announceForAccessibility(t('大家說完了'));
+  }, [running, suggest, canContinue]);
   if (running) {
     const text = !phase
       ? t('討論中…')
@@ -349,25 +346,36 @@ export function DiscussionStatus({
       </View>
     );
   }
+  // 兩層：上面說明（✕ 固定在右邊，不會被按鈕擠出畫面），下面按鈕放不下就換行（英文、大字也不擠壞）
   if (suggest) {
     return (
-      <View style={styles.status} accessibilityLiveRegion="polite">
-        <SymbolView name="checkmark.seal" size={16} tintColor={C.accent} />
-        <Text style={[styles.statusText, styles.flex]}>{t('大家覺得可以收尾了')}</Text>
-        {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} primary /> : null}
-        <ActionButton text={t('繼續聊')} onPress={onContinue} />
-        <Pressable onPress={onDismissSuggest} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('先不要')}>
-          <SymbolView name="xmark" size={12} tintColor={C.secondary} />
-        </Pressable>
+      <View style={styles.statusStack}>
+        <View style={styles.statusLine}>
+          <SymbolView name="checkmark.seal" size={16} tintColor={C.accent} />
+          <Text style={[styles.statusText, styles.flex]} numberOfLines={2}>
+            {t('大家覺得可以收尾了')}
+          </Text>
+          <Pressable onPress={onDismissSuggest} accessibilityRole="button" accessibilityLabel={t('先不要')} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
+            <SymbolView name="xmark" size={12} tintColor={C.secondary} />
+          </Pressable>
+        </View>
+        <View style={styles.statusButtons}>
+          {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} primary /> : null}
+          <ActionButton text={t('繼續聊')} onPress={onContinue} />
+        </View>
       </View>
     );
   }
   if (canContinue) {
     return (
-      <View style={styles.status}>
-        <Text style={[styles.statusText, styles.flex]}>{t('大家說完了')}</Text>
-        <ActionButton text={t('繼續討論')} onPress={onContinue} />
-        {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} /> : null}
+      <View style={styles.statusStack}>
+        <Text style={styles.statusText} numberOfLines={2}>
+          {t('大家說完了')}
+        </Text>
+        <View style={styles.statusButtons}>
+          <ActionButton text={t('繼續討論')} onPress={onContinue} />
+          {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} /> : null}
+        </View>
       </View>
     );
   }
@@ -490,7 +498,14 @@ export function MembersSheet({ store, state, topic, onClose }: { store: ChatStor
           <AddRow icon="sparkles" text={t('幫我挑')} onPress={() => void suggest()} busy={picking} />
           {picks ? (
             picks.map((e) => (
-              <View key={e.id} style={[styles.row, styles.indent]}>
+              // 讀螢幕：整列一個元素（唸名字、介紹、已加入），「加入」是這一列的動作
+              <View
+                key={e.id}
+                style={[styles.row, styles.indent]}
+                accessible
+                accessibilityLabel={t('{p0}，{p1}', { p0: entryName(e), p1: entryIntro(e) }) + (memberCatalog.has(e.id) ? t('，已加入') : '')}
+                accessibilityActions={memberCatalog.has(e.id) ? [] : [{ name: 'add', label: t('加入 {p0}', { p0: entryName(e) }) }]}
+                onAccessibilityAction={(ev) => ev.nativeEvent.actionName === 'add' && void store.addCatalogMember(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e })}>
                 <AgentAvatar id={e.id} emoji={e.e} size={28} />
                 <View style={styles.flex}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
@@ -551,6 +566,8 @@ export function MembersSheet({ store, state, topic, onClose }: { store: ChatStor
           </View>
           <CatalogList
             added={memberCatalog}
+            addLabel={(name) => t('加入討論：{p0}', { p0: name })}
+            openHint={t('點兩下加入討論')}
             onOpen={(e) => void store.addCatalogMember(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e })}
             onAdd={(id) => {
               const e = getEntry(id);
@@ -604,7 +621,7 @@ export function replyTargets(messages: Message[], agents: Record<string, Agent>,
 
 const styles = StyleSheet.create({
   userRow: { alignItems: 'flex-end', paddingLeft: 48 },
-  userBubble: { backgroundColor: C.accentFill, borderRadius: 18, borderBottomRightRadius: 6, paddingHorizontal: 14, paddingVertical: 10, gap: 6, maxWidth: '100%' },
+  userBubble: { backgroundColor: C.accentFillStrong, borderRadius: 18, borderBottomRightRadius: 6, paddingHorizontal: 14, paddingVertical: 10, gap: 6, maxWidth: '100%' },
   userText: { ...TEXT.body, color: '#ffffff' },
   aiRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingRight: 24 },
   aiCol: { flex: 1, gap: 4, alignItems: 'flex-start' },
@@ -613,7 +630,6 @@ const styles = StyleSheet.create({
   aiBubble: { backgroundColor: C.surface, borderRadius: 18, borderTopLeftRadius: 6, paddingHorizontal: 14, paddingVertical: 10, gap: 8, maxWidth: '100%' },
   system: { ...TEXT.meta, color: C.secondary, textAlign: 'center', paddingVertical: 2 },
   note: { ...TEXT.meta, color: C.secondary },
-  arrow: { color: C.accent, fontWeight: '700' },
   dim: { color: C.secondary },
   actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.separator },
@@ -621,11 +637,15 @@ const styles = StyleSheet.create({
   stackItem: { borderRadius: 12, borderWidth: 1.5, borderColor: C.bg },
   barText: { ...TEXT.meta, color: C.secondary, flex: 1 },
   status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 6 },
+  statusStack: { paddingHorizontal: 16, paddingVertical: 6, gap: 6 },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  iconButton: { minWidth: 44, minHeight: 44, marginVertical: -12, marginRight: -12, alignItems: 'center', justifyContent: 'center' },
   statusText: { ...TEXT.small, color: C.secondary },
   flex: { flex: 1 },
   pressed: { opacity: 0.5 },
   mentions: { gap: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  mention: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 10, borderRadius: 18, backgroundColor: C.surface },
+  mention: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 12, borderRadius: 22, backgroundColor: C.surface },
   mentionText: { ...TEXT.small, color: C.label },
   sheet: { flex: 1, backgroundColor: C.groupedBg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 8 },

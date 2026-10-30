@@ -13,8 +13,11 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
-/** 頭像用的 id：自己挑過的、從圖鑑來的用圖鑑 id（同一個角色同一個頭像、同一個顏色），都沒有用自己的 id */
-export const avatarId = (a: Pick<Agent, 'id' | 'catalogId' | 'avatar'>) => a.avatar ?? a.catalogId ?? a.id;
+/** 頭像選「用 emoji」時存的值（從圖鑑來的也不會落回圖鑑的像素頭像） */
+export const EMOJI_AVATAR = 'emoji';
+
+/** 頭像用的 id：自己挑過的、從圖鑑來的用圖鑑 id（同一個角色同一個頭像、同一個顏色），都沒有用自己的 id；選了 emoji 就用 emoji（底色照樣固定） */
+export const avatarId = (a: Pick<Agent, 'id' | 'catalogId' | 'avatar'>) => (a.avatar === EMOJI_AVATAR ? `emoji:${a.id}` : (a.avatar ?? a.catalogId ?? a.id));
 
 /** 這個 id 有沒有像素頭像 */
 export const hasPixelAvatar = (id: string) => id in AVATARS;

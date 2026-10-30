@@ -10,6 +10,7 @@ import { isRecordNote, type Attachment, type Message } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { Markdown } from './Markdown';
 import { t } from '../i18n';
+import { CONCLUSION, parseConclusion } from '../agents/discussion';
 
 type Handlers = {
   /** 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（沒給就顯示） */
@@ -34,7 +35,7 @@ type Handlers = {
 // VoiceOver：整則訊息不能當成一個元素（RN 的 Pressable 預設是），不然裡面的確認卡、重試、複製都按不到；
 // 長按選單改成「更多動作」掛在文字上，› • ■ 這些記號不唸
 const decorative = { accessibilityElementsHidden: true, importantForAccessibility: 'no' } as const;
-function moreActions(onMore?: () => void) {
+export function moreActions(onMore?: () => void) {
   return onMore ? { accessibilityActions: [{ name: 'more', label: t('更多動作') }], onAccessibilityAction: () => onMore() } : {};
 }
 
@@ -147,10 +148,10 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]} {...decorative}>■</Text>
         <View style={styles.body}>
           <Text style={[styles.text, m.role === 'error' ? styles.red : styles.dim]} selectable {...moreActions(h.onLongPress && (() => h.onLongPress!(m)))}>
-            {m.content}
+            {m.detail === CONCLUSION ? t('結論：{p0}', { p0: parseConclusion(m.content)?.consensus ?? '' }) : m.content}
           </Text>
           {h.isLast && m.role === 'error' ? <ErrorActions detail={m.detail} onRetry={h.onRetry} onHelp={h.onHelp} /> : null}
-          {h.isLast && m.role === 'note' && !isRecordNote(m) && h.onRetry ? (
+          {h.isLast && m.role === 'note' && !isRecordNote(m) && m.detail !== CONCLUSION && h.onRetry ? (
             <View style={styles.actions}>
               <ActionButton text={t('重新回答')} onPress={h.onRetry} />
             </View>
@@ -162,7 +163,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
 }
 
 /** 回答版本切換：‹ 2 / 3 › */
-function Versions({ versions, onSwitch }: { versions: { index: number; total: number }; onSwitch: (delta: number) => void }) {
+export function Versions({ versions, onSwitch }: { versions: { index: number; total: number }; onSwitch: (delta: number) => void }) {
   const first = versions.index <= 1;
   const last = versions.index >= versions.total;
   return (

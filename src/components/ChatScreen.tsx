@@ -90,9 +90,27 @@ export function ChatScreen(p: ChatScreenProps) {
   const [toast, setToast] = useState<ToastData | null>(null);
   // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
   const [membersOpen, setMembersOpen] = useState(false);
-  const [draftText, setDraftText] = useState('');
+  // 打的字放在 ref（每打一個字不重畫整個畫面）；只有 @ 後面的字變了才更新名單
+  const draftRef = useRef('');
+  const mentionRef = useRef<string | null>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const setMention = useCallback((q: string | null) => {
+    // 先比對再 setState：一樣的值 React 有時還是會多跑一次這個元件
+    if (q === mentionRef.current) return;
+    mentionRef.current = q;
+    setMentionQuery(q);
+  }, []);
+  const onDraftChange = useCallback(
+    (text: string) => {
+      draftRef.current = text;
+      setMention(/(?:^|\s)@([^\s@]*)$/.exec(text)?.[1] ?? null);
+    },
+    [setMention]
+  );
   const messageY = useRef(new Map<string, number>());
   const group = state.members.length > 0;
+  // 用氣泡畫：有成員，或有 Agent 說過話、有結論卡（成員清空了、剛切過來成員還沒讀到時，不會印出結論卡原文）
+  const bubbles = group || state.messages.some((m) => !!m.agentId || m.detail === CONCLUSION);
   const discussing = !!state.session && state.session.id in state.running && group;
   useEffect(() => {
     if (group || membersOpen) void store.loadMyAgents();
@@ -311,6 +329,9 @@ export function ChatScreen(p: ChatScreenProps) {
     threadClosing.current = false;
     threadSliding.current = false;
     threadSettled.current = false;
+    // 輸入框換位置重建、草稿是空的：@ 名單也收起來
+    draftRef.current = '';
+    setMention(null);
     if (!cardMode) {
       threadAnim.setValue(0);
       threadBlur.setValue(0);
@@ -461,15 +482,15 @@ export function ChatScreen(p: ChatScreenProps) {
   const model = store.currentModel();
   const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen;
   // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
-  const replies = group ? replyTargets(state.messages, state.agents, t('你')) : null;
-  const mention = group ? /(?:^|\s)@([^\s@]*)$/.exec(draftText) : null;
+  const replies = bubbles ? replyTargets(state.messages, state.agents, t('你')) : null;
+  const mention = group ? mentionQuery : null;
   // 討論串帶進來的背景不算（剛開還沒問就不顯示「大家說完了」）；最後一則是結論卡就已經收尾了
   const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim() && !isThreadRoot(m));
   // 最後一則是錯誤：下面已經有「重試」，不再多一列
   const lastShown = state.messages.findLast((m) => !isRecordNote(m));
   const concluded = lastShown?.detail === CONCLUSION || lastShown?.role === 'error';
   const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant' && !concluded;
-  const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftText;
+  const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftRef.current;
   const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
   const pinnedCard = pinnedMessage ? parseConclusion(pinnedMessage.content) : null;
   const jumpTo = (id: string) => {
@@ -647,7 +668,7 @@ export function ChatScreen(p: ChatScreenProps) {
           );
           return (
           <Fragment key={m.id}>
-          {group ? (
+          {bubbles ? (
             <View onLayout={(e) => messageY.current.set(m.id, e.nativeEvent.layout.y)}>
               <BubbleView
                 message={m}
@@ -756,7 +777,7 @@ export function ChatScreen(p: ChatScreenProps) {
       thinkValue={session?.think ?? null}
       busy={group ? false : !!state.streaming}
       bottomInset={bottomInset}
-      onDraftChange={setDraftText}
+      onDraftChange={onDraftChange}
       onInputFocus={() => setCardTyping(false)}
       onSend={async (text, photos) => {
         follow(true);
@@ -785,12 +806,12 @@ export function ChatScreen(p: ChatScreenProps) {
       // 塞進去的字套用一次就清掉：不然輸入框換位置重建時（打開討論串）又被放回去
       onInjected={() => setInjected(null)}
       accessory={
-        mention && !editing ? (
+        mention !== null && !editing ? (
           <MentionPicker
-            query={mention[1]}
+            query={mention}
             members={state.members.map((x) => x.agent)}
             mine={state.myAgents}
-            onPick={(name) => setInjected({ text: draftText.replace(/@[^\s@]*$/, `@${name} `), nonce: Date.now() })}
+            onPick={(name) => setInjected({ text: draftRef.current.replace(/@[^\s@]*$/, `@${name} `), nonce: Date.now() })}
           />
         ) : editing ? (
           <Banner
