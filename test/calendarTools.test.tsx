@@ -188,6 +188,21 @@ describe('接上 App', () => {
     open.mockRestore();
   });
 
+  test('AI 填的備註會顯示在卡片上，修改裡也能拿掉', async () => {
+    const { host, store, api } = await setup();
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '戶外教學', start: '2026-11-20', allDay: true, notes: '請攜帶午餐與水壺' }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '11/20 戶外教學');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('備註：請攜帶午餐與水壺')).toBeTruthy();
+    await fireEvent.press(screen.getByText('修改'));
+    await fireEvent.changeText(screen.getByLabelText('備註'), '');
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(api.created).toHaveLength(1));
+    expect(api.created[0].event.notes).toBeUndefined();
+  });
+
   test('提醒按修改、拿掉時間：設成沒有時間的提醒（不會用回 AI 原本的時間）', async () => {
     const { host, store, api } = await setup();
     let n = 0;

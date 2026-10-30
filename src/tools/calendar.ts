@@ -156,7 +156,8 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
     },
     group: 'calendar',
     get fields() {
-      return { title: t('標題'), start: t('開始'), end: t('結束'), location: t('地點'), calendar: t('行事曆'), alertMinutesBefore: t('提前幾分鐘提醒') };
+      // 備註也列出來：AI 填的每一個會寫進行事曆的欄位，卡片上都要看得到、改得到（照片裡藏的字也可能被寫進備註）
+      return { title: t('標題'), start: t('開始'), end: t('結束'), location: t('地點'), calendar: t('行事曆'), alertMinutesBefore: t('提前幾分鐘提醒'), notes: t('備註') };
     },
     fillDefaults: (input) => {
       if (input.allDay || input.end) return { input, guessed: [] };
@@ -215,7 +216,7 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
     },
     group: 'reminders',
     get fields() {
-      return { title: t('要提醒的事'), due: t('什麼時候提醒') };
+      return { title: t('要提醒的事'), due: t('什麼時候提醒'), notes: t('備註') };
     },
     check: (input, ctx) => (input.due ? checkWhen(str(input.due), ctx, 'reminder time') : null),
     describe: (input) =>
