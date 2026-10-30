@@ -43,6 +43,11 @@ export function chooseOption(title: string, options: string[], onPick: (index: n
   }
 }
 
+/** 底下那排的按鈕不到 44pt 高：外觀不變，用 hitSlop 補足可以按的範圍 */
+const PILL_HIT = { top: 10, bottom: 10, left: 4, right: 4 };
+/** 底下那排的字最多放大到 1.3 倍（大字時整排還放得下；訊息內容照樣跟著放大） */
+const FOOTER_MAX_SCALE = 1.3;
+
 /** 輸入框的 nativeID：KeyboardGestureArea 靠它把「往下拖收鍵盤」的起點拉到輸入列上緣 */
 export const COMPOSER_INPUT_ID = 'composer-input';
 
@@ -134,7 +139,7 @@ export function Composer(p: Props) {
     p.think?.kind === 'always'
       ? t('一定會先思考')
       : p.think?.kind === 'toggle'
-      ? t('深入思考 {p0}', { p0: p.thinkValue ? t('開') : t('關') })
+      ? t('深入思考：{p0}', { p0: p.thinkValue ? t('開') : t('關') })
       : p.think
         ? t('深入思考：{p0}', { p0: friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) })
         : '';
@@ -194,11 +199,11 @@ export function Composer(p: Props) {
       <View style={styles.footer}>
         <Pressable
           onPress={p.onOpenModels}
-          hitSlop={6}
+          hitSlop={PILL_HIT}
           accessibilityRole="button"
           accessibilityLabel={t('模型：{p0}，點一下切換', { p0: p.modelLabel ?? t('還沒選') })}
           style={({ pressed }) => [styles.pill, pressed && styles.pressed]}>
-          <Text style={[styles.footerText, !p.modelLabel && { color: C.accent }]} numberOfLines={1}>
+          <Text style={[styles.footerText, !p.modelLabel && { color: C.accent }]} numberOfLines={1} maxFontSizeMultiplier={FOOTER_MAX_SCALE}>
             {p.modelLabel ?? t('選擇模型')}
           </Text>
           <SymbolView name="chevron.up.chevron.down" size={11} tintColor={C.secondary} />
@@ -206,13 +211,15 @@ export function Composer(p: Props) {
         {p.think ? (
           <Pressable
             onPress={pressThink}
-            hitSlop={6}
+            hitSlop={PILL_HIT}
             accessibilityRole={p.think.kind === 'toggle' ? 'switch' : 'button'}
             accessibilityState={p.think.kind === 'toggle' ? { checked: !!p.thinkValue } : undefined}
             accessibilityLabel={thinkText}
-            style={({ pressed }) => [styles.pill, thinkOn ? styles.pillOn : null, pressed && styles.pressed]}>
+            style={({ pressed }) => [styles.pill, styles.pillFixed, thinkOn ? styles.pillOn : null, pressed && styles.pressed]}>
             <SymbolView name="lightbulb" size={11} tintColor={thinkOn ? C.accent : C.secondary} />
-            <Text style={[styles.footerText, thinkOn ? { color: C.accent } : null]}>{thinkText}</Text>
+            <Text style={[styles.footerText, thinkOn ? { color: C.accent } : null]} numberOfLines={1} maxFontSizeMultiplier={FOOTER_MAX_SCALE}>
+              {thinkText}
+            </Text>
           </Pressable>
         ) : null}
       </View>
@@ -262,7 +269,9 @@ const styles = StyleSheet.create({
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
   pressedIcon: { opacity: 0.5, transform: [{ scale: 0.92 }] },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6 },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 12, flexShrink: 1 },
+  // 兩顆都有細框，看得出是按鈕；放不下時只縮模型那顆（截掉的是後面的電腦名），深入思考不縮，字不會跑出框外
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 12, flexShrink: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  pillFixed: { flexShrink: 0 },
   pillOn: { backgroundColor: C.surface },
   footerText: { ...TEXT.meta, color: C.secondary },
   pressed: { opacity: 0.4 },

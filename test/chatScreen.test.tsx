@@ -66,7 +66,7 @@ describe('第一次使用', () => {
     await fireEvent.press(await screen.findByText('手動輸入位址'));
     await waitFor(() => expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' }));
     expect(await screen.findByText(/已經連上/)).toBeTruthy();
-    expect(screen.getByLabelText(/模型：192.168.1.20 · Gemma 4 · 31B/)).toBeTruthy();
+    expect(screen.getByLabelText(/模型：Gemma 4 · 31B · 192.168.1.20/)).toBeTruthy();
   });
 
   test('自動尋找：找到電腦就連上並選好模型', async () => {
@@ -157,8 +157,8 @@ describe('輸入列', () => {
 
   test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {
     const { store, net } = await setup();
-    await fireEvent.press(screen.getByLabelText('深入思考 關'));
-    expect(screen.getByLabelText('深入思考 開')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('深入思考：關'));
+    expect(screen.getByLabelText('深入思考：開')).toBeTruthy();
     await send(store, '問');
     expect(net.chatBodies()[0].think).toBe(true);
 
@@ -234,7 +234,7 @@ describe('對話', () => {
     expect(await screen.findByText('你好')).toBeTruthy();
     expect(await screen.findByText('粗體')).toBeTruthy();
     // 回答下方的小字與輸入列下方的模型都顯示白話名稱；速度與時間收在「詳細資訊」
-    expect(screen.getAllByText('192.168.1.20 · Gemma 4 · 31B')).toHaveLength(2);
+    expect(screen.getAllByText('Gemma 4 · 31B · 192.168.1.20')).toHaveLength(2);
     expect(screen.queryByText(/tok\/s/)).toBeNull();
     expect(await screen.findByText('測試對話')).toBeTruthy(); // 標題列：模型自動取的標題
   });
@@ -359,7 +359,7 @@ describe('主機與模型面板', () => {
   test('模型標示看圖、思考、已載入；卸載前先確認', async () => {
     const { net, store } = await setup();
     await send(store, '先用一次'); // 用過之後 gemma4:31b 會在已載入清單
-    await fireEvent.press(screen.getByLabelText(/模型：192.168.1.20 · Gemma 4 · 31B/));
+    await fireEvent.press(screen.getByLabelText(/模型：Gemma 4 · 31B · 192.168.1.20/));
     const row = await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考，回答較快');
     expect(within(row).getByText('看得懂圖片')).toBeTruthy();
     expect(within(row).getByText('可以深入思考')).toBeTruthy();

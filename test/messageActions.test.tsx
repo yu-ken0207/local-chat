@@ -98,7 +98,7 @@ describe('長按 AI 的回答', () => {
     pickActions(3, 1); // 換個模型重新產生 → 第二個模型（llama3:latest）
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages[1]?.model).toBe('llama3:latest'));
-    await waitFor(() => expect(screen.getAllByText('192.168.1.20 · Llama 3')).toHaveLength(2)); // 回答下方與輸入列下方
+    await waitFor(() => expect(screen.getAllByText('Llama 3 · 192.168.1.20')).toHaveLength(2)); // 回答下方與輸入列下方
   });
 
   test('刪除：不用先確認，按「復原」拿回來', async () => {

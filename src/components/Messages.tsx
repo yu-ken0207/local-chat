@@ -170,7 +170,7 @@ export function ActionButton({ text, onPress, primary }: { text: string; onPress
 
 /** 回答下方的小字：電腦 · 模型（速度、時間這些進階資訊放在長按的「詳細資訊」） */
 export function metaLine(m: Message): string {
-  return [m.hostLabel, m.model ? friendlyModelName(m.model) : null].filter(Boolean).join(' · ');
+  return [m.model ? friendlyModelName(m.model) : null, m.hostLabel].filter(Boolean).join(' · ');
 }
 
 /** 照片縮圖，點了看大圖 */

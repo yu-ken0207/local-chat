@@ -52,7 +52,6 @@ export const en: Record<string, string> = {
   "從相簿選擇": "Choose from library",
   "沒有送出": "Not sent",
   "深入思考的程度（越仔細越慢）": "How deeply to think (more careful is slower)",
-  "深入思考 {p0}": "Think deeply: {p0}",
   "深入思考：{p0}": "Think deeply: {p0}",
   "開": "On",
   "關": "Off",
