@@ -430,6 +430,18 @@ describe('圖鑑', () => {
     expect(bad).toEqual([]);
   });
 
+  test('台灣用語替換沒有改壞：沒有疊字（演演算法、線上上）、不是程式的循環和代碼沒換、台灣不用的寫法都換掉', () => {
+    const banned = ['演演算法', '線上上', '程式程式碼', '確安全全', '名稱稱', '惡性迴圈', '自然迴圈', '空氣迴圈', '國家程式碼', '周報', '周末', '制作', '標題里'];
+    const texts = catalogEntries().flatMap((e) => [e.n[0], e.d[0], e.v?.[0] ?? '', ...e.t]);
+    for (const f of readdirSync(join(__dirname, '../assets/agents')).filter((x) => x.startsWith('prompts-'))) {
+      const shard = JSON.parse(readFileSync(join(__dirname, '../assets/agents', f), 'utf8')) as Record<string, { zh?: string }>;
+      texts.push(...Object.values(shard).map((p) => p.zh ?? ''));
+    }
+    const all = texts.join('\n');
+    expect(banned.filter((w) => all.includes(w))).toEqual([]);
+    expect(all).toContain('演算法');
+  });
+
   test('原文分片：對照表跟索引的分片數一樣', () => {
     expect(PROMPT_SHARDS).toHaveLength((raw as { shards: number }).shards);
   });
