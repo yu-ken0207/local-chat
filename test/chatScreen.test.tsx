@@ -124,6 +124,18 @@ describe('第一次使用', () => {
     expect(copyText).toHaveBeenCalledWith('ollama pull gemma3');
   });
 
+  test('電腦連不到：空白畫面不寫「已經連上」，說連不到並給「連線說明」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.online = false;
+    await act(async () => {
+      await store.refreshHosts();
+    });
+    expect(screen.queryByText(/已經連上/)).toBeNull();
+    expect(screen.getByText(/現在連不到你的電腦/)).toBeTruthy();
+    await fireEvent.press(screen.getByText('連線說明'));
+    expect(await screen.findByText('連接你的電腦')).toBeTruthy();
+  });
+
   test('已經連上電腦但還沒有模型：空白畫面給「選擇模型」，面板裡直接從手機下載', async () => {
     const net = new FakeOllamaNet();
     net.addHost(A, { models: [] });

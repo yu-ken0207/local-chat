@@ -290,7 +290,9 @@ export function ChatScreen(p: ChatScreenProps) {
                 phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
                 scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
                 modelLabel={modelLabel}
+                hostState={session?.hostUrl ? state.hostStatus[session.hostUrl]?.state : undefined}
                 onConnect={() => setConnect({ help: false })}
+                onHelp={() => setConnect({ help: true })}
                 onPickModel={() => setSheetOpen(true)}
               />
             ) : (
@@ -408,15 +410,22 @@ function EmptyState({
   phase,
   scanning,
   modelLabel,
+  hostState,
   onConnect,
+  onHelp,
   onPickModel,
 }: {
   phase: 'noComputer' | 'noModel' | 'ready';
   scanning: string;
   modelLabel: string | null;
+  /** 這段對話的電腦現在連不連得到：沒連上時不要寫「已經連上」 */
+  hostState?: 'checking' | 'online' | 'offline';
   onConnect: () => void;
+  onHelp: () => void;
   onPickModel: () => void;
 }) {
+  const offline = hostState === 'offline';
+  const checking = hostState === 'checking';
   return (
     <View style={styles.empty}>
       <Text style={styles.emptyTitle}>
@@ -434,6 +443,13 @@ function EmptyState({
           <PrimaryButton text={t('連接你的電腦')} onPress={onConnect} />
           <Text style={styles.hint}>{t('需要一台開著 Local AI 小幫手的電腦，跟手機連同一個 Wi-Fi。')}</Text>
         </>
+      ) : offline ? (
+        <>
+          <Text style={styles.hint}>{t('現在連不到你的電腦。確認電腦開著、小幫手在執行，手機和電腦連在同一個網路。')}</Text>
+          <PrimaryButton text={t('連線說明')} onPress={onHelp} />
+        </>
+      ) : checking ? (
+        <Text style={styles.hint}>{t('正在連線到你的電腦…')}</Text>
       ) : phase === 'noModel' ? (
         <>
           <PrimaryButton text={t('選擇模型')} onPress={onPickModel} />
