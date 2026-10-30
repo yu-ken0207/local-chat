@@ -172,3 +172,71 @@ test('討論串還在回答就關掉：不停掉，入口寫「回答中…」�
   await fireEvent.press(screen.getByLabelText('關閉討論串'));
   expect(await screen.findByText('討論串（1 則）', {}, { timeout: 3000 })).toBeTruthy();
 });
+
+test('原對話在回答時：點已經有的討論串照樣打開；要新開的先不開', async () => {
+  const { store, net } = await setup();
+  const [question] = store.getState().messages;
+  await act(async () => {
+    await store.openThread(question.id);
+  });
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '牛肉湯哪家好');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await waitFor(() => expect(store.getState().streaming).toBeNull());
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('討論串（1 則）', {}, { timeout: 3000 });
+  // 原對話問一題，回答卡住
+  net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '想一下' }, done: false }], hang: true });
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '那 Python 呢');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+  await fireEvent.press(screen.getByLabelText('討論串，問了 1 次，點一下打開'));
+  expect(await screen.findByText('以下是討論串')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('Go 怎麼裝', {}, { timeout: 3000 });
+  // 要新開的：回答完才開（那一輪還沒講完）
+  expect(await act(async () => store.openThread(store.getState().messages[2].id))).toBe(false);
+  store.stop();
+});
+
+test('連點討論串入口兩下：只拍一次截圖、只開一次；關掉後截圖暫存檔刪掉', async () => {
+  const { store } = await setup();
+  const [question] = store.getState().messages;
+  await act(async () => {
+    await store.openThread(question.id);
+  });
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '牛肉湯哪家好');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await waitFor(() => expect(store.getState().streaming).toBeNull());
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('討論串（1 則）', {}, { timeout: 3000 });
+  const { captureScreen: capture, releaseCapture: release } = jest.requireMock('react-native-view-shot') as { captureScreen: jest.Mock; releaseCapture: jest.Mock };
+  capture.mockClear();
+  release.mockClear();
+  const link = screen.getByLabelText('討論串，問了 1 次，點一下打開');
+  await act(async () => {
+    fireEvent.press(link);
+    fireEvent.press(link);
+  });
+  expect(await screen.findByText('以下是討論串')).toBeTruthy();
+  expect(capture).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('Go 怎麼裝', {}, { timeout: 3000 });
+  expect(release).toHaveBeenCalledWith('file:///tmp/shot.jpg');
+});
+
+test('側邊欄開著時背景答完：那段的預覽跟著更新', async () => {
+  const { store, net } = await setup();
+  let finish!: () => void;
+  const holdLast = new Promise<void>((r) => (finish = r));
+  net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '背景答完了' }, done: false }, { message: { content: '' }, done: true }], holdLast });
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '慢慢答');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+  await act(async () => {
+    await store.newSession();
+  });
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  expect(await screen.findByText('回答中…')).toBeTruthy();
+  await act(async () => finish());
+  expect(await screen.findByText('背景答完了', {}, { timeout: 3000 })).toBeTruthy();
+});

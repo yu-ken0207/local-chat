@@ -1183,20 +1183,26 @@ export class ChatStore {
 
   /**
    * 針對某一題開討論串（已經開過就回到那一個）。點問題或回答都可以：帶進去的是那一題的問與答，
-   * 不帶整段對話（不會越聊越長、不被別的主題干擾）。討論串裡不能再開（只有一層）
+   * 不帶整段對話（不會越聊越長、不被別的主題干擾）。討論串裡不能再開（只有一層）。回傳有沒有打開
    */
-  async openThread(messageId: string): Promise<void> {
+  async openThread(messageId: string): Promise<boolean> {
     const { repo } = this.deps;
     const s = this.state.session;
-    if (!s || s.parentId || this.state.streaming) return;
+    if (!s || s.parentId) return false;
     const msgs = this.state.messages;
     const i = msgs.findIndex((m) => m.id === messageId);
-    if (i < 0) return;
+    if (i < 0) return false;
     const qi = msgs[i].role === 'user' ? i : msgs.slice(0, i).map((m) => m.role).lastIndexOf('user');
-    if (qi < 0) return;
+    if (qi < 0) return false;
     const question = msgs[qi];
+    // 開過的：原對話在回答也照樣打開（看背景回答的進度）
     const existing = await repo.findThread(s.id, question.id);
-    if (existing) return this.openSession(existing.id);
+    if (existing) {
+      await this.openSession(existing.id);
+      return true;
+    }
+    // 要新開的：這段還在回答、討論時先不開（那一輪還沒講完）
+    if (this.state.streaming || this.runs.has(s.id)) return false;
     // 那一題的回答：同一輪裡最後一則有字的（叫工具的那幾則跳過）；多 AI 討論帶那一輪每個人說的
     const next = msgs.findIndex((m, j) => j > qi && m.role === 'user');
     const said = msgs.slice(qi + 1, next < 0 ? undefined : next).filter((m) => m.role === 'assistant' && m.content.trim());
@@ -1220,6 +1226,7 @@ export class ChatStore {
     // 多 AI 討論的討論串：沿用原對話的成員
     for (const m of members) await repo.addMember(thread.id, m.agent.id, 'thread');
     await this.openSession(thread.id);
+    return true;
   }
 
   /** 從討論串回到它那段對話；什麼都沒問就回去的話，不留空的討論串 */

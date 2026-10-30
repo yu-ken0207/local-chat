@@ -2,10 +2,10 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { AccessibilityInfo, Alert, Animated, Image, Keyboard, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, Image, Keyboard, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View, findNodeHandle, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { captureScreen } from 'react-native-view-shot';
+import { captureScreen, releaseCapture } from 'react-native-view-shot';
 
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
@@ -266,6 +266,29 @@ export function ChatScreen(p: ChatScreenProps) {
   const threadBlur = useRef(new Animated.Value(0)).current;
   const threadDrag = useRef(new Animated.Value(0)).current;
   const threadClosing = useRef(false);
+  // 卡片還在長出來：點背景先不關（連點入口兩下時第二下會點到背景）
+  const threadSettled = useRef(false);
+  // 正在開討論串（拍截圖、建討論串那幾十毫秒）：再點入口不理
+  const threadOpening = useRef(false);
+  // 往下拉放手、卡片正在滑走：這時再抓住可以接回來
+  const threadSliding = useRef(false);
+  // 讀螢幕：卡片打開後焦點移到標題；關上後回到原本那個「討論串」入口
+  const threadTitleRef = useRef<ComponentRef<typeof Pressable>>(null);
+  const threadLinkRefs = useRef(new Map<string, ComponentRef<typeof Pressable> | null>());
+  const returnFocus = useRef<string | null>(null);
+  /** 換掉卡片後面墊的截圖：舊的暫存檔順便刪掉 */
+  const shotRef = useRef<string | null>(null);
+  const swapShot = (uri: string | null) => {
+    if (shotRef.current && shotRef.current !== uri) {
+      try {
+        releaseCapture(shotRef.current);
+      } catch {
+        // 刪不掉就算了（系統之後會清）
+      }
+    }
+    shotRef.current = uri;
+    setThreadShot(uri);
+  };
   const screenHRef = useRef(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [reduceTransparency, setReduceTransparency] = useState(false);
@@ -286,16 +309,22 @@ export function ChatScreen(p: ChatScreenProps) {
   // 進到討論串：卡片長出來、後面慢慢模糊；回到原對話後歸零
   useEffect(() => {
     threadClosing.current = false;
+    threadSliding.current = false;
+    threadSettled.current = false;
     if (!cardMode) {
       threadAnim.setValue(0);
       threadBlur.setValue(0);
       threadDrag.setValue(0);
-      setThreadShot(null);
+      swapShot(null);
       return;
     }
     const open = (v: Animated.Value) =>
       reduceMotion ? Animated.timing(v, { toValue: 1, duration: 200, useNativeDriver: true }) : Animated.spring(v, { toValue: 1, ...CARD_SPRING });
-    Animated.parallel([open(threadAnim), open(threadBlur)]).start();
+    Animated.parallel([open(threadAnim), open(threadBlur)]).start(() => {
+      threadSettled.current = true;
+      const node = findNodeHandle(threadTitleRef.current);
+      if (node) AccessibilityInfo.setAccessibilityFocus(node);
+    });
   }, [cardMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 回到原對話：卡片縮回那則訊息（slideDown：往下拉放手時順著手指往下滑走），模糊退掉後才真的換回去 */
@@ -303,11 +332,17 @@ export function ChatScreen(p: ChatScreenProps) {
     if (threadClosing.current) return;
     threadClosing.current = true;
     Keyboard.dismiss();
-    const leave = () => void store.leaveThread();
+    // 中途被接住（滑走時又抓住卡片）：不離開，等手指放開再決定
+    const leave = ({ finished }: { finished: boolean }) => {
+      threadSliding.current = false;
+      if (finished) void store.leaveThread();
+      else threadClosing.current = false;
+    };
     if (reduceMotion) {
       const out = (v: Animated.Value) => Animated.timing(v, { toValue: 0, duration: 180, useNativeDriver: true });
       Animated.parallel([out(threadAnim), out(threadBlur)]).start(leave);
     } else if (slideDown) {
+      threadSliding.current = true;
       Animated.parallel([
         Animated.spring(threadDrag, { toValue: screenHRef.current, velocity, ...CARD_SPRING, restDisplacementThreshold: 1, restSpeedThreshold: 1 }),
         Animated.spring(threadBlur, { toValue: 0, ...CARD_SPRING }),
@@ -318,18 +353,31 @@ export function ChatScreen(p: ChatScreenProps) {
   }
   const closeRef = useRef(closeThread);
   closeRef.current = closeThread;
-  // 抓著卡片上方往下拉：1:1 跟手指，往上拉有阻力；放手時看推算的落點，夠遠就關掉（接著手指的速度），不然彈回去
+  // 抓著卡片上方往下拉：1:1 跟手指，往上拉有阻力；放手時看推算的落點，夠遠就關掉（接著手指的速度），不然彈回去。
+  // 彈回去或滑走到一半再抓住：從現在的位置接手（不會跳回去）
+  const grabbedAt = useRef(0);
   const threadPan = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-        onPanResponderMove: (_e, g) => threadDrag.setValue(g.dy > 0 ? g.dy : rubberband(g.dy, 200)),
-        onPanResponderRelease: (_e, g) => {
-          if (g.dy + project(g.vy * 1000) > 160) closeRef.current(true, g.vy * 1000);
-          else Animated.spring(threadDrag, { toValue: 0, velocity: g.vy * 1000, ...CARD_SPRING }).start();
+    () => {
+      const back = (velocity = 0) => {
+        Animated.spring(threadDrag, { toValue: 0, velocity, ...CARD_SPRING }).start();
+        Animated.spring(threadBlur, { toValue: 1, ...CARD_SPRING }).start();
+      };
+      return PanResponder.create({
+        // 縮回去的關法（點 ✕、點背景）進行中不能抓
+        onMoveShouldSetPanResponder: (_e, g) => (!threadClosing.current || threadSliding.current) && Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+        onPanResponderGrant: () => threadDrag.stopAnimation((v) => (grabbedAt.current = v)),
+        onPanResponderMove: (_e, g) => {
+          const y = grabbedAt.current + g.dy;
+          threadDrag.setValue(y > 0 ? y : rubberband(y, 200));
         },
-        onPanResponderTerminate: () => Animated.spring(threadDrag, { toValue: 0, ...CARD_SPRING }).start(),
-      }),
+        onPanResponderRelease: (_e, g) => {
+          const y = grabbedAt.current + g.dy;
+          if (y + project(g.vy * 1000) > 160) closeRef.current(true, g.vy * 1000);
+          else back(g.vy * 1000);
+        },
+        onPanResponderTerminate: () => back(),
+      });
+    },
     [] // eslint-disable-line react-hooks/exhaustive-deps
   );
   useEffect(() => {
@@ -338,6 +386,15 @@ export function ChatScreen(p: ChatScreenProps) {
       savedScroll.current = null;
       follow(saved.following);
       requestAnimationFrame(() => (saved.following ? scrollRef.current?.scrollToEnd({ animated: false }) : scrollRef.current?.scrollTo({ y: saved.y, animated: false })));
+      // 讀螢幕：焦點回到剛才點的那個「討論串」入口
+      const back = returnFocus.current;
+      returnFocus.current = null;
+      if (back) {
+        setTimeout(() => {
+          const node = findNodeHandle(threadLinkRefs.current.get(back) ?? null);
+          if (node) AccessibilityInfo.setAccessibilityFocus(node);
+        }, 300);
+      }
       return;
     }
     follow(true);
@@ -349,14 +406,27 @@ export function ChatScreen(p: ChatScreenProps) {
    * 再拍下現在的原對話墊在卡片後面（蓋上模糊）。fromMenu：剛從長按選單選的，等選單收好再拍
    */
   async function openThread(messageId: string, pageY?: number, fromMenu = false) {
-    if (!state.session) return;
-    const keyboardOpen = Keyboard.isVisible();
-    Keyboard.dismiss();
-    savedScroll.current = { sessionId: state.session.id, y: scrollY.current, following: nearBottom.current };
-    threadAnchor.current = pageY ?? null;
-    if (fromMenu || keyboardOpen) await new Promise((r) => setTimeout(r, keyboardOpen ? 400 : 250));
-    setThreadShot(await captureScreen({ format: 'jpg', quality: 0.9, result: 'tmpfile' }).catch(() => null));
-    await store.openThread(messageId);
+    if (!state.session || threadOpening.current || cardMode) return;
+    threadOpening.current = true;
+    try {
+      const keyboardOpen = Keyboard.isVisible();
+      Keyboard.dismiss();
+      const m = state.messages.find((x) => x.id === messageId);
+      returnFocus.current = m ? threadQuestionId(m) : messageId;
+      savedScroll.current = { sessionId: state.session.id, y: scrollY.current, following: nearBottom.current };
+      threadAnchor.current = pageY ?? null;
+      if (fromMenu || keyboardOpen) await new Promise((r) => setTimeout(r, keyboardOpen ? 400 : 250));
+      swapShot(await captureScreen({ format: 'jpg', quality: 0.9, result: 'tmpfile' }).catch(() => null));
+      // 還沒開過、這段又還在回答或討論：先不開（開過的照樣打開）
+      if (!(await store.openThread(messageId))) {
+        savedScroll.current = null;
+        returnFocus.current = null;
+        swapShot(null);
+        showToast(discussing ? t('大家正在討論，按「暫停」後再試一次。') : t('AI 正在回答，答完再試一次。'));
+      }
+    } finally {
+      threadOpening.current = false;
+    }
   }
 
   // 空白畫面要講的那台電腦：這段對話用的；還沒綁電腦時（例如剛配對、電腦上沒有模型）看最近加入的那台
@@ -610,6 +680,7 @@ export function ChatScreen(p: ChatScreenProps) {
           )}
           {threadAfter.has(i) ? (
                   <ThreadLink
+                    ref={(r) => void threadLinkRefs.current.set(threadAfter.get(i)!.questionId, r)}
                     count={threadAfter.get(i)!.count}
                     running={threadAfter.get(i)!.running}
                     fresh={threadAfter.get(i)!.fresh}
@@ -760,7 +831,8 @@ export function ChatScreen(p: ChatScreenProps) {
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: threadBlur }]} pointerEvents="none">
         {reduceTransparency ? <View style={[StyleSheet.absoluteFill, styles.threadDim]} /> : <BlurView intensity={40} tint="systemThinMaterial" style={StyleSheet.absoluteFill} />}
       </Animated.View>
-      <Pressable style={StyleSheet.absoluteFill} onPress={() => closeThread()} accessibilityRole="button" accessibilityLabel={t('回到對話')} testID="thread-backdrop" />
+      {/* 卡片還在長出來時點到背景不關（連點入口兩下的第二下） */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={() => threadSettled.current && closeThread()} accessibilityRole="button" accessibilityLabel={t('回到對話')} testID="thread-backdrop" />
       <Animated.View style={[styles.threadCard, { top: cardTop, bottom: cardBottom }, cardMotion]} accessibilityViewIsModal onAccessibilityEscape={() => closeThread()}>
         <View style={styles.threadCardInner}>
           <View style={styles.threadHeader} {...threadPan.panHandlers}>
@@ -768,6 +840,7 @@ export function ChatScreen(p: ChatScreenProps) {
             <View style={styles.threadHeaderRow}>
               <View style={styles.threadSide} />
               <Pressable
+                ref={threadTitleRef}
                 style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
                 onPress={sessionMenu}
                 accessibilityRole="button"

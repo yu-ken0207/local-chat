@@ -46,4 +46,4 @@ jest.mock('@react-native-community/datetimepicker', () => {
 });
 
 // 討論串卡片後面墊的原對話截圖：測試裡沒有原生截圖，給一個假的檔案位址
-jest.mock('react-native-view-shot', () => ({ captureScreen: jest.fn(async () => 'file:///tmp/shot.jpg') }));
+jest.mock('react-native-view-shot', () => ({ captureScreen: jest.fn(async () => 'file:///tmp/shot.jpg'), releaseCapture: jest.fn() }));

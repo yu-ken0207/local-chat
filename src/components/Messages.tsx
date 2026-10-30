@@ -1,5 +1,5 @@
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode, type Ref } from 'react';
 import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
 import { fmtElapsed } from '../lib/format';
@@ -217,12 +217,13 @@ export function ActionButton({ text, onPress, primary, disabled }: { text: strin
  * 那一題的討論串入口「討論串（3 則）›」：跟 AI 的回答對齊，放在那一輪最後面。
  * 關掉後還在背景回答時寫「回答中…」，答完還沒看過寫「新回答」（不震、不跳提示，不打擾在原對話聊）
  */
-export function ThreadLink({ count, running, fresh, onPress }: { count: number; running?: boolean; fresh?: boolean; onPress: (pageY?: number) => void }) {
+export function ThreadLink({ count, running, fresh, onPress, ref }: { count: number; running?: boolean; fresh?: boolean; onPress: (pageY?: number) => void; ref?: Ref<ComponentRef<typeof Pressable>> }) {
   const status = running ? t('討論串 · 回答中…') : fresh ? t('討論串（{n} 則）· 新回答', { n: count }) : t('討論串（{n} 則）', { n: count });
   return (
     <View style={styles.aiBlock}>
       <Text style={[styles.aiMark, styles.invisible]} {...decorative}>•</Text>
       <Pressable
+        ref={ref}
         onPress={(e) => onPress(e?.nativeEvent?.pageY)}
         hitSlop={{ top: 10, bottom: 10, left: 4, right: 12 }}
         accessibilityRole="button"

@@ -50,6 +50,8 @@ export function SessionList({
   // 正在回答的（自己或它的討論串在背景回答）：清單上寫「回答中…」
   const answering = new Set(Object.entries(running).map(([id, parent]) => parent ?? id));
 
+  // 背景回答開始、結束時也重讀（預覽、排序、「等你確認」才會跟上）
+  const runningKey = Object.keys(running).sort().join(',');
   // 設定面板關上時也重新載入（可能在「最近刪除」救回了對話）
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +63,7 @@ export function SessionList({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query, version, store, undo?.id, session?.title, showUndo]);
+  }, [query, version, store, undo?.id, session?.title, showUndo, runningKey]);
 
   function menu(s: ListItem) {
     const name = s.title || s.preview || t('新對話');
