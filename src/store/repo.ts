@@ -58,7 +58,7 @@ export type Action = {
   result: unknown;
   /** 給使用者看的一句話（例如「新增 1 個行程」） */
   summary: string;
-  /** 拒絕的原因、失敗的原因 */
+  /** 拒絕的原因、失敗的原因；做了的話是使用者按「修改」改了哪些欄位（交給模型，畫面不顯示） */
   note: string;
   createdAt: number;
 };

@@ -80,6 +80,13 @@ export function declinedPrompt(items: string[]): string {
   return `The user declined ${items.map((x) => `「${x}」`).join(', ')}, so ${it} NOT done: nothing was added or changed. Your reply must say ${it} not done.`;
 }
 
+/** 使用者按「修改」改過才確認的：模型常照自己原本提的講（例如日期），要明講用改過的 */
+export function editedPrompt(items: { item: string; changes: string }[]): string {
+  return items
+    .map(({ item, changes }) => `The user edited the action before confirming, so what was actually done is 「${item}」 (${changes}). Your reply must use these changed values, not your original ones.`)
+    .join('\n');
+}
+
 /** 使用者沒給權限（行事曆、提醒事項）：畫面給「打開設定」，交給模型的是 permission_denied */
 export class ToolPermissionError extends Error {
   readonly code = 'permission_denied';

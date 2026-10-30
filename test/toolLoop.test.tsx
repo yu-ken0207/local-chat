@@ -182,7 +182,12 @@ describe('會改東西的工具', () => {
     await store.approveAction(pending(store)[0].id, { start: '2026-11-05T15:00' });
     await waitFor(() => expect(lastText(store)).toBe('已經加好了（ok）'));
     expect(cal.created[0].start).toBe('2026-11-05T15:00');
-    expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content).note).toContain('start: "2026-11-04T15:00" -> "2026-11-05T15:00"');
+    const sent = net.chatBodies()[1].messages;
+    expect(JSON.parse(sent.at(-2).content).note).toContain('start: "2026-11-04T15:00" -> "2026-11-05T15:00"');
+    // 只寫在工具結果裡，模型常照自己原本提的日期講：最後再提醒一次，用改過的
+    expect(sent.at(-1)).toEqual({ role: 'system', content: expect.stringContaining('what was actually done is 「新增「帶小孩看牙醫」」') });
+    expect(sent.at(-1).content).toContain('start: "2026-11-04T15:00" -> "2026-11-05T15:00"');
+    expect(sent.at(-1).content).toContain('Your reply must use these changed values');
   });
 
   test('改壞了：不做，跟使用者說格式不對，確認卡還在', async () => {
@@ -374,10 +379,11 @@ describe('清單卡（一次好幾件）', () => {
     const results = net.chatBodies()[1].messages.filter((m: any) => m.role === 'tool').map((m: any) => JSON.parse(m.content));
     expect(results.map((r: any) => r.ok)).toEqual([true, false, true]);
     expect(results[1]).toMatchObject({ error: expect.stringContaining('unchecked'), item: expect.stringContaining('親師座談會') });
-    // 最後提醒只講取消勾選的那件
+    // 最後提醒：不要的是取消勾選的那件、改過的照改過的講；沒改的那件不提
     const note = net.chatBodies()[1].messages.at(-1);
-    expect(note).toMatchObject({ role: 'system', content: expect.stringContaining('親師座談會') });
-    expect(note.content).not.toMatch(/校慶運動會|戶外教學/);
+    expect(note).toMatchObject({ role: 'system', content: expect.stringContaining('The user declined 「新增「親師座談會」」') });
+    expect(note.content).toContain('what was actually done is 「新增「戶外教學（帶便當）」」');
+    expect(note.content).not.toContain('校慶運動會');
   });
 
   test('改壞了：一件都不做', async () => {
