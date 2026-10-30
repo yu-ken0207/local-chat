@@ -53,6 +53,11 @@ async function send(store: ChatStore, text: string, wait: 'answer' | 'streaming'
   else await waitFor(() => expect(store.getState().streaming).not.toBeNull());
 }
 
+/** 訊息區的捲動事件：內容 2000、畫面 600 高；inset 是鍵盤開著時的底部留白 */
+const scrollAt = (y: number, inset = 0) => ({
+  nativeEvent: { contentOffset: { x: 0, y }, contentSize: { width: 390, height: 2000 }, contentInset: { top: 0, left: 0, right: 0, bottom: inset }, layoutMeasurement: { width: 390, height: 600 } },
+});
+
 // 第一個測試要先載入所有模組，比較慢
 jest.setTimeout(20_000);
 
@@ -262,12 +267,44 @@ describe('鍵盤與捲動', () => {
     const { store } = await setup();
     await send(store, 'hi');
     expect(screen.queryByLabelText('捲到最新')).toBeNull();
-    await fireEvent(screen.getByTestId('transcript'), 'endVisible', false);
+    const list = screen.getByTestId('transcript');
+    await fireEvent(list, 'scrollBeginDrag', scrollAt(200));
+    await fireEvent(list, 'scrollEndDrag', scrollAt(200));
     const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
     await fireEvent.press(screen.getByLabelText('捲到最新'));
     expect(toEnd).toHaveBeenCalledWith({ animated: true });
-    await fireEvent(screen.getByTestId('transcript'), 'endVisible', true);
     expect(screen.queryByLabelText('捲到最新')).toBeNull();
+  });
+
+  test('鍵盤開著時往上捲：扣掉鍵盤留白算，不會被拉回最底，也會出現「捲到最新」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    const follows = () => toEnd.mock.calls.filter((c: any[]) => c[0]?.animated).length;
+    const list = screen.getByTestId('transcript');
+    await act(async () => {});
+    toEnd.mockClear();
+    // 內容 2000、畫面 600、鍵盤留白 310：最底在 1710，往上捲 250 停在 1460
+    await fireEvent(list, 'scrollBeginDrag', scrollAt(1460, 310));
+    await fireEvent(list, 'scrollEndDrag', scrollAt(1460, 310));
+    await fireEvent(list, 'contentSizeChange', 390, 2100);
+    expect(follows()).toBe(0);
+    expect(screen.getByLabelText('捲到最新')).toBeTruthy();
+    store.stop();
+  });
+
+  test('程式自己跟著捲的時候不會冒出「捲到最新」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
+    jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    const list = screen.getByTestId('transcript');
+    // 內容長了一大段，捲動位置還沒跟上；這時程式捲動送來的事件不算使用者捲上去
+    await fireEvent(list, 'contentSizeChange', 390, 2400);
+    await fireEvent(list, 'scroll', scrollAt(1400));
+    expect(screen.queryByLabelText('捲到最新')).toBeNull();
+    store.stop();
   });
 
   test('回答一結束（「回答中」換成按鈕列）也跟著捲到底，下面的按鈕不會被切掉', async () => {

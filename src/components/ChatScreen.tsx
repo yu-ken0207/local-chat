@@ -46,13 +46,20 @@ export function ChatScreen(p: ChatScreenProps) {
     afterConnect.current = null;
     next?.();
   };
-  const [atEnd, setAtEnd] = useState(true);
   const messageCount = useRef(0);
+  // 「跟著最新」：在最底附近時內容變長就跟著捲。只看使用者自己捲到哪（剛送出、按了捲到最新、換對話時也算），
+  // 自己捲上去看舊訊息就不跟，右下角給「捲到最新」；程式自己跟著捲時不會冒出按鈕
   const nearBottom = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const follow = (on: boolean) => {
+    nearBottom.current = on;
+    setFollowing(on);
+  };
   const userScrolling = useRef(false);
   const updateNearBottom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
+    const { contentOffset, contentSize, contentInset, layoutMeasurement } = e.nativeEvent;
+    // 鍵盤開著時，鍵盤那段留白放在 contentInset.bottom（不算在 contentSize 裡），要一起算
+    follow(contentSize.height + (contentInset?.bottom ?? 0) - contentOffset.y - layoutMeasurement.height < 120);
   };
   // 回答剛結束（或還沒出字就失敗）：「回答中」換成按鈕列或錯誤說明，內容變高也要跟著捲。
   // 這時訊息數沒變、也不在串流中，下面 onContentSizeChange 的判斷抓不到；只算收尾後 1 秒內，
@@ -158,7 +165,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   // 換對話時捲到最下面
   useEffect(() => {
-    nearBottom.current = true;
+    follow(true);
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
   }, [state.session?.id]);
 
@@ -302,7 +309,6 @@ export function ChatScreen(p: ChatScreenProps) {
               updateNearBottom(e);
               userScrolling.current = false;
             }}
-            onEndVisible={setAtEnd}
             onContentSizeChange={() => {
               // 只在 AI 正在回答（含剛答完）、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
               const grew = state.messages.length !== messageCount.current;
@@ -345,10 +351,10 @@ export function ChatScreen(p: ChatScreenProps) {
 
           {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
           <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }} onLayout={(e) => setStickyHeight(e.nativeEvent.layout.height)}>
-          {!atEnd && state.messages.length > 0 ? (
+          {!following && state.messages.length > 0 ? (
             <Pressable
               onPress={() => {
-                nearBottom.current = true;
+                follow(true);
                 scrollRef.current?.scrollToEnd({ animated: true });
               }}
               hitSlop={4}
@@ -383,7 +389,7 @@ export function ChatScreen(p: ChatScreenProps) {
             busy={!!state.streaming}
             bottomInset={bottomInset}
             onSend={async (text, photos) => {
-              nearBottom.current = true;
+              follow(true);
               // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）
               Keyboard.dismiss();
               if (editing) {
