@@ -277,7 +277,7 @@ function Row({
       style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
       <View style={styles.row}>
         <SymbolView name={icon} size={18} tintColor={danger ? C.red : C.accent} />
-        <Text style={[styles.rowTitle, value ? styles.rowLabel : styles.flex, danger && { color: C.red }]}>{label}</Text>
+        <Text style={[styles.rowTitle, value ? styles.rowLabel : styles.flex, danger && { color: C.errorText }]}>{label}</Text>
         {value ? (
           <Text style={styles.value} numberOfLines={1}>
             {value}

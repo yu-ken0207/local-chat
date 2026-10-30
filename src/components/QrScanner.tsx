@@ -107,6 +107,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   text: { ...TEXT.small, color: '#ffffff', textAlign: 'center' },
   error: { color: '#ffb4a2' },
-  button: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12, backgroundColor: C.accent },
+  button: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12, backgroundColor: C.accentFill },
   buttonText: { ...TEXT.small, fontWeight: '700', color: '#ffffff' },
 });

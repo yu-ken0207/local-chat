@@ -186,7 +186,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
         )}
 
         {scan && !scan.running && (scan.error || scan.total > 0) ? (
-          <Text style={[styles.result, failed && { color: C.orange }]} accessibilityLiveRegion="polite">
+          <Text style={[styles.result, failed && { color: C.warnText }]} accessibilityLiveRegion="polite">
             {scan.error || (scan.found > 0 ? t('找到 {p0} 台電腦。', { p0: scan.found }) : t('這個 Wi-Fi 裡沒有找到開著小幫手或 Ollama 的電腦。'))}
           </Text>
         ) : null}
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.4 },
   content: { padding: 16, paddingTop: 4, gap: 12, paddingBottom: 48 },
   lead: { ...TEXT.small, color: C.label },
-  primary: { height: 52, borderRadius: 14, backgroundColor: C.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  primary: { height: 52, borderRadius: 14, backgroundColor: C.accentFill, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   primaryBusy: { opacity: 0.9 },
   primaryText: { ...TEXT.body, fontWeight: '700', color: '#ffffff' },
   stop: { ...TEXT.small, color: '#ffffff', textDecorationLine: 'underline', marginLeft: 6 },
@@ -391,7 +391,7 @@ const styles = StyleSheet.create({
   stepNo: { ...TEXT.small, color: C.accent, fontWeight: '700', minWidth: 14 },
   tabs: { flexDirection: 'row', gap: 6, marginLeft: 24 },
   tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: C.pressed },
-  tabOn: { backgroundColor: C.accent },
+  tabOn: { backgroundColor: C.accentFill },
   tabText: { ...TEXT.small, color: C.label },
   tabTextOn: { color: '#ffffff', fontWeight: '700' },
   command: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 },

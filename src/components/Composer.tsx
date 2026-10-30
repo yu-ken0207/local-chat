@@ -258,7 +258,7 @@ function IconButton({
 
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 12, paddingTop: 6, gap: 6, backgroundColor: C.bg },
-  hint: { ...TEXT.meta, color: C.orange, marginHorizontal: 8 },
+  hint: { ...TEXT.meta, color: C.warnText, marginHorizontal: 8 },
   composer: { backgroundColor: C.surface, borderRadius: 20, padding: 6, gap: 6 },
   attachments: { flexDirection: 'row', gap: 10, paddingHorizontal: 8, paddingTop: 6 },
   attachment: {},

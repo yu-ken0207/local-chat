@@ -21,9 +21,9 @@ function fitLabel(fit: Fit): { text: string; color: ColorValue } | null {
     case 'ok':
       return { text: t('跑得動'), color: C.green };
     case 'slow':
-      return { text: t('跑得動，但回答比較慢'), color: C.orange };
+      return { text: t('跑得動，但回答比較慢'), color: C.warnText };
     case 'too-big':
-      return { text: t('這台電腦的記憶體可能不夠'), color: C.red };
+      return { text: t('這台電腦的記憶體可能不夠'), color: C.errorText };
     default:
       return null;
   }
@@ -155,7 +155,7 @@ export function DownloadSheet({ store, state, url, onClose, onUse }: { store: Ch
                 <View key={j.id} style={styles.row}>
                   <View style={styles.flex}>
                     <Text style={styles.rowTitle}>{friendlyModelName(j.model)}</Text>
-                    {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.red }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={url} />}
+                    {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.errorText }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={url} />}
                   </View>
                   {j.status === 'failed' ? (
                     <Pressable onPress={() => void store.dismissDownload(url, j.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('移除這個下載')}>
@@ -222,7 +222,7 @@ function Action(p: { s: Suggestion; job?: DownloadJob; onDownload: () => void; o
   }
   return (
     <View style={wide ? styles.wide : null}>
-      {job?.status === 'failed' ? <Text style={[styles.rowSub, { color: C.red }]}>{downloadError(job)}</Text> : null}
+      {job?.status === 'failed' ? <Text style={[styles.rowSub, { color: C.errorText }]}>{downloadError(job)}</Text> : null}
       <Pressable
         onPress={onDownload}
         accessibilityRole="button"
@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   meta: { gap: 1 },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 16 },
   button: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, backgroundColor: C.surface, alignItems: 'center' },
-  buttonWide: { marginTop: 10, paddingVertical: 11, borderRadius: 10, backgroundColor: C.accent },
+  buttonWide: { marginTop: 10, paddingVertical: 11, borderRadius: 10, backgroundColor: C.accentFill },
   buttonText: { fontSize: 15, fontWeight: '600', color: C.accent },
   buttonTextWide: { color: '#ffffff' },
   wide: { marginTop: 10, alignSelf: 'stretch' },

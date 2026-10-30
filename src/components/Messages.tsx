@@ -273,7 +273,7 @@ export function Shimmer({ text, seconds }: { text: string; seconds: number }) {
         const d = Math.abs(i + padding - pos);
         const k = reduceMotion || d > band ? 0 : 0.5 * (1 + Math.cos((Math.PI * d) / band));
         return (
-          <Text key={i} style={{ color: `rgba(${rgb},${0.45 + 0.55 * k})` }}>
+          <Text key={i} style={{ color: `rgba(${rgb},${0.6 + 0.4 * k})` }}>
             {ch}
           </Text>
         );
@@ -290,9 +290,9 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 8 },
   text: { ...TEXT.body, color: C.label },
   small: { ...TEXT.small },
-  meta: { ...TEXT.meta, color: C.tertiary },
+  meta: { ...TEXT.meta, color: C.secondary },
   dim: { color: C.secondary },
-  red: { color: C.red },
+  red: { color: C.errorText },
   pressed: { opacity: 0.6 },
   thumbs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   thumb: { width: 56, height: 56, borderRadius: 8, backgroundColor: C.bg },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   actionButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
   emptyAnswer: { ...TEXT.body, color: C.secondary },
   actionDisabled: { opacity: 0.35 },
-  actionPrimary: { backgroundColor: C.accent, borderColor: C.accent },
+  actionPrimary: { backgroundColor: C.accentFill, borderColor: C.accentFill },
   actionText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
   actionTextPrimary: { color: '#ffffff' },
   detail: { backgroundColor: C.surface, borderRadius: 6, padding: 8 },

@@ -144,7 +144,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                 </View>
               ) : models?.errorCode === 'no_engine' || models?.errorCode === 'engine_unreachable' ? (
                 <View style={styles.empty}>
-                  <Text style={[styles.emptyText, { color: C.orange }]}>{models.error}</Text>
+                  <Text style={[styles.emptyText, { color: C.warnText }]}>{models.error}</Text>
                   <TextButton text={t('重試')} onPress={() => store.connectHost(viewing)} />
                 </View>
               ) : models?.error || (status === 'offline' && !models?.list.length) ? (
@@ -179,7 +179,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                     <View style={styles.jobRow}>
                       <View style={styles.flex}>
                         <Text style={styles.rowTitle}>{friendlyModelName(j.model)}</Text>
-                        {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.red }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={viewing} />}
+                        {j.status === 'failed' ? <Text style={[styles.rowSub, { color: C.errorText }]}>{downloadError(j)}</Text> : <DownloadProgress job={j} store={store} url={viewing} />}
                       </View>
                       {j.status === 'failed' ? (
                         <Pressable onPress={() => void store.dismissDownload(viewing, j.id)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('移除這個下載')}>
@@ -305,7 +305,7 @@ function Unreachable({ store, url, message, onMoved, onHelp }: { store: ChatStor
         </View>
       ) : (
         <>
-          <Text style={[styles.emptyText, { color: C.orange }]}>{text}</Text>
+          <Text style={[styles.emptyText, { color: C.warnText }]}>{text}</Text>
           <View style={styles.inlineButtons}>
             <TextButton text={t('重試')} onPress={() => setTries((n) => n + 1)} />
             <TextButton text={t('連線說明')} onPress={onHelp} />

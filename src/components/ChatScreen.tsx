@@ -423,7 +423,7 @@ function PrimaryButton({ text, onPress }: { text: string; onPress: () => void })
 function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 'warn' | 'error'; onClose?: () => void; action?: { text: string; onPress: () => void } }) {
   return (
     <View style={styles.banner} accessibilityLiveRegion="polite">
-      <Text style={[styles.bannerText, { color: tone === 'error' ? C.red : tone === 'warn' ? C.orange : C.secondary }]}>{text}</Text>
+      <Text style={[styles.bannerText, { color: tone === 'error' ? C.errorText : tone === 'warn' ? C.warnText : C.secondary }]}>{text}</Text>
       {action ? (
         <Pressable onPress={action.onPress} hitSlop={8} accessibilityRole="button">
           <Text style={styles.bannerAction}>{action.text}</Text>
@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   hint: { ...TEXT.meta, color: C.secondary, textAlign: 'center' },
   ready: { ...TEXT.small, color: C.label, marginTop: 4 },
   readyModel: { color: C.accent },
-  primary: { height: 52, borderRadius: 14, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  primary: { height: 52, borderRadius: 14, backgroundColor: C.accentFill, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   primaryPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
   primaryText: { ...TEXT.body, fontWeight: '700', color: '#ffffff' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginBottom: 4 },

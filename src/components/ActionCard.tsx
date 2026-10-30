@@ -434,7 +434,7 @@ const styles = StyleSheet.create({
   dim: { color: C.secondary },
   off: { color: C.tertiary, textDecorationLine: 'line-through' },
   guessed: { color: C.tertiary, fontStyle: 'italic' },
-  red: { color: C.red },
+  red: { color: C.errorText },
   flex: { flex: 1 },
   field: { gap: 2 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
