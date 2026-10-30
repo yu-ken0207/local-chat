@@ -144,9 +144,13 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
 
   return (
     <View style={styles.sheet}>
+      {/* 跟設定、最近刪除一樣：標題置中，右邊「完成」（左邊放同寬的空位對稱） */}
       <View style={styles.header}>
-        <Text style={styles.title}>{t('連接你的電腦')}</Text>
-        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+        <View style={styles.headerSide} />
+        <Text style={styles.title} accessibilityRole="header">
+          {t('連接你的電腦')}
+        </Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.headerSide, styles.headerRight, pressed && styles.pressed]}>
           <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
@@ -349,7 +353,9 @@ export function CommandBox({ command, copyText }: { command: string; copyText: (
 const styles = StyleSheet.create({
   sheet: { flex: 1, backgroundColor: C.groupedBg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 8 },
-  title: { fontSize: 17, fontWeight: '600', color: C.label },
+  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600', color: C.label },
+  headerSide: { minWidth: 72 },
+  headerRight: { alignItems: 'flex-end' },
   done: { fontSize: 17, fontWeight: '600', color: C.accent },
   pressed: { opacity: 0.4 },
   content: { padding: 16, paddingTop: 4, gap: 12, paddingBottom: 48 },
