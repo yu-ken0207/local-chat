@@ -27,16 +27,23 @@ type Handlers = {
   extra?: ReactNode;
 };
 
+// VoiceOver：整則訊息不能當成一個元素（RN 的 Pressable 預設是），不然裡面的確認卡、重試、複製都按不到；
+// 長按選單改成「更多動作」掛在文字上，› • ■ 這些記號不唸
+const decorative = { accessibilityElementsHidden: true, importantForAccessibility: 'no' } as const;
+function moreActions(onMore?: () => void) {
+  return onMore ? { accessibilityActions: [{ name: 'more', label: t('更多動作') }], onAccessibilityAction: () => onMore() } : {};
+}
+
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
   if (m.role === 'user') {
     return (
-      <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.userBlock}>
-          <Text style={styles.userMark}>›</Text>
+          <Text style={styles.userMark} {...decorative}>›</Text>
           <View style={styles.body}>
             {m.attachments.length > 0 && <Thumbnails images={m.attachments} onOpen={h.onOpenImage} />}
-            <Text style={styles.text} selectable>
+            <Text style={styles.text} selectable {...moreActions(h.onLongPress && (() => h.onLongPress!(m)))}>
               {m.content}
             </Text>
           </View>
@@ -50,7 +57,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     if (!m.detail) return null;
     return (
       <View style={styles.aiBlock} testID={`message-${m.id}`}>
-        <Text style={styles.aiMark}>•</Text>
+        <Text style={styles.aiMark} {...decorative}>•</Text>
         <View style={styles.body}>
           <Text style={[styles.small, styles.dim]}>{m.detail}</Text>
           {m.content.includes('"permission_denied') ? (
@@ -71,9 +78,9 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     const toolTurn = !live && !content && !!m.toolCalls?.length;
     if (toolTurn && !thinking && !h.extra) return null;
     return (
-      <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.aiBlock}>
-          <Text style={styles.aiMark}>•</Text>
+          <Text style={styles.aiMark} {...decorative}>•</Text>
           <View style={styles.body}>
             {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
@@ -85,7 +92,9 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
             ) : toolTurn ? null : (
               <View style={styles.metaRow}>
                 {m.versions && h.onSwitchVersion ? <Versions versions={m.versions} onSwitch={h.onSwitchVersion} /> : null}
-                <Text style={[styles.meta, styles.flex]}>{metaLine(m)}</Text>
+                <Text style={[styles.meta, styles.flex]} {...moreActions(h.onLongPress && (() => h.onLongPress!(m)))}>
+                  {metaLine(m)}
+                </Text>
               </View>
             )}
             {!live && h.isLast && !toolTurn ? (
@@ -101,11 +110,11 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   return (
-    <Pressable onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
-        <Text style={[styles.aiMark, m.role === 'error' && styles.red]}>■</Text>
+        <Text style={[styles.aiMark, m.role === 'error' && styles.red]} {...decorative}>■</Text>
         <View style={styles.body}>
-          <Text style={[styles.text, m.role === 'error' ? styles.red : styles.dim]} selectable>
+          <Text style={[styles.text, m.role === 'error' ? styles.red : styles.dim]} selectable {...moreActions(h.onLongPress && (() => h.onLongPress!(m)))}>
             {m.content}
           </Text>
           {h.isLast && m.role === 'error' ? <ErrorActions detail={m.detail} onRetry={h.onRetry} onHelp={h.onHelp} /> : null}

@@ -7,7 +7,7 @@ import { getLocales } from 'expo-localization';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -27,6 +27,9 @@ function haptic(event: ChatEvent) {
   if (event === 'answered' || event === 'downloaded' || event === 'acted') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   if (event === 'failed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   if (event === 'stopped') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // VoiceOver：iPhone 不支援 accessibilityLiveRegion，狀態改用播報（沒開 VoiceOver 時不會出聲）
+  const say = { answered: t('回答好了'), failed: t('沒有得到回答'), stopped: t('已停止'), acted: t('做好了'), downloaded: t('模型下載好了') }[event];
+  if (say) AccessibilityInfo.announceForAccessibility(say);
 }
 
 /** 手機系統語言：中文（不分繁簡）用繁體中文，其他用英文 */

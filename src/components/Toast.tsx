@@ -2,6 +2,14 @@ import { useEffect, useRef } from 'react';
 import { AccessibilityInfo, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { C, TEXT } from '../ui/theme';
+import { t } from '../i18n';
+
+// 開著 VoiceOver 時，要摸到「復原」得花時間：有按鈕的提示延長到 15 秒
+let screenReaderOn = false;
+AccessibilityInfo.isScreenReaderEnabled?.()
+  .then((on) => (screenReaderOn = on))
+  .catch(() => {});
+AccessibilityInfo.addEventListener?.('screenReaderChanged', (on: boolean) => (screenReaderOn = on));
 
 export type ToastData = { id: number; text: string; action?: { text: string; onPress: () => void }; ms?: number };
 
@@ -11,10 +19,10 @@ export function Toast({ toast, onDone }: { toast: ToastData | null; onDone: () =
 
   useEffect(() => {
     if (!toast) return;
-    AccessibilityInfo.announceForAccessibility?.(toast.text);
+    AccessibilityInfo.announceForAccessibility?.(toast.action ? t('{p0}，可以按「{p1}」', { p0: toast.text, p1: toast.action.text }) : toast.text);
     opacity.setValue(0);
     Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }).start();
-    const timer = setTimeout(onDone, toast.ms ?? (toast.action ? 6000 : 1800));
+    const timer = setTimeout(onDone, toast.ms ?? (toast.action ? (screenReaderOn ? 15000 : 6000) : 1800));
     return () => clearTimeout(timer);
   }, [toast?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 

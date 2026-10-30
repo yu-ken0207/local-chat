@@ -183,6 +183,21 @@ describe('輸入列', () => {
   });
 });
 
+describe('VoiceOver', () => {
+  test('訊息裡的按鈕各自摸得到；長按選單改成「更多動作」；› 這些記號不唸', async () => {
+    const { store } = await setup();
+    await send(store, 'hi');
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    expect(screen.getByTestId(`message-${mine.id}`).props.accessible).toBe(false);
+    // 讀螢幕看不到記號（測試工具預設也略過對讀螢幕隱藏的元素）
+    expect(screen.queryByText('›')).toBeNull();
+    expect(screen.getByText('›', { includeHiddenElements: true }).props.accessibilityElementsHidden).toBe(true);
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+    await fireEvent(screen.getByText('hi'), 'accessibilityAction', { nativeEvent: { actionName: 'more' } });
+    expect(sheet).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('鍵盤與捲動', () => {
   test('點訊息、用按鈕打開對話清單，都會收鍵盤', async () => {
     const { store } = await setup();
