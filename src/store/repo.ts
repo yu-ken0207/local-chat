@@ -30,7 +30,65 @@ export type Session = {
   parentId: string | null;
   /** 討論串：從那段對話的哪一題（使用者的那則訊息）開的 */
   parentMessageId: string | null;
+  /** 多 AI 討論的設定（null：照預設） */
+  group: GroupSettings | null;
+  /** 前情摘要：第 summarySeq 則（含）以前的內容 */
+  summary: string;
+  summarySeq: number;
+  /** 釘在最上面的結論卡（訊息 id） */
+  pinnedId: string | null;
 };
+
+/** 多 AI 討論的發言方式：自由搶話、主持人點名、輪流、只回被 @ 的 */
+export type SpeakMode = 'free' | 'host' | 'round' | 'mention';
+export type GroupSettings = {
+  mode: SpeakMode;
+  /** 讓「我的 Agent」裡勾了「可以自己加入」的也舉手 */
+  autoJoin: boolean;
+  /** 你每說一句，AI 最多連續講幾則 */
+  maxStreak: number;
+  /** 全自動：不等你，聊到沒人想講或到上限就自己收尾 */
+  autopilot: boolean;
+};
+export const DEFAULT_GROUP: GroupSettings = { mode: 'free', autoJoin: false, maxStreak: 12, autopilot: false };
+
+/** 自己建的 Agent 的角色卡（AI 從一句話生成，可以改） */
+export type AgentCard = { expertise: string; stance: string; style: string; blindSpot: string };
+
+export type Agent = {
+  id: string;
+  /** 從圖鑑來的：圖鑑裡的 id（自己建的是 null） */
+  catalogId: string | null;
+  name: string;
+  intro: string;
+  /** 角色原文；null 表示照圖鑑原文（跟著 App 語言） */
+  prompt: string | null;
+  card: AgentCard | null;
+  emoji: string;
+  /** 用哪個圖鑑角色的像素頭像（null：自己的圖鑑 id，再沒有就用 emoji） */
+  avatar: string | null;
+  /** 相簿選的照片（base64） */
+  photo: string | null;
+  /** 積極度 0–1：影響舉手分數 */
+  talk: number;
+  /** 指定的電腦與模型（null：跟著對話） */
+  hostUrl: string | null;
+  model: string | null;
+  /** 「讓 AI 自己加入」的對話裡會舉手 */
+  autoJoin: boolean;
+  /** 放在「我的 Agent」 */
+  mine: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt: number | null;
+};
+
+/** 怎麼加入討論的：你加的、AI 自己加入、被 @ 拉進來、跟著原對話進討論串 */
+export type JoinedBy = 'user' | 'auto' | 'mention' | 'thread';
+export type Member = { agent: Agent; position: number; joinedBy: JoinedBy; joinedAt: number };
+
+/** Agent 的筆記：收尾後寫下這次的立場與學到的事，下次討論帶著 */
+export type AgentNote = { id: string; agentId: string; sessionId: string | null; content: string; createdAt: number };
 
 export type Attachment = { id: string; base64: string; width: number; height: number };
 
@@ -92,6 +150,10 @@ export type Message = {
   toolCallId?: string;
   /** 這則 AI 訊息叫出來、要使用者確認的動作 */
   actions?: Action[];
+  /** 多 AI 討論：哪個 Agent 說的（使用者、一對一的 AI 是 null） */
+  agentId: string | null;
+  /** 回哪一則 */
+  replyTo: string | null;
 };
 
 /** 「你按了復原」這種只是紀錄的提示行：不能「重新回答」，也不算最後一則（上面 AI 的回答照樣有複製、重新產生） */
@@ -104,7 +166,7 @@ export const isRecordNote = (m: Pick<Message, 'role' | 'detail'>) => m.role === 
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
@@ -140,6 +202,49 @@ const MIGRATIONS: Record<number, string> = {
   6: `ALTER TABLE sessions ADD COLUMN parent_id TEXT;
       ALTER TABLE sessions ADD COLUMN parent_message_id TEXT;
       CREATE INDEX IF NOT EXISTS sessions_by_parent ON sessions(parent_id);`,
+  // 多 AI 討論：Agent、對話成員、Agent 的筆記；對話的群組設定與前情摘要；訊息是誰說的、回哪則
+  7: `CREATE TABLE IF NOT EXISTS agents (
+        id TEXT PRIMARY KEY,
+        catalog_id TEXT,
+        name TEXT NOT NULL,
+        intro TEXT NOT NULL DEFAULT '',
+        prompt TEXT,
+        card TEXT,
+        emoji TEXT NOT NULL DEFAULT '',
+        avatar TEXT,
+        photo TEXT,
+        talk REAL NOT NULL DEFAULT 0.5,
+        host_url TEXT,
+        model TEXT,
+        auto_join INTEGER NOT NULL DEFAULT 0,
+        mine INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS agents_by_catalog ON agents(catalog_id) WHERE catalog_id IS NOT NULL AND deleted_at IS NULL;
+      CREATE TABLE IF NOT EXISTS session_members (
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        joined_by TEXT NOT NULL DEFAULT 'user',
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, agent_id)
+      );
+      CREATE TABLE IF NOT EXISTS agent_notes (
+        id TEXT PRIMARY KEY,
+        agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        session_id TEXT,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS agent_notes_by_agent ON agent_notes(agent_id, created_at);
+      ALTER TABLE sessions ADD COLUMN group_settings TEXT;
+      ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+      ALTER TABLE sessions ADD COLUMN summary_seq INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE sessions ADD COLUMN pinned_id TEXT;
+      ALTER TABLE messages ADD COLUMN agent_id TEXT;
+      ALTER TABLE messages ADD COLUMN reply_to TEXT;`,
 };
 
 /** 最近刪除保留幾天 */
@@ -200,9 +305,16 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
-/** 第一次開 App 時放進去的常用提示詞範本（之後可以自己改） */
+/** 清除全部資料前記下來的東西（復原用） */
+export type Snapshot = {
+  hosts: Host[];
+  settings: { key: string; value: string }[];
+  agents: Record<string, SqlValue>[];
+  notes: Record<string, SqlValue>[];
+};
+
 /** 備份會帶走的資料表（照這個順序放回去，先放被參照的） */
-const BACKUP_TABLES = ['hosts', 'sessions', 'messages', 'attachments', 'actions', 'templates', 'settings'] as const;
+const BACKUP_TABLES = ['hosts', 'sessions', 'agents', 'session_members', 'messages', 'attachments', 'actions', 'agent_notes', 'templates', 'settings'] as const;
 
 export class NotBackupError extends Error {
   constructor() {
@@ -266,6 +378,10 @@ type SessionRow = {
   updated_at: number;
   parent_id: string | null;
   parent_message_id: string | null;
+  group_settings: string | null;
+  summary: string | null;
+  summary_seq: number | null;
+  pinned_id: string | null;
 };
 
 type MessageRow = {
@@ -283,7 +399,29 @@ type MessageRow = {
   tool_calls: string | null;
   tool_name: string | null;
   tool_call_id: string | null;
+  agent_id: string | null;
+  reply_to: string | null;
   created_at: number;
+};
+
+type AgentRow = {
+  id: string;
+  catalog_id: string | null;
+  name: string;
+  intro: string;
+  prompt: string | null;
+  card: string | null;
+  emoji: string;
+  avatar: string | null;
+  photo: string | null;
+  talk: number;
+  host_url: string | null;
+  model: string | null;
+  auto_join: number;
+  mine: number;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
 };
 
 type ActionRow = {
@@ -336,6 +474,30 @@ const toSession = (r: SessionRow): Session => ({
   updatedAt: r.updated_at,
   parentId: r.parent_id ?? null,
   parentMessageId: r.parent_message_id ?? null,
+  group: r.group_settings ? { ...DEFAULT_GROUP, ...parseJson<Partial<GroupSettings>>(r.group_settings, {}) } : null,
+  summary: r.summary ?? '',
+  summarySeq: r.summary_seq ?? 0,
+  pinnedId: r.pinned_id ?? null,
+});
+
+const toAgent = (r: AgentRow): Agent => ({
+  id: r.id,
+  catalogId: r.catalog_id,
+  name: r.name,
+  intro: r.intro,
+  prompt: r.prompt,
+  card: parseJson<AgentCard | null>(r.card, null),
+  emoji: r.emoji,
+  avatar: r.avatar,
+  photo: r.photo,
+  talk: r.talk,
+  hostUrl: r.host_url,
+  model: r.model,
+  autoJoin: r.auto_join === 1,
+  mine: r.mine === 1,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+  deletedAt: r.deleted_at,
 });
 
 export class Repo {
@@ -420,7 +582,16 @@ export class Repo {
   // ---- 對話 ----
 
   async createSession(
-    init: { hostUrl?: string | null; model?: string | null; think?: ThinkSetting | null; systemPrompt?: string; title?: string; parentId?: string; parentMessageId?: string } = {}
+    init: {
+      hostUrl?: string | null;
+      model?: string | null;
+      think?: ThinkSetting | null;
+      systemPrompt?: string;
+      title?: string;
+      parentId?: string;
+      parentMessageId?: string;
+      group?: GroupSettings | null;
+    } = {}
   ): Promise<Session> {
     const now = this.now();
     const s: Session = {
@@ -434,10 +605,14 @@ export class Repo {
       updatedAt: now,
       parentId: init.parentId ?? null,
       parentMessageId: init.parentMessageId ?? null,
+      group: init.group ?? null,
+      summary: '',
+      summarySeq: 0,
+      pinnedId: null,
     };
     await this.db.run(
-      'INSERT INTO sessions (id, title, host_url, model, think, system_prompt, created_at, updated_at, parent_id, parent_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [s.id, s.title, s.hostUrl, s.model, encodeThink(s.think), s.systemPrompt, s.createdAt, s.updatedAt, s.parentId, s.parentMessageId]
+      'INSERT INTO sessions (id, title, host_url, model, think, system_prompt, created_at, updated_at, parent_id, parent_message_id, group_settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [s.id, s.title, s.hostUrl, s.model, encodeThink(s.think), s.systemPrompt, s.createdAt, s.updatedAt, s.parentId, s.parentMessageId, s.group ? JSON.stringify(s.group) : null]
     );
     return s;
   }
@@ -466,7 +641,7 @@ export class Repo {
   /** 改對話設定（標題、主機、模型、思考、角色）；不會改「最後更新時間」，免得只是換模型就跳到清單最上面 */
   async updateSession(
     id: string,
-    patch: Partial<Pick<Session, 'title' | 'hostUrl' | 'model' | 'think' | 'systemPrompt'>>
+    patch: Partial<Pick<Session, 'title' | 'hostUrl' | 'model' | 'think' | 'systemPrompt' | 'group' | 'summary' | 'summarySeq' | 'pinnedId'>>
   ): Promise<void> {
     const sets: string[] = [];
     const params: SqlValue[] = [];
@@ -479,6 +654,10 @@ export class Repo {
     if (patch.model !== undefined) add('model', patch.model);
     if (patch.think !== undefined) add('think', encodeThink(patch.think));
     if (patch.systemPrompt !== undefined) add('system_prompt', patch.systemPrompt);
+    if (patch.group !== undefined) add('group_settings', patch.group ? JSON.stringify(patch.group) : null);
+    if (patch.summary !== undefined) add('summary', patch.summary);
+    if (patch.summarySeq !== undefined) add('summary_seq', patch.summarySeq);
+    if (patch.pinnedId !== undefined) add('pinned_id', patch.pinnedId);
     if (sets.length === 0) return;
     await this.db.run(`UPDATE sessions SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
   }
@@ -538,6 +717,17 @@ export class Repo {
     await this.db.run('DELETE FROM messages WHERE deleted_at IS NOT NULL AND deleted_at < ?', [cutoff]);
     // 開討論串的那一題已經真的刪掉了：討論串再也點不到，一起刪
     await this.db.run('DELETE FROM sessions WHERE parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = sessions.parent_message_id)');
+    await this.purgeUnusedAgents(cutoff);
+  }
+
+  /** 刪掉的 Agent：沒有任何對話、訊息還用到它就真的刪掉（before 之前刪的才算） */
+  private async purgeUnusedAgents(before: number): Promise<void> {
+    await this.db.run(
+      `DELETE FROM agents WHERE deleted_at IS NOT NULL AND deleted_at <= ?
+         AND NOT EXISTS (SELECT 1 FROM session_members m WHERE m.agent_id = agents.id)
+         AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.agent_id = agents.id)`,
+      [before]
+    );
   }
 
   /** 刪掉沒有任何訊息的空白對話（開了新對話卻沒講話） */
@@ -565,6 +755,8 @@ export class Repo {
       toolCalls?: ToolCall[];
       toolName?: string;
       toolCallId?: string;
+      agentId?: string | null;
+      replyTo?: string | null;
     }
   ): Promise<Message> {
     const now = this.now();
@@ -588,9 +780,11 @@ export class Repo {
       ...(m.toolCalls?.length ? { toolCalls: m.toolCalls } : {}),
       ...(m.toolName ? { toolName: m.toolName } : {}),
       ...(m.toolCallId ? { toolCallId: m.toolCallId } : {}),
+      agentId: m.agentId ?? null,
+      replyTo: m.replyTo ?? null,
     };
     await this.db.run(
-      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, detail, alt_group, tool_calls, tool_name, tool_call_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO messages (id, session_id, seq, role, content, thinking, model, host_label, stats, detail, alt_group, tool_calls, tool_name, tool_call_id, agent_id, reply_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         msg.id,
         sessionId,
@@ -606,6 +800,8 @@ export class Repo {
         m.toolCalls?.length ? JSON.stringify(m.toolCalls) : null,
         m.toolName ?? null,
         m.toolCallId ?? null,
+        msg.agentId,
+        msg.replyTo,
         now,
       ]
     );
@@ -691,6 +887,8 @@ export class Repo {
       ...(r.tool_name ? { toolName: r.tool_name } : {}),
       ...(r.tool_call_id ? { toolCallId: r.tool_call_id } : {}),
       ...(actionsByMessage.has(r.id) ? { actions: actionsByMessage.get(r.id) } : {}),
+      agentId: r.agent_id ?? null,
+      replyTo: r.reply_to ?? null,
       versions: (() => {
         const ids = r.alt_group ? (groups.get(r.alt_group) ?? []) : [];
         return ids.length > 1 ? { index: ids.indexOf(r.id) + 1, total: ids.length } : null;
@@ -740,6 +938,156 @@ export class Repo {
   /** 同一群組的版本 id（依先後） */
   async versionIds(group: string): Promise<string[]> {
     return (await this.db.all<{ id: string }>('SELECT id FROM messages WHERE alt_group = ? AND deleted_at IS NULL ORDER BY seq', [group])).map((r) => r.id);
+  }
+
+  // ---- Agent（多 AI 討論） ----
+
+  /** 自己建的或從圖鑑加進來的 Agent */
+  async createAgent(
+    init: Pick<Agent, 'name'> & Partial<Omit<Agent, 'id' | 'name' | 'createdAt' | 'updatedAt' | 'deletedAt'>>
+  ): Promise<Agent> {
+    const now = this.now();
+    const a: Agent = {
+      id: newId(),
+      catalogId: init.catalogId ?? null,
+      name: init.name,
+      intro: init.intro ?? '',
+      prompt: init.prompt ?? null,
+      card: init.card ?? null,
+      emoji: init.emoji ?? '',
+      avatar: init.avatar ?? null,
+      photo: init.photo ?? null,
+      talk: init.talk ?? 0.5,
+      hostUrl: init.hostUrl ?? null,
+      model: init.model ?? null,
+      autoJoin: init.autoJoin ?? false,
+      mine: init.mine ?? false,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    };
+    await this.db.run(
+      `INSERT INTO agents (id, catalog_id, name, intro, prompt, card, emoji, avatar, photo, talk, host_url, model, auto_join, mine, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [a.id, a.catalogId, a.name, a.intro, a.prompt, a.card ? JSON.stringify(a.card) : null, a.emoji, a.avatar, a.photo, a.talk, a.hostUrl, a.model, a.autoJoin ? 1 : 0, a.mine ? 1 : 0, now, now]
+    );
+    return a;
+  }
+
+  /** 圖鑑裡的某個 Agent：用過就沿用同一份（筆記才接得上），沒用過就新建一份 */
+  async agentFromCatalog(catalogId: string, fields: Pick<Agent, 'name' | 'intro' | 'emoji'>): Promise<Agent> {
+    const row = await this.db.get<AgentRow>('SELECT * FROM agents WHERE catalog_id = ? AND deleted_at IS NULL', [catalogId]);
+    if (row) return toAgent(row);
+    return this.createAgent({ ...fields, catalogId });
+  }
+
+  async getAgent(id: string): Promise<Agent | null> {
+    const row = await this.db.get<AgentRow>('SELECT * FROM agents WHERE id = ?', [id]);
+    return row ? toAgent(row) : null;
+  }
+
+  /** 一次拿好幾個（訊息上要顯示名字、頭像；刪掉的也拿得到） */
+  async agentsByIds(ids: string[]): Promise<Agent[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.db.all<AgentRow>(`SELECT * FROM agents WHERE id IN (${ids.map(() => '?').join(', ')})`, ids);
+    return rows.map(toAgent);
+  }
+
+  /** 「我的 Agent」：最近改過的在上面 */
+  async listMyAgents(): Promise<Agent[]> {
+    const rows = await this.db.all<AgentRow>('SELECT * FROM agents WHERE mine = 1 AND deleted_at IS NULL ORDER BY updated_at DESC, created_at DESC');
+    return rows.map(toAgent);
+  }
+
+  async updateAgent(
+    id: string,
+    patch: Partial<Pick<Agent, 'name' | 'intro' | 'prompt' | 'card' | 'emoji' | 'avatar' | 'photo' | 'talk' | 'hostUrl' | 'model' | 'autoJoin' | 'mine'>>
+  ): Promise<void> {
+    const cols: Record<string, SqlValue> = {};
+    if (patch.name !== undefined) cols.name = patch.name;
+    if (patch.intro !== undefined) cols.intro = patch.intro;
+    if (patch.prompt !== undefined) cols.prompt = patch.prompt;
+    if (patch.card !== undefined) cols.card = patch.card ? JSON.stringify(patch.card) : null;
+    if (patch.emoji !== undefined) cols.emoji = patch.emoji;
+    if (patch.avatar !== undefined) cols.avatar = patch.avatar;
+    if (patch.photo !== undefined) cols.photo = patch.photo;
+    if (patch.talk !== undefined) cols.talk = Math.min(1, Math.max(0, patch.talk));
+    if (patch.hostUrl !== undefined) cols.host_url = patch.hostUrl;
+    if (patch.model !== undefined) cols.model = patch.model;
+    if (patch.autoJoin !== undefined) cols.auto_join = patch.autoJoin ? 1 : 0;
+    if (patch.mine !== undefined) cols.mine = patch.mine ? 1 : 0;
+    const keys = Object.keys(cols);
+    if (keys.length === 0) return;
+    await this.db.run(`UPDATE agents SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, [...keys.map((k) => cols[k]), this.now(), id]);
+  }
+
+  /** 刪掉 Agent：先藏起來（說過的話照樣看得到名字、頭像），可以復原 */
+  async deleteAgent(id: string): Promise<void> {
+    await this.db.run('UPDATE agents SET deleted_at = ?, mine = 0 WHERE id = ?', [this.now(), id]);
+  }
+
+  async restoreAgent(id: string, mine: boolean): Promise<void> {
+    await this.db.run('UPDATE agents SET deleted_at = NULL, mine = ? WHERE id = ?', [mine ? 1 : 0, id]);
+  }
+
+  // ---- 對話成員 ----
+
+  /** 這段對話有哪些 Agent（照加入順序；刪掉的 Agent 也列出來，說過的話才對得上） */
+  async listMembers(sessionId: string): Promise<Member[]> {
+    const rows = await this.db.all<AgentRow & { position: number; joined_by: JoinedBy; joined_at: number }>(
+      `SELECT a.*, m.position, m.joined_by, m.joined_at FROM session_members m JOIN agents a ON a.id = m.agent_id
+       WHERE m.session_id = ? ORDER BY m.position`,
+      [sessionId]
+    );
+    return rows.map((r) => ({ agent: toAgent(r), position: r.position, joinedBy: r.joined_by, joinedAt: r.joined_at }));
+  }
+
+  /** 加進對話（已經在裡面就不動） */
+  async addMember(sessionId: string, agentId: string, joinedBy: JoinedBy = 'user'): Promise<void> {
+    const last = await this.db.get<{ p: number | null }>('SELECT MAX(position) AS p FROM session_members WHERE session_id = ?', [sessionId]);
+    await this.db.run(
+      'INSERT OR IGNORE INTO session_members (session_id, agent_id, position, joined_by, joined_at) VALUES (?, ?, ?, ?, ?)',
+      [sessionId, agentId, (last?.p ?? -1) + 1, joinedBy, this.now()]
+    );
+  }
+
+  async removeMember(sessionId: string, agentId: string): Promise<void> {
+    await this.db.run('DELETE FROM session_members WHERE session_id = ? AND agent_id = ?', [sessionId, agentId]);
+  }
+
+  // ---- Agent 的筆記 ----
+
+  async addNote(agentId: string, sessionId: string | null, content: string): Promise<AgentNote> {
+    const note: AgentNote = { id: newId(), agentId, sessionId, content, createdAt: this.now() };
+    await this.db.run('INSERT INTO agent_notes (id, agent_id, session_id, content, created_at) VALUES (?, ?, ?, ?, ?)', [
+      note.id,
+      agentId,
+      sessionId,
+      content,
+      note.createdAt,
+    ]);
+    return note;
+  }
+
+  /** 最近的在後面（照時間順序，給模型看比較自然）；limit 取最近幾則 */
+  async listNotes(agentId: string, limit = 100): Promise<AgentNote[]> {
+    const rows = await this.db.all<{ id: string; agent_id: string; session_id: string | null; content: string; created_at: number }>(
+      'SELECT * FROM (SELECT *, rowid AS r FROM agent_notes WHERE agent_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?) ORDER BY created_at, r',
+      [agentId, limit]
+    );
+    return rows.map((r) => ({ id: r.id, agentId: r.agent_id, sessionId: r.session_id, content: r.content, createdAt: r.created_at }));
+  }
+
+  async updateNote(id: string, content: string): Promise<void> {
+    await this.db.run('UPDATE agent_notes SET content = ? WHERE id = ?', [content, id]);
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    await this.db.run('DELETE FROM agent_notes WHERE id = ?', [id]);
+  }
+
+  async clearNotes(agentId: string): Promise<void> {
+    await this.db.run('DELETE FROM agent_notes WHERE agent_id = ?', [agentId]);
   }
 
   // ---- 動作（要使用者確認的工具呼叫） ----
@@ -829,26 +1177,36 @@ export class Repo {
     const trashed = new Set((await this.db.all<{ id: string }>('SELECT id FROM sessions WHERE deleted_at IS NOT NULL')).map((r) => r.id));
     for (const id of sessionIds) if (trashed.has(id)) await this.deleteSession(id);
     await this.clearSettings();
+    await this.purgeUnusedAgents(this.now());
     await this.db.exec('VACUUM');
   }
 
-  /** 清除前先記下主機、設定，復原時放回去 */
-  async snapshotSettings(): Promise<{ hosts: Host[]; settings: { key: string; value: string }[] }> {
+  /** 清除前先記下主機、設定、Agent 與筆記，復原時放回去 */
+  async snapshotSettings(): Promise<Snapshot> {
     return {
       hosts: await this.listHosts(),
       settings: await this.db.all<{ key: string; value: string }>('SELECT key, value FROM settings'),
+      agents: await this.db.all<Record<string, SqlValue>>('SELECT * FROM agents'),
+      notes: await this.db.all<Record<string, SqlValue>>('SELECT * FROM agent_notes'),
     };
   }
 
-  async restoreSnapshot(snap: { hosts: Host[]; settings: { key: string; value: string }[] }): Promise<void> {
-    await this.db.exec('DELETE FROM hosts; DELETE FROM settings;');
+  async restoreSnapshot(snap: Snapshot): Promise<void> {
+    await this.db.exec('DELETE FROM hosts; DELETE FROM settings; DELETE FROM agent_notes;');
     for (const h of snap.hosts) await this.restoreHost(h);
     for (const s of snap.settings) await this.setSetting(s.key, s.value);
+    for (const [table, rows] of [['agents', snap.agents], ['agent_notes', snap.notes]] as const) {
+      for (const row of rows) {
+        const cols = Object.keys(row);
+        await this.db.run(`INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map((c) => row[c]));
+      }
+    }
   }
 
-  /** 清掉主機、設定，對話另外處理 */
+  /** 清掉主機、設定、筆記，Agent 先藏起來（對話還在最近刪除，裡面說過的話要對得上），對話另外處理 */
   async clearSettings(): Promise<void> {
-    await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+    await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings; DELETE FROM agent_notes;');
+    await this.db.run('UPDATE agents SET deleted_at = COALESCE(deleted_at, ?), mine = 0', [this.now()]);
   }
 
   /** 對話有幾段 */

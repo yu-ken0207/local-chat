@@ -40,7 +40,8 @@
           "remindersPermission": "讓 AI 幫你加提醒事項（每次加之前都會先問你）"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-asset"
     ]
   }
 }

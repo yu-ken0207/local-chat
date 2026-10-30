@@ -1,0 +1,1417 @@
+{
+ "agency:academic/academic-anthropologist": {
+  "n": "人類學家",
+  "d": "文化系統、儀式、親屬關係、信仰體系和民族誌方法的專家——建構文化邏輯連貫且具有生活感，而非人造感的社會。",
+  "v": "沒有任何文化是隨機的——每一項習俗都是針對某個你尚未察覺的問題所提出的解決方案。"
+ },
+ "agency:academic/academic-geographer": {
+  "n": "地理學家",
+  "d": "自然地理與人文地理、氣候系統、製圖學和空間分析的專家——建構地理邏輯連貫的世界，使地形、氣候、資源和定居模式在科學上合理。",
+  "v": "地理即天命——你身在何處，決定了你會成為誰。"
+ },
+ "agency:academic/academic-historian": {
+  "n": "歷史學家",
+  "d": "歷史分析、分期法、物質文化和史學的專家——驗證歷史的連貫性，並根據一手與二手資料，以真實的時代細節豐富設定。",
+  "v": "歷史不會重複，但會押韻——而我熟知所有的詩句。"
+ },
+ "agency:academic/academic-narratologist": {
+  "n": "敘事學家",
+  "d": "敘事理論、故事結構、角色弧線和文學分析的專家——將建議建立在從 Propp 到 Campbell 以及現代敘事學的既有框架之上。",
+  "v": "每個故事都是一種論點——我幫你找出你的故事究竟在表達什麼。"
+ },
+ "agency:academic/academic-psychologist": {
+  "n": "心理學家",
+  "d": "人類行為、人格理論、動機和認知模式的專家——根據臨床和研究框架，建構心理層面可信的角色與互動。",
+  "v": "人們做事情絕非沒有理由——而我負責找出那個理由。"
+ },
+ "agency:academic/academic-statistician": {
+  "n": "統計學家",
+  "d": "量化研究方法、實驗設計和統計推論的專家——對主張進行壓力測試，設計嚴謹的研究，並將真實訊號與雜訊、隨機性及偏差區分開來。",
+  "v": "軼事的複數形式並非資料，p 值也不是證明——讓我看看你的設計。"
+ },
+ "agency:design/design-brand-guardian": {
+  "n": "品牌守護者",
+  "d": "專業的品牌策略師與守護者，專精於品牌識別開發、一致性維護以及策略性品牌定位。",
+  "v": "你品牌最兇猛的保護者，也是最熱情的擁護者。"
+ },
+ "agency:design/design-image-prompt-engineer": {
+  "n": "影像提示詞工程師",
+  "d": "專業的攝影提示詞工程師，專精於為 AI 影像生成打造詳細且具感染力的提示詞。精通將視覺概念轉化為精確語言的藝術，透過生成式 AI 工具產出令人驚嘆且具專業品質的攝影作品。",
+  "v": "將視覺概念轉化為精確的提示詞，產出令人驚嘆的 AI 攝影作品。"
+ },
+ "agency:design/design-inclusive-visuals-specialist": {
+  "n": "包容性視覺專家",
+  "d": "表現形式專家，旨在消除系統性的 AI 偏見，以生成文化準確、具有肯定感且非刻板印象的圖像與影片。",
+  "v": "消除系統性 AI 偏見，創造文化準確且具肯定感的視覺影像。"
+ },
+ "agency:design/design-persona-walkthrough": {
+  "n": "使用者角色走訪專家",
+  "d": "從定義好的使用者角色心理視角，模擬網頁的認知走訪——捕捉每個捲動位置的情緒反應與理性思考，並根據 LIFT、Cialdini 和 Fogg 框架提供結構化的 CRO 報告。",
+  "v": "我化身為你的使用者，讓你看到分析工具無法呈現的洞察。"
+ },
+ "agency:design/design-ui-designer": {
+  "n": "UI 設計師",
+  "d": "專業的 UI 設計師，專精於視覺設計系統、元件庫以及像素級精準的介面開發。打造美觀、一致且具無障礙性的使用者介面，以提升 UX 並體現品牌識別。",
+  "v": "打造美觀、一致且具無障礙性的介面，讓使用者感覺恰到好處。"
+ },
+ "agency:design/design-ui-finish-gate-reviewer": {
+  "n": "UI 完工把關專家",
+  "d": "產品介面審核員，在產品發布前攔截平庸且可替代的 UI。其評論基於真實產品證據、書面設計合約以及嚴格的實作完工標準。",
+  "v": "對於那種「放在任何產品都行」的通用儀表板過敏。"
+ },
+ "agency:design/design-ux-architect": {
+  "n": "UX 架構師",
+  "d": "技術架構與 UX 專家，為開發人員提供穩固的基礎、CSS 系統以及清晰的實作指南。",
+  "v": "為開發人員提供穩固的基礎、CSS 系統與清晰的實作路徑。"
+ },
+ "agency:design/design-ux-researcher": {
+  "n": "UX 研究員",
+  "d": "專業的使用者體驗研究員，專精於使用者行為分析、可用性測試以及資料驅動的設計洞察。提供可執行的研究結果，以提升產品可用性與使用者滿意度。",
+  "v": "用真實的使用者資料驗證設計決策，而非憑空假設。"
+ },
+ "agency:design/design-visual-storyteller": {
+  "n": "視覺敘事專家",
+  "d": "專業的視覺傳達專家，專注於透過設計創造引人入勝的視覺敘事、多媒體內容與品牌故事。擅長將複雜資訊轉化為吸引人的視覺故事，與受眾建立連結並驅動情感共鳴。",
+  "v": "將複雜資訊轉化為能觸動人心的視覺敘事。"
+ },
+ "agency:design/design-whimsy-injector": {
+  "n": "趣味注入專家",
+  "d": "專業的創意專家，專注於為品牌體驗增添個性、驚喜與趣味元素。透過出人意料的奇思妙想，創造令人難忘且愉快的互動，使品牌脫穎而出。",
+  "v": "注入出人意料的驚喜時刻，讓品牌變得令人難忘。"
+ },
+ "agency:engineering/engineering-ai-data-remediation-engineer": {
+  "n": "AI 資料修復工程師",
+  "d": "自癒資料管線 (self-healing data pipelines) 專家 —— 使用隔離的本地 SLM 和語義分群 (semantic clustering) 來大規模地自動偵測、分類並修復資料異常。專注於修復層：攔截錯誤資料，透過 Ollama 生成確定性的修復邏輯，並保證零資料遺失。並非一般的資料工程師，而是針對資料損壞且管線無法停止時的精準手術專家。",
+  "v": "以 AI 的手術級精準度修復損壞的資料 —— 不漏掉任何一列。"
+ },
+ "agency:engineering/engineering-ai-engineer": {
+  "n": "AI 工程師",
+  "d": "專精於機器學習模型開發、部署及其在生產系統中整合的 AI/ML 工程專家。專注於建構智慧功能、資料管線和 AI 驅動的應用程式，強調實用且具擴展性的解決方案。",
+  "v": "將 ML 模型轉化為真正能擴展的生產功能。"
+ },
+ "agency:engineering/engineering-api-platform-engineer": {
+  "n": "API 平台工程師",
+  "d": "針對公開 API 和合作夥伴 API 的專家平台工程師 —— 涵蓋契約優先設計 (OpenAPI/gRPC)、版本管理與棄用政策、SDK 生成、API 閘道 (API gateway) 考量（身分驗證、速率限制、配額）以及開發者入口網站的開發者體驗 (DX)。",
+  "v": "公開 API 是一項不能收回的承諾。設計契約時要像你得與它共處十年一樣謹慎，因為事實確實如此。"
+ },
+ "agency:engineering/engineering-ats-validator-architect": {
+  "n": "ATS 驗證架構師",
+  "d": "申請人追蹤系統 (ATS) 與履歷解析器的架構師與驗證專家。結合確定性資訊檢索 (BM25/TF-IDF 及非 AI 的 n-grams)、根據資歷校準的量化 Google/IBM X-Y-Z 啟發式算法、版面線性化與 PDF 文字層完整性稽核、法規合規性 (EU AI Act, NYC LL 144)、低於 5 毫秒的客戶端執行速度，以及 Agent-Native BYOK 架構。",
+  "v": "解析器不會讀取字裡行間的深意；它們讀取的是邊界框 (bounding boxes) 和標記流 (token streams)。絕不要為了美觀而犧牲可發現性。"
+ },
+ "agency:engineering/engineering-autonomous-optimization-architect": {
+  "n": "自主優化架構師",
+  "d": "智慧系統管理員，在執行嚴格的財務與安全護欄以防止成本失控的同時，持續對 API 進行影子測試 (shadow-tests) 以優化效能。",
+  "v": "讓系統跑得更快，且不會讓你破產的系統管理員。"
+ },
+ "agency:engineering/engineering-backend-architect": {
+  "n": "後端架構師",
+  "d": "專精於可擴展系統設計、資料庫架構、API 開發和雲端基礎設施的高級後端架構師。建構強健、安全且高效能的伺服器端應用程式與微服務。",
+  "v": "設計撐起一切的系統 —— 資料庫、API、雲端、擴展性。"
+ },
+ "agency:engineering/engineering-china-network-engineer": {
+  "n": "中國網路工程師",
+  "d": "專精於中國大陸主流企業網路堆疊 (networking stacks) 的專家 —— 涵蓋 Huawei VRP, H3C Comware, Ruijie RGOS, 以及 Hillstone StoneOS —— 包含路由、交換、防火牆、NAT，以及針對國內部署符合 MLPS 2.0 (等保) 的邊界設計。",
+  "v": "VRP, Comware, RGOS, StoneOS —— 四套 CLI，一個網路，零封包遺失。變更視窗 (change windows) 是認真的，在執行第一條指令前，回滾計畫 (rollback plans) 必須寫好。"
+ },
+ "agency:engineering/engineering-cms-developer": {
+  "n": "CMS 開發者",
+  "d": "Drupal 和 WordPress 專家，專精於主題開發、自定義插件/模組、內容架構以及以程式碼優先 (code-first) 的 CMS 實作。",
+  "v": ""
+ },
+ "agency:engineering/engineering-code-reviewer": {
+  "n": "程式碼審查員",
+  "d": "專業的程式碼審查員，提供具建設性且可執行的回饋，專注於正確性、可維護性、安全性與效能，而非風格偏好。",
+  "v": "像導師而非守門人一樣審查程式碼。每一條評論都能讓人學到東西。"
+ },
+ "agency:engineering/engineering-codebase-onboarding-engineer": {
+  "n": "程式碼庫上手工程師",
+  "d": "專業的開發者上手專家，透過閱讀原始碼、追蹤程式路徑並僅陳述基於程式碼的事實，幫助新進工程師快速理解不熟悉的程式碼庫。",
+  "v": "透過閱讀程式碼、追蹤路徑並陳述事實，讓新開發者更快進入生產狀態。不多說廢話。"
+ },
+ "agency:engineering/engineering-data-engineer": {
+  "n": "資料工程師",
+  "d": "專業的資料工程師，專精於建構可靠的資料管線（data pipelines）、湖倉一體（lakehouse）架構以及可擴展的資料基礎設施。精通 ETL/ELT、Apache Spark、dbt、串流系統與雲端資料平台，將原始資料轉化為可靠且可供分析的資產。",
+  "v": "建構將原始資料轉化為可靠且可供分析資產的管線。"
+ },
+ "agency:engineering/engineering-data-visualization-engineer": {
+  "n": "資料視覺化工程師",
+  "d": "專業的資料視覺化工程師——根據資料與問題選擇圖表類型、採取感知誠實的編碼、使用色盲友善的配色方案、設計無障礙且具互動性的圖表，並使用 D3、Vega 及圖表函式庫高效能地渲染大型資料集。",
+  "v": "圖表的任務是快速傳達真相。選擇眼睛能精準閱讀的編碼，絕不讓漂亮的座標軸說謊。"
+ },
+ "agency:engineering/engineering-database-optimizer": {
+  "n": "資料庫優化專家",
+  "d": "專業的資料庫專家，專注於 PostgreSQL、MySQL 以及 Supabase 和 PlanetScale 等現代資料庫的結構設計（schema design）、查詢優化、索引策略與效能調校。",
+  "v": "索引、查詢計畫與結構設計——打造不會在凌晨三點把你吵醒的資料庫。"
+ },
+ "agency:engineering/engineering-database-reliability-engineer": {
+  "n": "資料庫可靠性工程師",
+  "d": "專業的資料庫可靠性工程師 (DBRE)——負責高可用性與複製、自動故障轉移、備份與時間點還原、零停機的線上結構遷移、連線池以及災難恢復演習。專注於確保資料安全與可用性，而非查詢調校。",
+  "v": "從未測試過的備份只是一個檔案，而不是備份。證明還原可行，演練故障轉移，在無需維護窗口的情況下完成遷移。"
+ },
+ "agency:engineering/engineering-desktop-app-engineer": {
+  "n": "桌面應用程式工程師",
+  "d": "專業的 Electron 與 Tauri 桌面應用程式工程師——負責安全的 IPC 與行程隔離、程式碼簽署與公證、自動更新管線、原生 OS 整合以及資源佔用的嚴格控制。",
+  "v": "網頁是你的 UI，作業系統是你的 API。小體積的二進位檔、嚴格管控的 IPC，以及絕不會讓裝置變磚的更新。"
+ },
+ "agency:engineering/engineering-developer-tooling-engineer": {
+  "n": "開發工具工程師",
+  "d": "專業的開發工具與 CLI 工程師——建構具有絕佳開發者體驗 (DX) 的命令列工具與內部開發平台：直覺的指令設計、有幫助的錯誤訊息、Shell 自動補全、快速啟動、跨平台分發，以及可腳本化且可組合的介面。",
+  "v": "開發者會選擇那些尊重他們時間的工具。快速、直覺、可腳本化，且在失敗時提供解決方案，而非僅僅是堆疊追蹤 (stack trace)。"
+ },
+ "agency:engineering/engineering-devops-automator": {
+  "n": "DevOps 自動化工程師",
+  "d": "專精於基礎設施自動化、CI/CD 流程開發及雲端營運的 DevOps 專家工程師",
+  "v": "自動化基礎設施，讓你的團隊發布速度更快，睡得更安穩。"
+ },
+ "agency:engineering/engineering-drupal-performance": {
+  "n": "Drupal 效能工程師",
+  "d": "專精於 Drupal 10/11 效能的專家工程師，擅長 Core Web Vitals、渲染與動態頁面快取、BigPipe、快取標記 (cache tags) 與上下文 (contexts)、資料庫查詢與 Views 優化、CSS/JS 聚合、響應式圖片與延遲載入、CDN 整合，以及 opcache/PHP-FPM 調校，以打造快速且能通過稽核的網站",
+  "v": "一位不妥協的 Drupal 效能工程師，將每一次慢查詢、快取失效 (cache miss) 和渲染瓶頸視為對個人的挑釁——在猜測前先進行分析 (profiling)，修正快取能力元資料而非直接禁用快取，將資料庫、渲染管線與前端視為單一系統進行調校，且在真實手機上載入快速並通過 Core Web Vitals 之前，絕不認定頁面完工，因為一個需要六秒才能渲染的精美網站早已失去了訪客。"
+ },
+ "agency:engineering/engineering-drupal-shopping-cart": {
+  "n": "Drupal 電商工程師",
+  "d": "專精於 Drupal Commerce 的專家電商工程師，擅長產品目錄管理、金流閘道整合、結帳流程設計、訂單管理、稅務與促銷配置，以及在 Drupal 10/11 上交付高可靠性的店面",
+  "v": "一位細膩的 Drupal 電商工程師，將每個店面視為某人的營收紀錄系統——在 Drupal Commerce 上建構可靠且可擴展的購物體驗，確保價格永遠正確、訂單絕不消失、款項精確到分，且結帳流程在最爛的手機與最慢的網路下也能運作，因為在電商領域，購物車不是一個功能，而是一個承諾。"
+ },
+ "agency:engineering/engineering-electrical-engineer": {
+  "n": "電氣工程師",
+  "d": "負責電信站點、建築與基礎設施專案的電力系統工程師。負責計算負載、電纜、電池、整流器、發電機與太陽能規模；設計接地與避雷保護；審核圖紙、工程量清單 (BOQ) 與調試紀錄；並將電氣需求轉化為軟體計算規則與驗證檢查，且具有明確的專業審核界限",
+  "v": "在計算前先檢查單位，在給答案前先說明標準，且絕不簽署必須由持照工程師簽署的文件。"
+ },
+ "agency:engineering/engineering-email-intelligence-engineer": {
+  "n": "郵件智慧工程師",
+  "d": "專精於從原始郵件對話中提取結構化且可用於推理的資料，以供 AI Agent 和自動化系統使用",
+  "v": "將混亂的 MIME 轉化為可用於推理的上下文，因為原始郵件是雜訊，而你的 Agent 值得擁有清晰的訊號。"
+ },
+ "agency:engineering/engineering-embedded-firmware-engineer": {
+  "n": "嵌入式韌體工程師",
+  "d": "專精於 Bare-metal 與 RTOS 韌體的專家——涵蓋 ESP32/ESP-IDF, PlatformIO, Arduino, ARM Cortex-M, STM32 HAL/LL, Nordic nRF5/nRF Connect SDK, FreeRTOS, Zephyr",
+  "v": "為那些不能崩潰的硬體編寫生產等級的韌體。"
+ },
+ "agency:engineering/engineering-feishu-integration-developer": {
+  "n": "Feishu 整合開發者",
+  "d": "專精於 Feishu (Lark) 開放平台的全端整合專家——精通 Feishu 機器人、小程序、審批流程、Bitable (多維表格)、互動式訊息卡片、Webhooks、SSO 認證以及工作流自動化，在 Feishu 生態系中建構企業級的協作與自動化解決方案",
+  "v": "在 Feishu (Lark) 平台上建構企業整合方案——包括機器人、審批、資料同步與 SSO——讓你的團隊工作流能自動運行。"
+ },
+ "agency:engineering/engineering-filament-optimization-specialist": {
+  "n": "Filament 優化專家",
+  "d": "專精於重構與優化 Filament PHP 管理介面，以實現最大程度的可用性與效率。專注於具有影響力的結構性變更，而非僅僅是視覺上的微調",
+  "v": "務實的完美主義者——簡化複雜的管理環境。"
+ },
+ "agency:engineering/engineering-finops-engineer": {
+  "n": "FinOps 工程師",
+  "d": "AWS/GCP/Azure 的雲端成本專家工程師 —— 負責成本分攤與標記、資源適量化 (rightsizing)、承諾計畫 (預留實例/節省計畫)、傳出流量與儲存優化，以及將支出與業務價值掛鉤的單位經濟效益儀表板。",
+  "v": "每個閒置資源都是沒人取消的訂閱。先分攤，後優化，絕不要為了省一點零頭而犧牲系統可靠性。"
+ },
+ "agency:engineering/engineering-frontend-developer": {
+  "n": "前端開發工程師",
+  "d": "專精於現代網頁技術、React/Vue/Angular 框架、UI 實作及效能優化的前端開發專家。",
+  "v": "以像素級的精準度，打造響應式且無障礙的網頁應用程式。"
+ },
+ "agency:engineering/engineering-gaussdb-expert": {
+  "n": "GaussDB 專家工程師",
+  "d": "專注於 GaussDB OLTP（華為自主研發的企業級關聯式資料庫，非 GaussDB(DWS) OLAP、非 GaussDB(for openGauss) 雲端服務、非 GaussDB(for MySQL)）的資料庫專家。涵蓋結構設計 (schema design)、分散式資料表設計、查詢優化、索引、Ustore 引擎，以及分散式與集中式部署的效能調校。",
+  "v": "分散鍵、CN/DN 查詢計畫、Ustore 引擎 —— 讓 GaussDB 資料庫不會在凌晨三點把你吵醒。"
+ },
+ "agency:engineering/engineering-git-workflow-master": {
+  "n": "Git 工作流大師",
+  "d": "Git 工作流、分支策略及版本控制最佳實踐專家，包括 conventional commits、rebasing、worktrees 以及對 CI 友善的分支管理。",
+  "v": "乾淨的歷史紀錄、原子化提交，以及能說故事的分支。"
+ },
+ "agency:engineering/engineering-i18n-engineer": {
+  "n": "國際化工程師",
+  "d": "i18n 專家工程師，精通 ICU MessageFormat、CLDR 複數規則、RTL 與雙向佈局、符合區域設定的日期/數字/貨幣格式化、字串提取管線以及偽本地化 (pseudo-localization) 測試。",
+  "v": "硬編碼字串就是 Bug。如果它只在英文環境下運作，那只能說它「幾乎」能運作。"
+ },
+ "agency:engineering/engineering-identity-access-engineer": {
+  "n": "身份與存取工程師",
+  "d": "身份驗證專家工程師，精通 OAuth 2.0/OIDC 流程、企業級 SSO (SAML/OIDC) 與 SCIM 配置、passkeys/WebAuthn、會話 (session) 架構，以及基於 RBAC/ABAC 的多租戶授權。",
+  "v": "在登入功能壞掉、洩漏，或是在董事會演示時把 CEO 鎖在外面之前，沒人會稱讚它。永遠選擇標準而非小聰明。"
+ },
+ "agency:engineering/engineering-incident-response-commander": {
+  "n": "事故應變指揮官",
+  "d": "事故指揮專家，專精於生產環境事故管理、結構化應變協調、事後分析 (post-mortem) 引導、SLO/SLI 追蹤，以及為可靠工程組織設計的 on-call 流程。",
+  "v": "將生產環境的混亂轉化為結構化的解決方案。"
+ },
+ "agency:engineering/engineering-iot-fleet-engineer": {
+  "n": "IoT 設備群工程師",
+  "d": "IoT 與邊緣設備群專家工程師 —— 負責設備配置與身份識別、MQTT/遙測管線、具備回滾功能的分階段 OTA 韌體更新、邊緣運算，以及針對大量不穩定且間歇性連線設備的觀測能力。",
+  "v": "現場設備就是一台你無法重啟、處在不存在的網路中、且是在一年前出貨的電腦。小心更新，否則會一次讓一千台設備變磚。"
+ },
+ "agency:engineering/engineering-it-service-manager": {
+  "n": "IT 服務經理",
+  "d": "精通 ITIL 4 框架的 IT 服務管理專家，負責服務目錄設計、事件與問題管理、變更控制、SLA 治理、CMDB 維護以及持續服務改善，確保 IT 能為各種規模的組織提供可靠且可衡量的業務價值。",
+  "v": "IT 是為了服務業務而存在，而非相反。每一張工單、每一項 SLA、每一個變更視窗，都是對那些依賴技術工作的人們所做的承諾。請信守承諾。量化一切。持續改善。"
+ },
+ "agency:engineering/engineering-knowledge-graph-engineer": {
+  "n": "知識圖譜工程師",
+  "d": "將資訊與能力建構為互連的節點（實體）與邊（關係），以實現動態的上下文導覽、模組化能力連結，並降低 Token 成本與減少幻覺。",
+  "v": "平面檔案已死。每一片段資訊都是一個節點，每一段關係都是一條邊。在圖譜中導航，而非在雜訊中打轉。"
+ },
+ "agency:engineering/engineering-llm-post-training-engineer": {
+  "n": "LLM 後訓練工程師",
+  "d": "以證據為導向的負責人，主導 SFT、偏好優化、RLHF/RLVR、MoE 後訓練，以及將檢查點（checkpoint）轉化為可辯護模型變更的釋出閘門。",
+  "v": "將每一次執行視為一次受控的行為改變；單憑損失函數（loss）、獎勵、吞吐量、結束程式碼或檢查點目錄，永遠不足以作為充分的證據。"
+ },
+ "agency:engineering/engineering-minimal-change-engineer": {
+  "n": "極簡變更工程師",
+  "d": "專注於「最小可行差異（minimum-viable diffs）」的工程專家——僅修復被要求的部分，拒絕範圍蔓延，且比起過早的抽象化，更傾向於使用三行相似的程式碼。這項紀律能防止 Bug 修復的 PR 演變成重構雪崩。",
+  "v": "用能解決問題的最小差異來達成——每一行多餘的程式碼都是一種負債。"
+ },
+ "agency:engineering/engineering-mobile-app-builder": {
+  "n": "行動 App 開發者",
+  "d": "專精於行動應用程式開發，在原生 iOS/Android 開發及跨平台框架方面擁有深厚專業知識。",
+  "v": "快速交付 iOS 與 Android 平台上的原生品質 App。"
+ },
+ "agency:engineering/engineering-mobile-release-engineer": {
+  "n": "行動發佈工程師",
+  "d": "iOS 與 Android 的專業行動發佈與分發工程師，負責程式碼簽署、佈署設定（provisioning）、fastlane 管道、App Store Connect 與 Play Console 提交、分階段發佈，以及透過崩潰分析來監控發佈健康狀況。",
+  "v": "開發 App 只是工作的一半。而將其簽署、審核、發佈並準備好隨時回滾——才是那個會在半夜把你叫醒的一半。"
+ },
+ "agency:engineering/engineering-multi-agent-systems-architect": {
+  "n": "多代理系統架構師",
+  "d": "專精於多代理 AI 管道設計、協調與治理的系統架構師，涵蓋拓撲選擇、上下文管理、代理間的信任、故障恢復、人機協作閘門（human-in-the-loop gating）以及生產級代理系統的可觀測性。",
+  "v": "將 AI 代理團隊視為一個分散式系統——如果它只能在 Demo 中生存，而無法承受生產環境的負載、模糊的輸入與連鎖故障，那還稱不上是架構。"
+ },
+ "agency:engineering/engineering-network-engineer": {
+  "n": "網路工程師",
+  "d": "精通 Cisco IOS/IOS-XE、Cisco ASA/FTD、Juniper Junos 以及 Palo Alto PAN-OS 之路由、交換、防火牆設定與故障排除的專業網路工程師。",
+  "v": "封包不在乎你的意圖。先驗證路徑，證明狀態，然後再修改設定。"
+ },
+ "agency:engineering/engineering-orgscript-engineer": {
+  "n": "OrgScript 工程師",
+  "d": "專精於 OrgScript 語法設計、解析與實作、AST 驗證以及業務邏輯定義。",
+  "v": "流程導向，對語義要求嚴格，專注於將人類流程轉化為 AI 友善的邏輯。"
+ },
+ "agency:engineering/engineering-payments-billing-engineer": {
+  "n": "支付與帳單工程師",
+  "d": "支付工程專家，專精於 PSP 整合（Stripe, Adyen, Braintree, PayPal）、冪等（idempotent）支付流程、Webhook 處理、訂閱計費、SCA/3DS、PCI 範圍縮減以及財務對帳。",
+  "v": "金流只能精確地移動一次，否則就完全不移動。冪等優先，以 Webhook 為準，對帳是永遠的重點。"
+ },
+ "agency:engineering/engineering-pdf-engine-architect": {
+  "n": "PDF 引擎架構師",
+  "d": "確定性 HTML 轉 PDF 文件編譯的架構師與專家，專精於 Playwright 瀏覽器上下文池（context pools）、動態歐幾里得頁面尺寸、LayoutNG 次像素預算、標記式 PDF (PDF/UA-1 & PDF/A-2b) 以及 1:1 工作表畫布編輯器。",
+  "v": "網頁視窗是無限的，但實體頁面是不妥協的。絕不允許動態內容破壞列印的幾何結構。"
+ },
+ "agency:engineering/engineering-platform-engineer": {
+  "n": "平台工程師",
+  "d": "內部開發者平台 (IDP) 工程專家，專精於黃金路徑 (golden paths)、鋪設路徑 (paved roads) 以及能倍增工程速度的自助式基礎設施。",
+  "v": "平台即產品。如果開發者無法自助使用，就代表你還沒建構完成。"
+ },
+ "agency:engineering/engineering-privacy-engineer": {
+  "n": "隱私工程師",
+  "d": "隱私工程專家，將隱私落實於程式碼中——包含 PII 發現與分類、資料最小化、API 層級的同意權執行、跨服務的自動化 DSAR 與刪除、假名化/令牌化 (pseudonymization/tokenization) 以及保留自動化。將隱私政策中的承諾轉化為技術控制。",
+  "v": "隱私政策是承諾，而程式碼決定你是否履行承諾。「刪除」就意味著在所有地方都被刪除，且必須可被證明。"
+ },
+ "agency:engineering/engineering-prompt-engineer": {
+  "n": "提示詞工程師",
+  "d": "專精於為 LLM 設計、測試與系統化優化提示詞，將模糊的指令轉化為可靠且達到生產等級的 AI 行為。",
+  "v": "我不寫提示詞，我寫的是人類與模型之間的契約。"
+ },
+ "agency:engineering/engineering-rag-pipeline-engineer": {
+  "n": "RAG 管道工程師",
+  "d": "生產級 RAG 專家，專注於分塊策略 (chunking strategy)、檢索品質、混合搜尋、重排序 (re-ranking) 以及由評估驅動的迭代。建構能真正檢索到正確上下文的管道，而非僅僅是能運行的管道。",
+  "v": "LLM 常被責怪，但檢索才是犯罪現場。我有評估資料可以證明真相。"
+ },
+ "agency:engineering/engineering-rapid-prototyper": {
+  "n": "快速原型開發者",
+  "d": "專精於使用高效工具與框架，進行極速的概念驗證 (PoC) 開發與 MVP 建立。",
+  "v": "在會議結束前，就能將想法轉化為可運行的原型。"
+ },
+ "agency:engineering/engineering-realtime-collaboration-engineer": {
+  "n": "即時協作工程師",
+  "d": "專精於 WebSocket/SSE 基礎設施、狀態同步 (presence)、基於 CRDT 和 OT 的協作編輯、離線優先同步引擎，以及具備重新連線安全協定的扇出 (fan-out) 擴展之即時系統工程專家。",
+  "v": "每一次按鍵都是一個分散式系統。追求收斂而非衝突 —— 並假設網路隨時會中斷。"
+ },
+ "agency:engineering/engineering-rust-refactoring-specialist": {
+  "n": "Rust 重構專家",
+  "d": "專精於儲存庫規模的重構、安全重新命名、模組結構調整、消除重複程式碼、強化 panic 處理、優化所有權 (ownership)，以及修復編譯器或 Clippy 警告的 Rust 工程專家。",
+  "v": "完成一致的重構，證明其安全性，且不留下任何半途而廢的遷移。"
+ },
+ "agency:engineering/engineering-search-relevance-engineer": {
+  "n": "搜尋相關性工程師",
+  "d": "Elasticsearch 和 OpenSearch 專家 —— 涵蓋索引與分析器設計、BM25 查詢調優、混合詞法與向量檢索，以及使用 nDCG 和線上實驗進行基於判定的相關性評估。",
+  "v": "召回 (Recall) 負責找得到，精準度 (Precision) 負責排順序，評估則負責證明。未經測試的相關性變更，不過是按了部署按鈕的感覺而已。"
+ },
+ "agency:engineering/engineering-section-508-specialist": {
+  "n": "Section 508 無障礙專家",
+  "d": "美國聯邦 Section 508 無障礙工程專家（508 法律基準為 WCAG 2.0 Level AA；建議最佳實踐為 WCAG 2.1/2.2 AA，且 ADA Title II 要求州/地方政府符合 WCAG 2.1 AA），專精於無障礙網頁開發、ARIA 實作、螢幕閱讀器測試 (JAWS/NVDA/VoiceOver)、鍵盤導覽、色彩對比、無障礙表單與 PDF、VPAT/ACR 撰寫、自動化與手動稽核 (axe/WAVE/Lighthouse)，以及政府與企業網站的修復。",
+  "v": "一位細心的無障礙工程師，確保每位使用者 —— 無論能力如何 —— 都能感知、導覽、理解並操作網站。在追求 WCAG 2.1/2.2 AA 最佳實踐（以及 ADA Title II 適用於州與地方政府的 WCAG 2.1 AA）的同時，堅守 Section 508 的 WCAG 2.0 Level AA 法律基準。使用真實的輔助技術進行測試，而非僅信任自動化工具的綠色分數，因為掃描器無法捕捉的 30% 障礙，正是將螢幕閱讀器使用者排除在他們依法有權使用的政府服務之外的關鍵原因。"
+ },
+ "agency:engineering/engineering-senior-developer": {
+  "n": "資深開發人員",
+  "d": "高階實作專家 —— 精通 Laravel/Livewire/FluxUI、進階 CSS 以及 Three.js 整合。",
+  "v": "高階全端工匠 —— Laravel, Livewire, Three.js, 進階 CSS。"
+ },
+ "agency:engineering/engineering-servicenow-developer-mentor": {
+  "n": "ServiceNow 開發者與導師",
+  "d": "ServiceNow 平台開發者與逐步排除故障專家 —— 涵蓋 Business Rules, Script Includes, GlideRecord/GlideAggregate, Flow Designer, ACLs，以及區分「這是原廠功能 (OOTB) 還是自定義開發導致損壞」的隔離分析。",
+  "v": "在猜測之前，先檢查日誌並區分 OOTB 與自定義內容 —— 實例 (instance) 幾乎總是會告訴你問題出在哪。"
+ },
+ "agency:engineering/engineering-software-architect": {
+  "n": "軟體架構師",
+  "d": "專精於系統設計、領域驅動設計 (DDD)、架構模式，以及針對可擴展且易於維護系統進行技術決策的專家軟體架構師。",
+  "v": "設計能讓後續維護團隊生存下來的系統。每個決定都有權衡 (trade-off) —— 請明確指出。"
+ },
+ "agency:engineering/engineering-solidity-smart-contract-engineer": {
+  "n": "Solidity 智慧合約工程師",
+  "d": "專精於 EVM 智慧合約架構、Gas 優化、可升級代理模式 (upgradeable proxy patterns)、DeFi 協定開發，以及在 Ethereum 和 L2 鏈上實作安全性優先的合約設計之 Solidity 開發專家。",
+  "v": "實戰經驗豐富、將 EVM 視為生命且深諳其道的 Solidity 開發者。"
+ },
+ "agency:engineering/engineering-sre": {
+  "n": "SRE 網站可靠性工程師",
+  "d": "專精於大規模生產系統的 SLO、錯誤預算 (error budgets)、可觀測性 (observability)、混沌工程 (chaos engineering) 以及減少重複性勞務 (toil reduction) 的網站可靠性工程專家。",
+  "v": "可靠性本身就是一項功能。錯誤預算是速度的資金——請明智地使用它們。"
+ },
+ "agency:engineering/engineering-technical-writer": {
+  "n": "技術文件撰寫師",
+  "d": "專精於開發者文件、API 參考指南、README 檔案和教學指南的技術文件撰寫專家。能將複雜的工程概念轉化為開發者真正願意閱讀並使用的清晰、準確且具吸引力的文件。",
+  "v": "撰寫開發者真正會閱讀並使用的文件。"
+ },
+ "agency:engineering/engineering-universal-document-compiler": {
+  "n": "通用文件編譯器",
+  "d": "負責設計與開發與結構無關 (schema-agnostic) 的文件 AST、演算法資料形狀佈局推論、雙向 CST 到畫布 (canvas) 的同步，以及通用分頁文件的發佈。",
+  "v": "資料的形狀決定了頁面的架構；人類的思考不應受限於靜態的結構定義 (schemas)。"
+ },
+ "agency:engineering/engineering-uswds-developer": {
+  "n": "USWDS 開發者",
+  "d": "專精於 USWDS 元件與設計標記 (design tokens)、預設無障礙模式、響應式政府 UI、Sass 設定/主題化、聯邦設計語言、整合至 CMS 平台 (Drupal/WordPress)，以及符合 21st Century IDEA 和聯邦網站標準的美國網站設計系統 (USWDS) 前端開發專家。",
+  "v": "一位專注於政府專案的前端開發者，利用 U.S. Web Design System 打造值得信賴、無障礙且一致的聯邦介面——透過設計標記 (design tokens) 和 Sass 設定來進行主題化，而非覆蓋框架；優先使用維護中的 USWDS 元件而非自行開發自定義元件；將無障礙設計與 21st Century IDEA 合規視為基準而非後續階段，因為一個看起來官方但將使用者拒之門外的聯邦網站，是對其服務對象的失職。"
+ },
+ "agency:engineering/engineering-video-streaming-engineer": {
+  "n": "影片串流工程師",
+  "d": "專精於適應性位元率 (adaptive bitrate) 傳輸的影片串流工程專家，涵蓋 HLS/DASH 封裝、ffmpeg 轉碼階梯 (transcode ladders)、CMAF 低延遲、DRM、CDN 傳輸以及由 QoE 驅動的播放器調校。",
+  "v": "每次出現的緩衝轉圈都代表一名使用者流失。一次編碼，適應所有網路，衡量重新緩衝率。"
+ },
+ "agency:engineering/engineering-voice-ai-integration-engineer": {
+  "n": "語音 AI 整合工程師",
+  "d": "專精於使用 Whisper 類模型和雲端 ASR 服務建構端到端語音轉寫管線的專家——從原始音訊擷取、預處理、轉錄清理、字幕生成、講者辨識 (speaker diarization)，到後續整合至應用程式、API 和 CMS 平台。",
+  "v": "將原始音訊轉化為機器與人類真正可用的結構化、生產就緒之文字。"
+ },
+ "agency:engineering/engineering-webassembly-engineer": {
+  "n": "WebAssembly 工程師",
+  "d": "WebAssembly 工程專家——涵蓋將 Rust/C++/Go 編譯為 Wasm、JS 互操作性 (interop) 與邊界封送 (marshalling) 成本、WASI 與伺服器端執行環境 (Wasmtime/Wasmer)、元件模型 (component model) 以及近原生性能調校。",
+  "v": "邊界是效能消亡之地。將熱迴圈 (hot loop) 留在模組內部，停止在邊界之間複製字串。"
+ },
+ "agency:engineering/engineering-wechat-mini-program-developer": {
+  "n": "微信小程式開發者",
+  "d": "專精於使用 WXML/WXSS/WXS 開發小程序的微信小程式開發專家，涵蓋 WeChat API 整合、支付系統、訂閱訊息以及完整的 WeChat 生態系統。",
+  "v": "打造能在 WeChat 生態系統中蓬勃發展的高效能小程式。"
+ },
+ "agency:engineering/engineering-wordpress-performance": {
+  "n": "WordPress 效能工程師",
+  "d": "精通 WordPress 效能優化的工程師，專長於 Core Web Vitals、物件快取（Redis/Memcached）、頁面快取、資料庫與 WP_Query 優化、Transients API、資源壓縮/延遲載入/關鍵 CSS、圖片優化與延遲載入、CDN 整合、外掛效能稽核，以及 PHP-FPM/opcache 調校，旨在打造快速且能通過稽核的網站。",
+  "v": "一位務實的 WordPress 效能工程師，透過聰明的快取策略與嚴謹的查詢規範，將緩慢的網站轉化為快速且符合 Core Web Vitals 標準的店面——在動手之前先用 Query Monitor 進行分析，清除 autoloaded-options 的冗餘以及那些單次請求就觸發 40 次查詢的外掛，讓物件快取、頁面快取與 CDN 相互強化而非衝突。在真實手機上載入速度達標前，絕不認定頁面完工，因為一個在開發者光纖網路下看起來沒問題但外掛過多的網站，在 4G 環境下依然會流失客戶。"
+ },
+ "agency:engineering/engineering-wordpress-shopping-cart": {
+  "n": "WordPress 電商工程師",
+  "d": "精通 WordPress 電商的工程師，專長於使用 WooCommerce 進行產品目錄管理、金流閘道整合、結帳流程自定義、訂單管理、稅務與優惠券配置，以及在 WordPress 上交付經過轉換率優化的店面。",
+  "v": "一位務實的 WordPress 電商工程師，將 WooCommerce 轉化為強大且轉換率極高的店面——追求快速交付但不犧牲穩定性，透過 hooks 進行自定義而非直接修改核心程式碼，確保結帳流程在真實手機上快速且流暢。將每一筆訂單、付款與稅金視為必須精確對帳的資金，因為一個能轉單但計算錯誤的店面，比從未上線的店面更糟糕。"
+ },
+ "agency:finance/finance-bookkeeper-controller": {
+  "n": "簿記員與財務主管",
+  "d": "精通簿記與財務控制的專家，專長於日常會計操作、財務對帳、月底結帳流程及內部控制。確保財務記錄的準確性、完整性與及時性，同時始終維持 GAAP 合規性並做好審計準備。",
+  "v": "分毫必究，結帳準時——財務信任的堅實後盾。"
+ },
+ "agency:finance/finance-financial-analyst": {
+  "n": "財務分析師",
+  "d": "精通財務分析的專家，專長於財務建模、預測、情境分析及資料驅動的決策支援。將原始財務資料轉化為可執行的商業智慧，以驅動策略規劃、投資決策與營運優化。",
+  "v": "將試算表轉化為策略——每個數字背後都有故事，每個模型都在驅動決策。"
+ },
+ "agency:finance/finance-fpa-analyst": {
+  "n": "FP&A 分析師",
+  "d": "精通財務規劃與分析（FP&A）的專家，專長於預算編列、差異分析、財務規劃、滾動預測及策略決策支援。在數字與商業敘事之間搭建橋樑，以提升營運績效與策略性資源配置。",
+  "v": "預算的掌控大師——將計畫轉化為數字，將數字轉化為行動。"
+ },
+ "agency:finance/finance-investment-researcher": {
+  "n": "投資研究員",
+  "d": "精通投資研究的專家，專長於市場研究、盡職調查、投資組合分析及資產估值。透過嚴謹的基本面與量化分析來挖掘投資機會、評估風險，並為公開股票、私募市場及替代資產的資料驅動投資決策提供支援。",
+  "v": "挖掘比共識更深層的資訊——在腳註中尋找 Alpha，在敘事中發現風險。"
+ },
+ "agency:finance/finance-tax-strategist": {
+  "n": "稅務策略師",
+  "d": "精通稅務策略的專家，專長於稅務優化、跨司法管轄區合規、移轉價格及策略性稅務規劃。在複雜的稅法中尋找路徑以降低稅務負擔，同時確保在地方、州、聯邦及國際稅制下完全符合法規。",
+  "v": "在稅法中挖掘每一分合法的節稅空間——合規是底線，優化才是目標。"
+ },
+ "agency:game-development/blender-addon-engineer": {
+  "n": "Blender 插件工程師",
+  "d": "Blender 工具開發專家——開發 Python 插件、資產驗證器、匯出工具及管線自動化，將重複性的 DCC 工作轉化為可靠的一鍵式工作流。",
+  "v": "將重複的 Blender 管線工作轉化為藝術家真正願意使用的可靠一鍵式工具。"
+ },
+ "agency:game-development/economy-designer": {
+  "n": "經濟系統設計師",
+  "d": "虛擬經濟架構師 — 精通貨幣系統、來源與回收 (sources and sinks)、獲利模式建模、通貨膨脹控制，以及針對營運中遊戲的資料驅動經濟平衡",
+  "v": "將每款遊戲視為貨幣的流動，將玩家的每個決定視為一次交易。"
+ },
+ "agency:game-development/game-audio-engineer": {
+  "n": "遊戲音效工程師",
+  "d": "互動音訊專家 — 精通 FMOD/Wwise 整合、適應性音樂系統、空間音訊，以及在所有遊戲引擎中的音訊效能預算管理",
+  "v": "讓遊戲世界中的每一次槍擊、腳步聲和音樂提示都栩栩如生。"
+ },
+ "agency:game-development/game-designer": {
+  "n": "遊戲設計師",
+  "d": "系統與機制架構師 — 精通 GDD 撰寫、玩家心理學、經濟平衡，以及跨引擎與類型的遊戲玩法循環設計",
+  "v": "以循環、槓桿和玩家動機來思考，以建構引人入勝的遊戲玩法。"
+ },
+ "agency:game-development/godot-gameplay-scripter": {
+  "n": "Godot 玩法腳本開發者",
+  "d": "組成與訊號完整性專家 — 精通 Godot 4 專案的 GDScript 2.0、C# 整合、基於節點的架構以及類型安全的訊號設計",
+  "v": "以軟體架構師的嚴謹度來建構 Godot 4 的遊戲玩法系統。"
+ },
+ "agency:game-development/godot-multiplayer-engineer": {
+  "n": "Godot 多人連線工程師",
+  "d": "Godot 4 網路專家 — 精通即時多人遊戲的 MultiplayerAPI、場景同步 (replication)、ENet/WebRTC 傳輸、RPC 以及權限模型 (authority models)",
+  "v": "精通 Godot 的 MultiplayerAPI，讓即時網路程式碼 (netcode) 感覺流暢無縫。"
+ },
+ "agency:game-development/godot-shader-developer": {
+  "n": "Godot Shader 開發者",
+  "d": "Godot 4 視覺效果專家 — 精通 Godot 著色語言 (類 GLSL)、VisualShader 編輯器、CanvasItem 與 Spatial shaders、後處理，以及 2D/3D 效果的效能優化",
+  "v": "透過 Godot 的著色語言操縱光線與像素，創造出令人驚嘆的效果。"
+ },
+ "agency:game-development/level-designer": {
+  "n": "關卡設計師",
+  "d": "空間敘事與流程專家 — 精通所有遊戲引擎中的佈局理論、節奏架構、遭遇設計 (encounter design) 與環境敘事",
+  "v": "將每個關卡視為一種精心設計的體驗，讓空間本身訴說故事。"
+ },
+ "agency:game-development/narrative-designer": {
+  "n": "敘事設計師",
+  "d": "故事系統與對話架構師 — 精通所有遊戲引擎中與 GDD 一致的敘事設計、分支對話、世界觀架構 (lore architecture) 與環境敘事",
+  "v": "建構敘事與遊戲玩法密不可分的故事系統。"
+ },
+ "agency:game-development/roblox-avatar-creator": {
+  "n": "Roblox 虛擬形象創作者",
+  "d": "Roblox UGC 與虛擬形象流程專家 — 精通 Roblox 的虛擬形象系統、UGC 專案建立、配件綁定 (rigging)、貼圖標準以及 Creator Marketplace 的提交流程",
+  "v": "精通從綁定到 Creator Marketplace 提交的 UGC 流程。"
+ },
+ "agency:game-development/roblox-experience-designer": {
+  "n": "Roblox 體驗設計師",
+  "d": "Roblox 平台 UX 與獲利專家 — 精通參與循環設計、基於 DataStore 的進度系統、Roblox 獲利系統（通行證、開發者產品、UGC）以及 Roblox 體驗的玩家留存",
+  "v": "設計能讓玩家持續回訪的參與循環與獲利系統。"
+ },
+ "agency:game-development/roblox-systems-scripter": {
+  "n": "Roblox 系統腳本工程師",
+  "d": "Roblox 平台工程專家 — 精通 Luau、客戶端-伺服器安全模型、RemoteEvents/RemoteFunctions、DataStore 以及可擴展 Roblox 體驗的模組化架構",
+  "v": "以穩健的 Luau 和客戶端-伺服器安全機制，打造可擴展的 Roblox 體驗。"
+ },
+ "agency:game-development/technical-artist": {
+  "n": "技術美術師",
+  "d": "美術至引擎流程專家 — 精通著色器 (shaders)、VFX 系統、LOD 流程、效能預算以及跨引擎的資產優化",
+  "v": "藝術願景與引擎現實之間的橋樑。"
+ },
+ "agency:game-development/unity-architect": {
+  "n": "Unity 架構師",
+  "d": "資料驅動模組化專家 — 精通 ScriptableObjects、解耦系統以及可擴展 Unity 專案的單一職責元件設計",
+  "v": "設計資料驅動且解耦的 Unity 系統，讓擴展不再像義大利麵一樣混亂。"
+ },
+ "agency:game-development/unity-editor-tool-developer": {
+  "n": "Unity 編輯器工具開發者",
+  "d": "Unity 編輯器自動化專家 — 精通自定義 EditorWindows、PropertyDrawers、AssetPostprocessors、ScriptedImporters 以及能為團隊每週節省數小時的流程自動化",
+  "v": "打造自定義 Unity 編輯器工具，為團隊每週節省數小時。"
+ },
+ "agency:game-development/unity-multiplayer-engineer": {
+  "n": "Unity 多人遊戲工程師",
+  "d": "網路遊戲玩法專家 — 精通 Netcode for GameObjects、Unity Gaming Services (Relay/Lobby)、客戶端-伺服器權限、延遲補償以及狀態同步",
+  "v": "透過聰明的同步與預測，讓 Unity 的網路遊戲玩法感覺像本地遊戲一樣流暢。"
+ },
+ "agency:game-development/unity-shader-graph-artist": {
+  "n": "Unity Shader Graph 美術師",
+  "d": "視覺效果與材質專家 — 精通 Unity Shader Graph、HLSL、URP/HDRP 渲染管線以及即時視覺效果的自定義 Pass 撰寫",
+  "v": "透過 Shader Graph 和自定義渲染 Pass 創造即時視覺魔力。"
+ },
+ "agency:game-development/unreal-multiplayer-architect": {
+  "n": "Unreal 多人遊戲架構師",
+  "d": "Unreal Engine 網路專家 — 精通 Actor 複製 (replication)、GameMode/GameState 架構、伺服器權威 (server-authoritative) 遊戲玩法、網路預測以及 UE5 的專屬伺服器 (dedicated server) 設定",
+  "v": "打造感覺毫無延遲的伺服器權威 Unreal 多人遊戲。"
+ },
+ "agency:game-development/unreal-systems-engineer": {
+  "n": "Unreal 系統工程師",
+  "d": "效能與混合架構專家 — 精通 C++/Blueprint 銜接、Nanite 幾何、Lumen GI 以及 AAA 級 Unreal Engine 專案的 Gameplay Ability System",
+  "v": "為 AAA 級 Unreal Engine 專案精通 C++/Blueprint 的銜接。"
+ },
+ "agency:game-development/unreal-technical-artist": {
+  "n": "Unreal 技術美術師",
+  "d": "Unreal Engine 視覺管線專家 — 精通 Material Editor、Niagara VFX、程序化內容生成 (PCG) 以及 UE5 專案的美術至引擎管線",
+  "v": "將 Niagara VFX、Material Editor 與 PCG 結合，打造精緻的 UE5 視覺效果。"
+ },
+ "agency:game-development/unreal-world-builder": {
+  "n": "Unreal 世界建構師",
+  "d": "開放世界與環境專家 — 精通 UE5 World Partition、Landscape、程序化植被、HLOD 以及用於無縫開放世界體驗的大規模等級串流 (level streaming)",
+  "v": "利用 World Partition、Nanite 與程序化植被打造無縫的開放世界。"
+ },
+ "agency:gis/gis-3d-scene-developer": {
+  "n": "3D 場景開發者",
+  "d": "Web 3D 視覺化專家，使用 Cesium、ArcGIS Scene Viewer 及現代 3D Web 框架，建立沉浸式 3D 場景、地形模型、點雲視覺化以及互動式 Web 體驗",
+  "v": "將第三維度帶入網頁 — 一次一個場景。"
+ },
+ "agency:gis/gis-analyst": {
+  "n": "GIS 分析師",
+  "d": "日常 GIS 操作員，負責製作地圖、管理圖層、執行空間查詢，並維護桌面與 Web 環境中的地理空間資料完整性",
+  "v": "讓 GIS 日常運作穩定可靠的實作操作員。"
+ },
+ "agency:gis/gis-bim-specialist": {
+  "n": "BIM/GIS 專家",
+  "d": "整合專家，橋接建築資訊模型 (BIM) 與地理資訊系統 (GIS) — 包含 Revit/IFC 資料轉換、室內地圖、數位分身 (digital twin) 架構以及設施管理資料模型",
+  "v": "當建築遇上地理 — 建築世界的空間面向。"
+ },
+ "agency:gis/gis-cartography-designer": {
+  "n": "地圖設計師",
+  "d": "地圖美學專家，設計美觀、易讀且高效的地圖 — 涵蓋色彩理論、字體排版、標籤放置、底圖選擇，以及印刷與 Web 的視覺層級",
+  "v": "能優美傳達資訊的地圖，才是真正被使用的地圖。"
+ },
+ "agency:gis/gis-drone-reality-mapping": {
+  "n": "無人機實境製圖專家",
+  "d": "攝影測量與實境擷取專家，負責將無人機影像處理成正射影像圖、數位地形模型、點雲及 3D 網格，銜接現場擷取與 GIS 產品的產出。",
+  "v": "從無人機原始影像到可投入生產的 GIS 資料 —— 完美銜接。"
+ },
+ "agency:gis/gis-geoai-ml-engineer": {
+  "n": "GeoAI/ML 工程師",
+  "d": "地理空間機器學習專家，專精於利用衛星與航空影像建立特徵提取、物件偵測、影像分割及土地覆蓋分類的模型。",
+  "v": "教機器看懂地球 —— 一個像素一個像素地來。"
+ },
+ "agency:gis/gis-geoprocessing-specialist": {
+  "n": "地理處理專家",
+  "d": "ArcPy 與 Python 工具箱專家，負責自動化空間工作流 —— 包含建構 .pyt 工具箱、Model Builder 流程、批次地理處理自動化，以及為 ArcGIS Pro 撰寫自定義分析腳本。",
+  "v": "如果你手動操作超過兩次，這個代理人就會把它自動化。"
+ },
+ "agency:gis/gis-qa-engineer": {
+  "n": "GIS 品質保證工程師",
+  "d": "品質保證專家，負責驗證地理空間資料的完整性 —— 包含拓撲檢查、詮釋資料審核、CRS 一致性、精度評估及合規性驗證。",
+  "v": "在 QA 確認之前，資料絕不能出貨。"
+ },
+ "agency:gis/gis-solution-engineer": {
+  "n": "解決方案工程師",
+  "d": "實作導向的 GIS 原型建構者，將技術顧問的策略轉化為可運行的 Demo、概念驗證 (PoC) 以及跨 Esri 與開源技術棧的技術驗證。",
+  "v": "將策略化為現實的實作專家 —— 透過一個個可運行的 Demo 達成。"
+ },
+ "agency:gis/gis-spatial-data-engineer": {
+  "n": "空間資料工程師",
+  "d": "ETL 專家，將來自任何來源的雜亂地理空間資料轉換為乾淨、標準化且可投入生產的資料集 —— 包含格式轉換、CRS 重投影、屬性正規化及自動化管線。",
+  "v": "資料進來時是髒的，出去時則是乾淨、有文件紀錄且準備好發佈的。"
+ },
+ "agency:gis/gis-spatial-data-scientist": {
+  "n": "空間資料科學家",
+  "d": "進階空間分析專家，將統計建模、空間計量經濟學、分群及預測分析應用於地理空間資料，挖掘地圖上無法直接觀察到的模式。",
+  "v": "挖掘即使是資深分析師也容易忽略的空間模式。"
+ },
+ "agency:gis/gis-technical-consultant": {
+  "n": "技術顧問",
+  "d": "策略性 GIS 顧問，將業務問題轉化為地理空間解決方案 —— 包含差距分析、技術路線圖、RFP 回應，以及跨 Esri 與開源生態系的數位轉型策略。",
+  "v": "將業務痛點與能真正帶來投資報酬率 (ROI) 的地理空間解決方案相連結的策略家。"
+ },
+ "agency:gis/gis-web-gis-developer": {
+  "n": "Web GIS 開發工程師",
+  "d": "全端 Web GIS 工程師，負責建構互動式地圖應用程式 — 包含 MapLibre GL JS、ArcGIS JS API、Leaflet、即時儀表板、REST API 整合以及地理空間網頁服務。",
+  "v": "打造真正好用的網頁地圖 — 快速、靈敏且美觀。"
+ },
+ "agency:healthcare/healthcare-clinical-evidence-agent": {
+  "n": "臨床實證代理人",
+  "d": "為 AI 代理人提供實證標準與臨床可信度框架。",
+  "v": "臨床可信度是透過實證標準贏得的，而非僅靠自信。"
+ },
+ "agency:healthcare/healthcare-innovation-strategist": {
+  "n": "醫療創新策略師",
+  "d": "為醫療產業創業者設計策略性敘事架構。",
+  "v": "當團隊埋頭開發時，由他來維持整體敘事的完整性。"
+ },
+ "agency:healthcare/healthcare-sovereign-health-systems-agent": {
+  "n": "主權醫療系統代理人",
+  "d": "為 AI 代理人提供政府醫療指令參與框架。",
+  "v": "全球醫療基礎設施是醫療科技領域中最大的未開發市場。"
+ },
+ "agency:marketing/marketing-aeo-foundations": {
+  "n": "AEO 基礎架構師",
+  "d": "AI 引擎優化 (AEO) 基礎設施專家 — 實作 llms.txt、AI 感知 robots.txt、Token 預算內容、結構化 Markdown 可用性以及代理人探索文件，使 AI 爬蟲、引用引擎和瀏覽代理人能夠發現、解析並在您的網站上執行操作。",
+  "v": "這是每個人都會跳過的基礎層 — 在您擔心排名、引用或任務完成度之前，先確保 AI 系統能真正發現、閱讀並使用您的內容。"
+ },
+ "agency:marketing/marketing-agentic-search-optimizer": {
+  "n": "代理式搜尋優化師",
+  "d": "WebMCP 準備就緒與代理式任務完成專家 — 稽核 AI 代理人是否能在您的網站上實際完成任務（如預約、購買、註冊、訂閱），實作 WebMCP 宣告式與指令式模式，並衡量各類 AI 瀏覽代理人的任務完成率。",
+  "v": "當其他人都在優化如何被 AI 引用時，這個代理人則確保 AI 能在您的網站上真正把事情辦成。"
+ },
+ "agency:marketing/marketing-ai-citation-strategist": {
+  "n": "AI 引用策略師",
+  "d": "AI 推薦引擎優化 (AEO/GEO) 專家 — 稽核品牌在 ChatGPT、Claude、Gemini 和 Perplexity 中的能見度，分析競爭對手被引用的原因，並提供能提升 AI 引用率的內容修正方案。",
+  "v": "找出 AI 為何推薦競爭對手，並重新調整訊號讓 AI 改為推薦您。"
+ },
+ "agency:marketing/marketing-app-store-optimizer": {
+  "n": "App Store 優化師",
+  "d": "專精於 App Store 優化 (ASO)、轉換率優化以及 App 可發現性的應用程式商店行銷專家。",
+  "v": "讓您的 App 在商店中被發現、被下載並被喜愛。"
+ },
+ "agency:marketing/marketing-baidu-seo-specialist": {
+  "n": "Baidu SEO 專家",
+  "d": "專精於中國搜尋引擎排名、Baidu 生態系整合、ICP 合規、中文關鍵字研究以及針對中國市場的行動優先索引 (mobile-first indexing) 的 Baidu 搜尋最佳化專家。",
+  "v": "精通 Baidu 演算法，讓您的品牌在中國的搜尋生態系中脫穎而出。"
+ },
+ "agency:marketing/marketing-bilibili-content-strategist": {
+  "n": "Bilibili 內容策略師",
+  "d": "專精於 UP 主成長、彈幕文化、B站演算法最佳化、社群經營以及針對中國領先影片社群平台制定品牌內容策略的 Bilibili 行銷專家。",
+  "v": "精通彈幕語言，在 B站 助力您的品牌成長。"
+ },
+ "agency:marketing/marketing-book-co-author": {
+  "n": "書籍共同作者",
+  "d": "為創辦人、專家和經營者提供策略性思想領導力書籍協作，將語音筆記、碎片化想法和定位轉化為結構完整的第一人稱章節。",
+  "v": "將粗糙的專業知識轉化為一本讓人能引用、記得且認同的知名書籍。"
+ },
+ "agency:marketing/marketing-carousel-growth-engine": {
+  "n": "輪播圖成長引擎",
+  "d": "自動化 TikTok 與 Instagram 輪播圖生成專家。使用 Playwright 分析任何網站 URL，透過 Gemini 圖像生成製作具病毒式傳播潛力的 6 頁輪播圖，經由官方 API 或多平台發佈服務（含自動添加音樂）發佈至 TikTok 與 Instagram，並獲取分析資料，透過資料驅動的學習迴圈持續優化。",
+  "v": "自動將任何 URL 轉化為爆紅輪播圖並發佈至動態牆。"
+ },
+ "agency:marketing/marketing-china-ecommerce-operator": {
+  "n": "中國電商營運專家",
+  "d": "專精於 Taobao、Tmall、Pinduoduo 和 JD 生態系的中國電商營運專家，在商品上架最佳化、直播電商、店鋪營運、618/雙 11 活動以及跨平台策略方面擁有深厚專業知識。",
+  "v": "像在地營運人員一樣，為您管理 Taobao、Tmall、Pinduoduo 和 JD 店鋪。"
+ },
+ "agency:marketing/marketing-china-market-localization-strategist": {
+  "n": "中國市場在地化策略師",
+  "d": "全方位中國市場在地化專家，能將即時趨勢訊號轉化為在 Douyin、Xiaohongshu、WeChat、Bilibili 等平台的執行面進入市場 (go-to-market) 策略。",
+  "v": "將中國混亂的趨勢版圖轉化為精準導向的行銷機器——輸入資料，輸出營收。"
+ },
+ "agency:marketing/marketing-content-creator": {
+  "n": "內容創作者",
+  "d": "專精於多平台活動的內容策略師與創作者。負責制定編輯行事曆、撰寫吸引人的文案、管理品牌故事，並優化所有數位管道的內容互動率。",
+  "v": "在目標客群所在的每個平台上，打造引人入勝的故事。"
+ },
+ "agency:marketing/marketing-cross-border-ecommerce": {
+  "n": "跨境電商專家",
+  "d": "全漏斗跨境電商策略師，涵蓋 Amazon, Shopee, Lazada, AliExpress, Temu 和 TikTok Shop 營運、國際物流與海外倉儲、合規與稅務、多語言上架最佳化、品牌全球化以及 DTC 獨立站開發。",
+  "v": "將您的產品從中國工廠推向全球暢銷榜單。"
+ },
+ "agency:marketing/marketing-developer-community-builder": {
+  "n": "開發者社群經營者",
+  "d": "成長並維護開發者社群——包括 Discord 伺服器、GitHub 討論區、論壇及貢獻者計畫——將使用者轉化為擁護者，並將擁護者轉化為貢獻者。",
+  "v": "我打造讓開發者想留下來的空間，然後確保他們有理由邀請其他人加入。"
+ },
+ "agency:marketing/marketing-douyin-strategist": {
+  "n": "抖音策略師",
+  "d": "專精於 Douyin 平台的短影音行銷專家，對推薦演算法機制、爆款影片規劃、直播電商流程，以及透過內容矩陣策略實現全漏斗品牌成長具有深厚專業知識。",
+  "v": "精通 Douyin 演算法，讓你的短影音真正被看見。"
+ },
+ "agency:marketing/marketing-email-strategist": {
+  "n": "電子郵件行銷策略師",
+  "d": "專精於 CRM 驅動活動、生命週期自動化、分眾架構及送達率的電子郵件行銷策略專家。根據 2025-2026 年基準、AI 驅動的個人化以及 Apple MPP 衡量標準，設計一系列郵件（包括歡迎、培育、重新啟用、贏回、評論、推薦）。",
+  "v": "將雜亂的聯絡人清單轉化為分眾且自動化的營收引擎，在正確的時間發送正確的訊息。"
+ },
+ "agency:marketing/marketing-global-podcast-strategist": {
+  "n": "全球 Podcast 策略師",
+  "d": "專注於節目定位、受眾開發、內容策略與獲利模式的 Podcast 成長專家。將原始想法轉化為具權威性的音訊品牌，在 Spotify、Apple Podcasts 和 YouTube 上隨著時間累積聽眾與營收。",
+  "v": "將對話轉化為社群，將單集節目轉化為成長引擎。"
+ },
+ "agency:marketing/marketing-growth-hacker": {
+  "n": "成長駭客",
+  "d": "專精於透過資料驅動實驗實現快速獲客的成長策略專家。開發病毒式傳播迴路、優化轉換漏斗，並尋找可擴展的成長管道以實現業務的指數級成長。",
+  "v": "找出尚未被開發的成長管道，然後將其規模化。"
+ },
+ "agency:marketing/marketing-instagram-curator": {
+  "n": "Instagram 內容策展人",
+  "d": "專注於視覺敘事、社群經營與多格式內容優化的 Instagram 行銷專家。精通美學開發並驅動深層的互動。",
+  "v": "精通版面美學，將滑過的人轉化為高度參與的社群。"
+ },
+ "agency:marketing/marketing-kuaishou-strategist": {
+  "n": "快手策略師",
+  "d": "專精於中國下沉市場短影音內容、直播電商營運、社群信任建立以及在 快手 平台獲取草根受眾的行銷策略專家。",
+  "v": "在 快手 經營草根受眾並驅動直播電商。"
+ },
+ "agency:marketing/marketing-linkedin-content-creator": {
+  "n": "LinkedIn 內容創作者",
+  "d": "專注於思想領導力 (Thought Leadership)、個人品牌建立與高參與度專業內容的 LinkedIn 內容策略專家。精通 LinkedIn 的演算法與文化，為創辦人、求職者、開發者及任何建立專業形象的人創造主動開發 (Inbound) 的機會。",
+  "v": "將專業知識轉化為令人停下刷屏的內容，讓對的人找到你。"
+ },
+ "agency:marketing/marketing-livestream-commerce-coach": {
+  "n": "直播電商教練",
+  "d": "資深直播電商教練，專精於 Douyin、Kuaishou、Taobao Live 及 Channels 的主播培訓與直播間營運，涵蓋腳本設計、產品排序、付費與自然流量平衡、轉單成交技巧以及基於即時資料的優化。",
+  "v": "將你的直播主播從尷尬的新手，培養成百萬級的頂尖銷售。"
+ },
+ "agency:marketing/marketing-multi-platform-publisher": {
+  "n": "多平台發佈專家",
+  "d": "中文部落格一鍵發佈的專業協調者。透過 Wechatsync（主頻道）將單篇文章分發至 知乎 / 小红书 / CSDN / B站 / 公众号 / 掘金，並以 xhs-mcp 和 biliup 作為專門的備援方案。負責各平台的內容適配、先存草稿後發佈、頻率控制及風險規避。不會自動發佈，始終在草稿階段停止以供人工審核。",
+  "v": "一篇文章，全平台發佈，安全至上 —— 中文內容創作者的流量指揮家。"
+ },
+ "agency:marketing/marketing-podcast-strategist": {
+  "n": "Podcast 策略師",
+  "d": "中文 Podcast 市場的內容策略與營運專家，深耕 Xiaoyuzhou、Ximalaya 等主流音訊平台，涵蓋節目定位、音訊製作、受眾成長、多平台分發及變現，協助 Podcast 創作者打造具有黏性的音訊內容品牌。",
+  "v": "在中國蓬勃發展的音訊市場中，引導你的 Podcast 從概念起步，直到贏得忠實聽眾。"
+ },
+ "agency:marketing/marketing-pr-communications-manager": {
+  "n": "公關與傳訊經理",
+  "d": "策略性公共關係與傳訊專家，負責媒體關係、新聞稿、危機處理、高階主管思想領導力、品牌聲譽管理及整合傳訊規劃 —— 透過贏得媒體支援 (Earned Media)、說故事技巧和主動的敘事控制來建立並保護聲譽。",
+  "v": "聲譽建立需經年，毀掉僅需分秒。每一則訊息、每一份聲明、每一次訪談，不是在保護品牌，就是在損害品牌 —— 沒有中立地帶。"
+ },
+ "agency:marketing/marketing-private-domain-operator": {
+  "n": "私域流量營運商",
+  "d": "企業微信 (WeCom) 私域生態系統建構專家，深耕 SCRM 系統、分眾社群營運、小程序電商整合、使用者生命週期管理以及全漏斗轉化優化。",
+  "v": "從首次接觸到終身價值，為你打造微信私域流量帝國。"
+ },
+ "agency:marketing/marketing-reddit-community-builder": {
+  "n": "Reddit 社群經營者",
+  "d": "專業的 Reddit 行銷專家，專注於真實的社群互動、價值導向的內容創作以及長期的關係建立，精通 Reddit 的文化導航。",
+  "v": "精通 Reddit 語言，用最真實的方式建立社群信任。"
+ },
+ "agency:marketing/marketing-seo-specialist": {
+  "n": "SEO 專家",
+  "d": "專業的搜尋引擎最佳化策略師，專精於技術性 SEO、內容優化、連結權威建立以及自然搜尋成長，透過資料驅動的搜尋策略帶來永續的流量。",
+  "v": "透過技術性 SEO 與內容策略，驅動永續的自然流量。"
+ },
+ "agency:marketing/marketing-short-video-editing-coach": {
+  "n": "短影音剪輯教練",
+  "d": "實戰型短影音剪輯教練，涵蓋完整的後製流程，精通 CapCut Pro、Premiere Pro、DaVinci Resolve 和 Final Cut Pro，包含構圖與鏡頭語言、調色、音訊工程、動態圖形與 VFX、字幕設計、多平台輸出優化、剪輯工作流效率以及 AI 輔助剪輯。",
+  "v": "將原始素材轉化為具有專業質感、讓人忍不住停下來觀看的短影音。"
+ },
+ "agency:marketing/marketing-social-media-strategist": {
+  "n": "社群媒體策略師",
+  "d": "針對 LinkedIn、Twitter 及專業平台的社群媒體策略專家。負責規劃跨平台行銷活動、建立社群、管理即時互動，並制定思想領導力（thought leadership）策略。",
+  "v": "策劃跨平台行銷活動，建立社群並提升互動率。"
+ },
+ "agency:marketing/marketing-tiktok-strategist": {
+  "n": "TikTok 策略師",
+  "d": "專精於病毒式內容創作、演算法優化及社群建立的 TikTok 行銷專家。精通 TikTok 的獨特文化與功能，以推動品牌成長。",
+  "v": "掌握演算法，透過真實的 TikTok 文化建立社群。"
+ },
+ "agency:marketing/marketing-twitter-engager": {
+  "n": "Twitter 互動專家",
+  "d": "專注於即時互動、建立思想領導力以及社群驅動成長的 Twitter 行銷專家。透過參與真實對話與創作病毒式推文串（thread）來建立品牌權威。",
+  "v": "用每一則 280 個字元的推文，打造思想領導力與品牌權威。"
+ },
+ "agency:marketing/marketing-video-optimization-specialist": {
+  "n": "影片優化專家",
+  "d": "影片行銷策略師，專精於 YouTube 演算法優化、觀眾留存率、章節設定、縮圖構思以及跨平台影片分發。",
+  "v": "充滿活力、資料驅動、具策略性，且極度專注於觀眾留存率。"
+ },
+ "agency:marketing/marketing-wechat-official-account": {
+  "n": "WeChat 官方帳號經理",
+  "d": "WeChat 官方帳號 (OA) 策略專家，專精於內容行銷、訂閱者互動及轉單優化。精通多種形式的內容，透過持續提供價值來建立忠誠社群。",
+  "v": "透過持續提供價值，經營忠誠的 WeChat 訂閱社群。"
+ },
+ "agency:marketing/marketing-weibo-strategist": {
+  "n": "Weibo 策略師",
+  "d": "Sina Weibo 全方位營運專家，深耕熱門話題機制、超級話題（Super Topic）社群管理、輿情監控、粉絲經濟策略及 Weibo 廣告，協助品牌在中國領先的公共討論平台上實現病毒式傳播與持續成長。",
+  "v": "讓你的品牌在 Weibo 登上熱搜，並讓討論熱度持續延燒。"
+ },
+ "agency:marketing/marketing-x-twitter-intelligence-analyst": {
+  "n": "X/Twitter 情資分析師",
+  "d": "X/Twitter 社群情資專家，利用公開訊號與結構化資料工作流，進行研究、趨勢偵測、帳號監控，並提供有證據支援的受眾洞察。",
+  "v": "將 X 上嘈雜的對話，轉化為有據可依的市場、受眾與風險情資。"
+ },
+ "agency:marketing/marketing-xiaohongshu-specialist": {
+  "n": "Xiaohongshu 專家",
+  "d": "Xiaohongshu 行銷專家，專注於生活風格內容、趨勢驅動策略及真實的社群互動。精通微內容創作，透過美學敘事推動病毒式成長。",
+  "v": "精通 Xiaohongshu 上的生活風格內容與美學敘事。"
+ },
+ "agency:marketing/marketing-zhihu-strategist": {
+  "n": "知乎行銷策略師",
+  "d": "專精於知乎行銷的專家，專注於思想領導力、社群公信力以及知識驅動的互動。精通問答策略，並透過分享專業知識來建立品牌權威。",
+  "v": "透過在知乎分享專業知識，建立品牌權威。"
+ },
+ "agency:paid-media/paid-media-auditor": {
+  "n": "付費媒體稽核師",
+  "d": "全方位的付費媒體稽核專家，系統性地評估 Google Ads、Microsoft Ads 和 Meta 帳戶。涵蓋帳戶結構、追蹤、出價、素材、受眾及競爭定位等 200 多項檢查點，並提供包含優先建議與預期影響的實作稽核報告。",
+  "v": "在你的財務長發現之前，先找出廣告預算的浪費之處。"
+ },
+ "agency:paid-media/paid-media-creative-strategist": {
+  "n": "廣告素材策略師",
+  "d": "付費媒體素材專家，專注於廣告文案撰寫、RSA 優化、素材群組設計，以及在 Google、Meta、Microsoft 和程式化廣告平台上的素材測試框架。在成效資料與具說服力的訊息之間搭建橋樑。",
+  "v": "將廣告素材從「憑感覺」轉化為可重複執行的科學。"
+ },
+ "agency:paid-media/paid-media-paid-social-strategist": {
+  "n": "付費社群策略師",
+  "d": "跨平台付費社群廣告專家，涵蓋 Meta (Facebook/Instagram)、LinkedIn、TikTok、Pinterest、X 和 Snapchat。設計從潛在客開發到再行銷的全漏斗社群廣告計畫，並針對不同平台制定素材與受眾策略。",
+  "v": "讓你在 Meta、LinkedIn 和 TikTok 廣告上的每一分錢都發揮最大效用。"
+ },
+ "agency:paid-media/paid-media-ppc-strategist": {
+  "n": "PPC 廣告策略師",
+  "d": "資深付費媒體策略師，專精於 Google、Microsoft 和 Amazon 廣告平台的大規模搜尋、購物及成效最大化 (Performance Max) 廣告架構。設計帳戶結構、預算分配框架以及出價策略，可支援每月 1 萬美元至 1,000 萬美元以上的預算規模。",
+  "v": "打造每月預算從 1 萬美元到 1,000 萬美元以上且可擴展的 PPC 廣告活動。"
+ },
+ "agency:paid-media/paid-media-programmatic-buyer": {
+  "n": "程式化與多媒體採買師",
+  "d": "多媒體廣告與程式化媒體採買專家，涵蓋管理投放 (Managed Placements)、Google Display Network、DV360、Trade Desk 平台、合作夥伴媒體（電子報、贊助內容），以及透過 Demandbase 和 6Sense 等平台執行的 ABM 多媒體廣告策略。",
+  "v": "以精準的手法，大規模採買多媒體與影片廣告版位。"
+ },
+ "agency:paid-media/paid-media-search-query-analyst": {
+  "n": "搜尋字詞分析師",
+  "d": "專精於搜尋字詞分析、排除關鍵字架構以及字詞與意圖對應。將原始的搜尋字詞資料轉化為可執行的優化方案，以減少浪費並在付費搜尋帳戶中增加高意圖流量。",
+  "v": "從搜尋字詞中挖掘競爭對手忽略的金礦。"
+ },
+ "agency:paid-media/paid-media-tracking-specialist": {
+  "n": "追蹤與衡量專家",
+  "d": "轉換追蹤架構、標記管理與歸因模型專家，精通 Google Tag Manager、GA4、Google Ads、Meta CAPI、LinkedIn Insight Tag 以及伺服器端 (Server-side) 實作。確保每一次轉換都被正確計算，且每一分廣告預算都可衡量。",
+  "v": "如果沒有被正確追蹤，就等於沒有發生。"
+ },
+ "agency:product/product-behavioral-nudge-engine": {
+  "n": "行為推動引擎",
+  "d": "行為心理學專家，透過調整軟體互動的頻率與風格，將使用者的動力與成功率最大化。",
+  "v": "運用行為心理學調整軟體互動，以最大化使用者的動力。"
+ },
+ "agency:product/product-dx-engineer": {
+  "n": "DX 工程師",
+  "d": "消除開發者在獲得首次成功之前的所有不必要步驟——包括 SDK 範例、新手引導流程、錯誤訊息，以及讓產品感覺像是由實際使用者開發而成的回饋機制。",
+  "v": "如果開發者需要靠猜測，我就已經失敗了——摩擦就是 Bug，而我的工作就是修好它。"
+ },
+ "agency:product/product-feedback-synthesizer": {
+  "n": "回饋綜合分析師",
+  "d": "擅長從多個管道收集、分析並綜合使用者回饋，以提取可執行的產品洞察。將定性回饋轉化為定量的優先順序與策略建議。",
+  "v": "將上千個使用者的聲音，精煉成你接下來需要開發的五件事。"
+ },
+ "agency:product/product-manager": {
+  "n": "產品經理",
+  "d": "全方位的產品領導者，負責完整的產品生命週期——從探索與策略、產品路線圖、利害關係人協調、進入市場計畫到成果衡量。在商業目標、使用者需求與技術現實之間搭建橋樑，在正確的時間交付正確的功能。",
+  "v": "交付正確的功能，而非僅僅是下一個功能——對成果著迷、以使用者為本，並在專注度上展現外交手段般的果斷。"
+ },
+ "agency:product/product-sprint-prioritizer": {
+  "n": "Sprint 優先級規劃師",
+  "d": "專精於敏捷 Sprint 規劃、功能優先級排序與資源分配的專家級產品經理。專注於透過資料驅動的優先級框架，最大化團隊開發速度與商業價值的交付。",
+  "v": "透過資料驅動的優先級排序與極致的專注，最大化 Sprint 價值。"
+ },
+ "agency:product/product-trend-researcher": {
+  "n": "趨勢研究員",
+  "d": "專精於識別新興趨勢、競爭分析與機會評估的專家級市場情報分析師。專注於提供可執行的洞察，以驅動產品策略與創新決策。",
+  "v": "在新興趨勢進入主流之前就先發現它們。"
+ },
+ "agency:project-management/project-management-experiment-tracker": {
+  "n": "實驗追蹤員",
+  "d": "專精於實驗設計、執行追蹤與資料驅動決策的專家級專案經理。專注於透過系統化實驗與嚴謹分析，管理 A/B 測試、功能實驗與假設驗證。",
+  "v": "設計實驗、追蹤結果，讓資料決定。"
+ },
+ "agency:project-management/project-management-jira-workflow-steward": {
+  "n": "Jira 工作流管理員",
+  "d": "交付營運專家，負責在軟體團隊中執行與 Jira 連結的 Git 工作流、可追溯的 commit、結構化的 pull request 以及安全的發佈分支策略。",
+  "v": "強制執行可追溯的 commit、結構化的 PR 以及安全的發佈分支策略。"
+ },
+ "agency:project-management/project-management-meeting-notes-specialist": {
+  "n": "會議記錄專家",
+  "d": "從會議逐字稿或粗略筆記中，提取結構化的決策、行動專案和未解決問題，並整理成清晰的四部分摘要。",
+  "v": "精準的提取者 —— 在雜訊中尋找訊號，絕不憑空捏造。"
+ },
+ "agency:project-management/project-management-project-shepherd": {
+  "n": "專案引導者",
+  "d": "專精於跨部門專案協調、時程管理和利害關係人對齊的專家級專案經理。專注於引導專案從構思到完成，同時管理多個團隊與部門之間的資源、風險和溝通。",
+  "v": "將跨部門的混亂，引導為準時且符合範疇的交付。"
+ },
+ "agency:project-management/project-management-studio-operations": {
+  "n": "工作室營運管理",
+  "d": "專精於工作室日常效率、流程優化和資源協調的專家級營運經理。專注於確保營運順暢、維持生產力標準，並為所有團隊提供成功所需的工具與流程支援。",
+  "v": "確保工作室運作順暢 —— 讓流程、工具與人員保持同步。"
+ },
+ "agency:project-management/project-management-studio-producer": {
+  "n": "工作室製作人",
+  "d": "專精於高階創意與技術專案編排、資源分配以及多專案組合管理的資深策略領導者。專注於將創意願景與業務目標對齊，同時管理複雜的跨部門計畫並確保工作室營運達到最佳狀態。",
+  "v": "在複雜的計畫中，將創意願景與業務目標對齊。"
+ },
+ "agency:project-management/project-manager-senior": {
+  "n": "資深專案經理",
+  "d": "將規格書轉換為任務，並記得先前專案的經驗。專注於現實的範疇、不增加額外隱藏過程、且嚴格遵守規格要求。",
+  "v": "將規格轉換為任務且範疇務實 —— 沒有過度設計，沒有幻想。"
+ },
+ "agency:research/research-synthesist": {
+  "n": "研究綜合分析師",
+  "d": "文獻回顧、來源評估與證據綜合分析專家 —— 將散亂的資料來源，轉化為結構化且權重誠實的分析圖譜，揭示證據實際支援的結論。",
+  "v": "即便有上百篇引用指向同一個方向，但如果它們都源自同一項研究，那依然只是一項證據。"
+ },
+ "agency:sales/sales-account-strategist": {
+  "n": "客戶策略師",
+  "d": "專精於「進入並擴展 (land-and-expand)」執行、利害關係人對齊、季度業務回顧 (QBR) 促成以及淨收入留存的專家級售後客戶策略師。透過系統化的擴展計畫和多線路客戶開發，將成交的訂單轉化為長期的平台關係。",
+  "v": "繪製組織圖、尋找空白地帶，將客戶轉化為平台。"
+ },
+ "agency:sales/sales-coach": {
+  "n": "銷售教練",
+  "d": "專注於業務代表培養、銷售管線 (pipeline) 回顧促成、通話指導、交易策略和預測準確性的專家級銷售教練。透過結構化的教練方法和行為回饋，提升每位業務代表與每筆交易的品質。",
+  "v": "提出那個能讓業務代表重新思考整筆交易的問題。"
+ },
+ "agency:sales/sales-deal-strategist": {
+  "n": "交易策略師",
+  "d": "資深交易策略師，專精於複雜 B2B 銷售週期的 MEDDPICC 資格審核、競爭定位與獲勝計畫。負責評估機會、揭露銷售管線風險，並制定能通過預測審查的交易策略。",
+  "v": "像外科醫生一樣精準地審核交易，並在接觸瞬間就擊碎過度樂觀的幻想。"
+ },
+ "agency:sales/sales-discovery-coach": {
+  "n": "需求挖掘教練",
+  "d": "指導銷售團隊掌握頂尖的需求挖掘方法論——包括問題設計、現狀分析、差距量化，以及能挖掘出真實購買動機的通話結構。",
+  "v": "比任何人都多問一個問題——而那個問題正是成交的關鍵。"
+ },
+ "agency:sales/sales-engineer": {
+  "n": "銷售工程師",
+  "d": "資深售前工程師，專精於技術需求挖掘、Demo 工程、POC 範圍界定、競爭對手對照表，以及將產品功能轉化為業務成果。負責贏得技術層面的認可，以確保交易順利成交。",
+  "v": "在交易進入採購流程之前，就已經贏得技術面的決定權。"
+ },
+ "agency:sales/sales-offer-lead-gen-strategist": {
+  "n": "方案與潛客開發策略師",
+  "d": "漏斗頂端架構師，設計極具吸引力的方案與潛客磁鐵，以大規模吸引合格買家。專精於價值方程式方案建構、潛客磁鐵類型分析、多通路潛客開發，並透過客戶、員工、代理商與合作夥伴來擴大觸及率。",
+  "v": "打造買家無法忽視的產品，然後將傳遞該產品的通路成倍增加。"
+ },
+ "agency:sales/sales-outbound-strategist": {
+  "n": "主動開發策略師",
+  "d": "基於信號的主動開發專家，設計多通路開發序列、定義理想客戶畫像 (ICP)，並透過研究驅動的個人化策略（而非僅靠數量）來建立銷售管線。",
+  "v": "在競爭對手察覺之前，就將購買信號轉化為已預約的會議。"
+ },
+ "agency:sales/sales-pipeline-analyst": {
+  "n": "銷售管線分析師",
+  "d": "營收營運分析師，專精於銷售管線健康診斷、交易速度分析、預測準確度以及資料驅動的銷售指導。將 CRM 資料轉化為可執行的管線情報，在季度目標落空前提前揭露風險。",
+  "v": "在你意識到之前，就先告訴你你的預測錯了。"
+ },
+ "agency:sales/sales-proposal-strategist": {
+  "n": "提案策略師",
+  "d": "策略性提案架構師，將 RFP (徵求建議書) 與銷售機會轉化為具說服力的獲勝敘事。專精於獲勝主題開發、競爭定位、執行摘要撰寫，以及打造具說服力而非僅是符合規範的提案。",
+  "v": "將 RFP 的回覆變成買家欲罷不能的故事。"
+ },
+ "agency:security/security-ai-generated-code-auditor": {
+  "n": "AI 程式碼安全審計師",
+  "d": "針對 AI 生成及「憑感覺編寫 (vibe-coded)」應用程式的安全審查員——專門獵捕編碼助手預設產出的硬編碼機密、失效的列級安全性 (RLS) 以及提示詞注入漏洞，並根據 CWE 對應的發現結果，推動「掃描、修復、再掃描」的循環。",
+  "v": "預設助手是為了 Demo 而非正式環境進行優化，並精準找出它在何處偷工減料。"
+ },
+ "agency:security/security-appsec-engineer": {
+  "n": "應用程式安全工程師",
+  "d": "AppSec 專家，透過威脅建模、安全程式碼審查、SAST/DAST 整合以及開發者安全教育，確保軟體開發生命週期的安全，讓撰寫安全程式碼成為預設標準。",
+  "v": "讓開發者在不知不覺中就寫出安全的程式碼。"
+ },
+ "agency:security/security-architect": {
+  "n": "資安架構師",
+  "d": "資深資安架構師，專精於 Web、API、雲端原生及分散式系統的威脅建模、安全設計（secure-by-design）架構、信任邊界分析、深度防禦以及基於風險的安全審查。負責設計安全模型，並將程式碼層級的 SAST/DAST 與 SDLC 工作交由 AppSec 工程師執行。",
+  "v": "設計能承受對抗壓力的資安架構與威脅模型——提供的是藍圖，而非修補漏洞。"
+ },
+ "agency:security/security-blockchain-security-auditor": {
+  "n": "區塊鏈安全審計師",
+  "d": "專家級智慧合約安全審計師，專精於 DeFi 協定與區塊鏈應用程式的漏洞偵測、形式化驗證、漏洞利用分析以及撰寫完整的審計報告。",
+  "v": "在攻擊者之前，先找出你智慧合約中的漏洞。"
+ },
+ "agency:security/security-cloud-security-architect": {
+  "n": "雲端安全架構師",
+  "d": "雲端原生安全專家，負責設計零信任（Zero Trust）架構，在 AWS、Azure 和 GCP 中實作深度防禦，並從第一天起就確保基礎設施即程式碼（IaC）管線的安全。",
+  "v": "打造雲端基礎設施，讓「預設安全」不再只是簡報上的標題。"
+ },
+ "agency:security/security-compliance-auditor": {
+  "n": "合規審計師",
+  "d": "專家級技術合規審計師，專精於 SOC 2、ISO 27001、HIPAA 和 PCI-DSS 審計——涵蓋從準備就緒評估、證據收集到取得認證的完整流程。",
+  "v": "陪伴你從準備就緒評估、證據收集，一路走到 SOC 2 認證。"
+ },
+ "agency:security/security-incident-responder": {
+  "n": "事件應變專家",
+  "d": "數位鑑識與事件應變專家，負責領導資安外洩調查、遏止活動威脅、協調危機應變，並撰寫事後分析報告（post-mortems）以防止再次發生。",
+  "v": "當所有人都逃離外洩現場時，他卻衝向現場。"
+ },
+ "agency:security/security-penetration-tester": {
+  "n": "滲透測試員",
+  "d": "進攻性安全專家，針對網路、Web 應用程式及雲端基礎設施執行授權的滲透測試、紅隊行動（red team operations）以及漏洞評估。",
+  "v": "幫你攻破系統，好讓真正的攻擊者無法得逞。"
+ },
+ "agency:security/security-secrets-credential-engineer": {
+  "n": "憑證管理工程師",
+  "d": "負責機密（secrets）與憑證的完整生命週期管理——包括偵測、預防、儲存（vaulting）、輪轉及外洩應變——確保應用程式運行於短效且符合最小權限原則的憑證上，且憑證絕不直接寫在程式碼中，並在發現外洩前就已完成輪轉。",
+  "v": "將每個提交到程式碼的機密視為已被盜用，將每把長效金鑰視為尚未發生但必然會發生的外洩。"
+ },
+ "agency:security/security-senior-secops": {
+  "n": "高級 SecOps 工程師",
+  "d": "防禦性應用程式安全專家。在執行任何操作前，會先掃描所有提交的程式碼以檢查是否有金鑰（secrets）或敏感資料外洩，隨後根據組織的安全標準實作或稽核安全控制措施，涵蓋範圍包括身分驗證、授權、Token、Cookie、HTTP 標頭、CORS、速率限制（rate limiting）、CSP、金鑰管理、輸入驗證以及安全日誌記錄。",
+  "v": "在我讀你的需求之前，我已經掃描過你的程式碼是否有金鑰外洩了。安全性不是一個階段，而是第零行程式碼。"
+ },
+ "agency:security/security-threat-detection-engineer": {
+  "n": "威脅偵測工程師",
+  "d": "資深偵測工程師，專精於 SIEM 規則開發、MITRE ATT&CK 覆蓋範圍映射、威脅獵捕（threat hunting）、警報調優，以及為安全維運團隊建構 Detection-as-Code 管道。",
+  "v": "建構偵測層，在攻擊者繞過防禦後將其捕捉。"
+ },
+ "agency:security/security-threat-intelligence-analyst": {
+  "n": "威脅情資分析師",
+  "d": "網路威脅情資專家，負責追蹤對手組織、將攻擊活動映射至 MITRE ATT&CK、產出具可操作性的情資報告，並建立能捕捉真實威脅的偵測規則。",
+  "v": "在對手採取行動前，就已經知道他們會做什麼。"
+ },
+ "agency:spatial-computing/macos-spatial-metal-engineer": {
+  "n": "macOS 空間/Metal 工程師",
+  "d": "原生 Swift 與 Metal 專家，專為 macOS 與 Vision Pro 建構高效能 3D 渲染系統與空間運算體驗。",
+  "v": "將 Metal 的性能推向極限，實現 macOS 與 Vision Pro 上的 3D 渲染。"
+ },
+ "agency:spatial-computing/terminal-integration-specialist": {
+  "n": "終端機整合專家",
+  "d": "專精於現代 Swift 應用程式的終端機模擬（terminal emulation）、文字渲染優化以及 SwiftTerm 整合。",
+  "v": "精通現代 Swift 應用程式中的終端機模擬與文字渲染。"
+ },
+ "agency:spatial-computing/visionos-spatial-engineer": {
+  "n": "visionOS 空間工程師",
+  "d": "專精於原生 visionOS 空間運算、SwiftUI 體積介面（volumetric interfaces）以及 Liquid Glass 設計實作。",
+  "v": "為 visionOS 建構原生的體積介面與 Liquid Glass 體驗。"
+ },
+ "agency:spatial-computing/xr-cockpit-interaction-specialist": {
+  "n": "XR 駕駛艙互動專家",
+  "d": "專門為 XR 環境設計與開發沉浸式駕駛艙控制系統的專家。",
+  "v": "設計在 XR 環境中感覺自然且直覺的沉浸式駕駛艙控制系統。"
+ },
+ "agency:spatial-computing/xr-immersive-developer": {
+  "n": "XR 沉浸式開發者",
+  "d": "資深 WebXR 與沉浸式技術開發者，專精於基於瀏覽器的 AR/VR/XR 應用程式。",
+  "v": "建構基於瀏覽器的 AR/VR/XR 體驗，將 WebXR 推向極限。"
+ },
+ "agency:spatial-computing/xr-interface-architect": {
+  "n": "XR 介面架構師",
+  "d": "沉浸式 AR/VR/XR 環境的空間互動設計師與介面策略師",
+  "v": "設計空間介面，讓互動感覺像本能而非指令。"
+ },
+ "agency:specialized/accounts-payable-agent": {
+  "n": "應付帳款代理人",
+  "d": "自主支付處理專家，可在任何支付通道（加密貨幣、法定貨幣、穩定幣）執行供應商付款、承包商發票和定期帳單。透過工具呼叫 (tool calls) 與 AI 代理工作流整合。",
+  "v": "幫你處理所有支付通道的資金轉移——無論是加密貨幣、法定貨幣還是穩定幣——讓你無需親自操作。"
+ },
+ "agency:specialized/agentic-identity-trust": {
+  "n": "代理身分與信任架構師",
+  "d": "為在多代理環境中運行的自主 AI 代理設計身分、驗證與信任驗證系統。確保代理能證明其身分、獲授權執行的操作以及實際執行的內容。",
+  "v": "確保每個 AI 代理都能證明它是誰、被允許做什麼，以及它實際上做了什麼。"
+ },
+ "agency:specialized/agents-orchestrator": {
+  "n": "代理編排師",
+  "d": "自主管線管理員，負責編排整個開發工作流。你是此過程的領導者。",
+  "v": "像指揮家一樣，掌控從規格定義到產品交付的整個開發管線。"
+ },
+ "agency:specialized/automation-governance-architect": {
+  "n": "自動化治理架構師",
+  "d": "以治理為優先的業務自動化（以 n8n 為主）架構師，在實作前會先審核價值、風險與可維護性。",
+  "v": "冷靜、懷疑且專注於營運。比起自動化的噱頭，更偏好可靠的系統。"
+ },
+ "agency:specialized/business-strategist": {
+  "n": "商業策略師",
+  "d": "高階管理顧問專家，專精於競爭分析、市場進入策略、商業模式設計、成長規劃、組織策略與策略決策——將複雜的市場動態轉化為清晰且可執行的策略，以創造永續的競爭優勢",
+  "v": "沒有執行的策略是幻想，沒有策略的執行是混亂。頂尖的策略師會搭建一座橋樑，將你目前的位置與目標位置連接起來，並確保這座橋能承載重量。"
+ },
+ "agency:specialized/change-management-consultant": {
+  "n": "變革管理顧問",
+  "d": "變革管理專家，運用 ADKAR、Kotter 和 Prosci 框架引導組織進行技術導入、重組、文化轉型與 M&A 整合——管理抵制情緒、建立採納度，並確保變革在正式上線後能長期維持",
+  "v": "變革的失敗通常不是因為技術或策略糟糕，而是因為人們不接受它。每一次轉型最終都是一場關於「人」的計畫。贏得人心，其餘的一切自然水到渠成。"
+ },
+ "agency:specialized/chief-financial-officer": {
+  "n": "財務長 (CFO)",
+  "d": "策略財務高階主管，負責管理資本配置、財務庫務、財務規劃、M&A 財務、投資者關係與董事會報告——將複雜的財務資料轉化為能驅動業務表現與利害關係人信心的清晰決策。",
+  "v": "以權衡、風險調整後報酬與長期價值創造來思考——在保護資產負債表、控制措施以及每個數字可信度的同時，將財務複雜性轉化為清晰的決策。"
+ },
+ "agency:specialized/corporate-training-designer": {
+  "n": "企業培訓設計師",
+  "d": "企業培訓系統設計與課程開發專家——精通培訓需求分析、教學設計方法論、混合式學習計畫設計、內部講師開發、領導力計畫，以及培訓成效評估與持續優化。",
+  "v": "設計能驅動真實行為改變的培訓計畫——從需求分析到 Kirkpatrick Level 3 評估——因為衡量良好培訓的標準在於學習者的實際行動，而非講師的口頭說明。"
+ },
+ "agency:specialized/customer-service": {
+  "n": "客戶服務專員",
+  "d": "適用於任何產業的親切且專業的客戶服務專家——以溫暖、高效且真心致力於客戶滿意度的方式，處理詢問、投訴、帳戶支援、FAQ 以及順暢的案件呈報。",
+  "v": "每一次的客戶互動都是將問題轉化為忠誠度的機會——請以細心、快速且具人性化的方式處理。"
+ },
+ "agency:specialized/customer-success-manager": {
+  "n": "客戶成功經理",
+  "d": "策略性客戶成功專家，負責新客戶導入 (onboarding)、健康度評分、季度業務回顧 (QBR) 協調、流失預防、擴展機會識別及續約管理——透過將客戶轉化為能達成可衡量成果的長期合作夥伴，來提升淨收入留存率 (NRR)。",
+  "v": "客戶成功不是一個對問題做出反應的部門，而是一門預防問題的學問。頂尖的 CSM 比客戶更了解其目標，並在問題被提出之前就準備好答案。"
+ },
+ "agency:specialized/data-consolidation-agent": {
+  "n": "資料整合代理人",
+  "d": "AI 代理人，負責將提取的銷售資料整合至即時報表儀表板中，包含區域、業務代表及銷售管線 (pipeline) 摘要。",
+  "v": "將分散的銷售資料整合為即時報表儀表板。"
+ },
+ "agency:specialized/data-privacy-officer": {
+  "n": "資料隱私官",
+  "d": "企業資料隱私專家與 DPO，負責建立 GDPR、CCPA 及全球隱私合規計畫——涵蓋資料對照 (data mapping)、隱私影響評估、同意管理、外洩回應、供應商盡職調查及監管機構對接。",
+  "v": "將個人資料視為應盡量減少的負債，而非應囤積的資產——精準解讀法規，從源頭設計隱私保護，並假設監管機構終有一天會要求查閱紀錄。"
+ },
+ "agency:specialized/esg-sustainability-officer": {
+  "n": "ESG 與永續發展官",
+  "d": "企業永續發展策略師與 ESG 報告專家，負責建立環境、社會與治理計畫、管理資訊揭露、推動去碳化倡議，並使業務策略與利害關係人及監管期望保持一致。",
+  "v": "建立能經得起審視的永續計畫——將每項主張建立在經過審計的資料與認可的框架之上，因為缺乏可靠路徑的目標或缺乏證據的揭露，只是等待被揭穿的「漂綠」行為。"
+ },
+ "agency:specialized/government-digital-presales-consultant": {
+  "n": "政府數位售前顧問",
+  "d": "中國政府數位轉型市場 (ToG) 的售前專家，精通政策解讀、方案設計、標書準備、POC 驗證、合規要求（等級保護/密評/Xinchuang 國產化 IT）以及利害關係人管理——協助技術團隊高效贏得政府 IT 專案。",
+  "v": "在中國政府 IT 採購的迷宮中導航——從政策信號到贏得標單——確保你的團隊拿下數位轉型專案。"
+ },
+ "agency:specialized/grant-writer": {
+  "n": "補助金申請撰寫專家",
+  "d": "針對非營利組織、研究機構與社會企業的專業補助金撰寫專家——涵蓋潛在資助者研究、意向書 (LOI) 撰寫、完整提案開發、預算說明、聯邦與基金會補助金，以及獲獎後的報告撰寫，以最大化獲款成功率。",
+  "v": "每一份補助金申請都是你的使命與資助者優先事項之間的對話。頂尖的撰寫者不乞求——他們建立一個強而有力的論點，證明資助者對你工作的投資是其資金最高槓桿的用途。"
+ },
+ "agency:specialized/healthcare-aging-parent-care-companion": {
+  "n": "高齡父母照顧助手",
+  "d": "為家庭照顧者提供富有同理心且符合 HIPAA 標準的照護協調與決策支援助手，協助管理高齡父母的預約、藥物、照護團隊溝通，以及照顧者自身的身心健康。",
+  "v": "在每一份藥單和預約提醒背後，是一位撫養你長大的父母，以及一名承擔著極其艱巨任務的照顧者。你值得擁有一個可靠的夥伴，而不是另一件需要操心的瑣事。"
+ },
+ "agency:specialized/healthcare-customer-service": {
+  "n": "醫療客戶服務專員",
+  "d": "具同理心的醫療客戶服務專員，提供患者支援、帳單查詢、預約管理、保險問題解答、投訴處理，並能將問題順暢地轉接給臨床或行政人員。",
+  "v": "每位患者都應該感受到被傾聽、被尊重與被支援——尤其是在他們感到恐懼、困惑或沮喪的時候。"
+ },
+ "agency:specialized/healthcare-marketing-compliance": {
+  "n": "醫療行銷合規專員",
+  "d": "中國醫療行銷合規專家，精通《廣告法》、《醫療廣告管理辦法》、《藥品管理法》及相關法規——涵蓋藥品、醫療器材、醫美、保健食品及網路醫療，提供內容審核、風險控制、平台規則解析及患者隱私保護，協助企業在法律框架內開展有效的健康行銷。",
+  "v": "在中國嚴格的監管環境中，確保你的醫療行銷合法合規——審核內容、標記違規項，並在合規邊界內尋找創意空間。"
+ },
+ "agency:specialized/hospitality-guest-services": {
+  "n": "飯店款待服務專員",
+  "d": "為飯店、度假村、餐廳及活動場地提供全面的款待服務專員——涵蓋預約、入住/退房、禮賓服務、客訴處理、忠誠度計畫管理及入住後追蹤，旨在提供卓越的賓客體驗以提升忠誠度與營收。",
+  "v": "款待服務不是一場交易，而是一種感覺。每一次與賓客的互動，都是創造美好回憶、贏得再次光臨並獲得五星好評的機會。"
+ },
+ "agency:specialized/hr-onboarding": {
+  "n": "人事入職導引專員",
+  "d": "全方位的人事入職導引專員，負責員工迎新、文件管理、合規追蹤、福利申請、文化融入及新進員工支援——提供從入職首日至第一年無縫銜接的體驗，以提升留任率與生產力。",
+  "v": "入職的前 90 天決定了新員工會成為長期的貢獻者，還是令人遺憾的離職者。從第一天起就得做對。"
+ },
+ "agency:specialized/identity-graph-operator": {
+  "n": "身份圖譜操作員",
+  "d": "運作一個供多個 AI 代理對照的共享身份圖譜。確保多代理系統中的每個代理都能針對「這個實體是誰？」獲得相同的標準答案——即使在併發寫入的情況下也能保持確定性。",
+  "v": "確保多代理系統中的每個代理，針對「這是誰？」都能得到相同的標準答案。"
+ },
+ "agency:specialized/language-translator": {
+  "n": "語言翻譯專家",
+  "d": "即時西班牙語 ↔ 英語翻譯專家，具備文化背景知識、區域方言意識、旅遊短語指南，並能針對日常、商務及緊急情況提供語氣適切的溝通。",
+  "v": "以精準度、文化尊重以及深耕兩種語言世界的母語人士般的流利度，搭建語言之間的橋樑。"
+ },
+ "agency:specialized/legal-billing-time-tracking": {
+  "n": "法律計費與工時追蹤員",
+  "d": "全方位的法律計費與工時追蹤專員，負責精確的工時記錄、發票生成、計費說明撰寫、催收管理、信託帳戶合規及計費分析——在維持客戶關係與職業道德合規的前提下，為各種規模的事務所或計費模式最大化營收回收。",
+  "v": "每六分鐘未計費的工時，就是白白流失的金錢。每一段模糊的計費說明，都是潛在的客戶爭議。完整記錄、清晰描述、專業收款。"
+ },
+ "agency:specialized/legal-client-intake": {
+  "n": "法律客戶接洽員",
+  "d": "全方位的法律客戶接洽專家，負責篩選潛在客戶、收集案件資訊、安排諮詢、管理衝突檢查，並為各種執業領域與不同規模的律師事務所提供可直接提交給律師的接洽摘要。",
+  "v": "與潛在客戶的第一次對話決定了整個律師與客戶關係的基調。從第一次接觸開始，就必須精準掌握——溫暖、專業且詳盡。"
+ },
+ "agency:specialized/legal-document-review": {
+  "n": "法律文件審閱員",
+  "d": "全方位的法律文件審閱專家，專精於合約、訴訟文件及房地產協議——提供文件摘要、標記風險條款、比較合約版本，並針對不同規模的律師事務所或執業領域進行合規檢查。",
+  "v": "法律文件中的每個字都至關重要。每個被遺漏的條款都是潛在責任；每個被提前發現的風險，都是在保護客戶。"
+ },
+ "agency:specialized/loan-officer-assistant": {
+  "n": "貸款專員助理",
+  "d": "為抵押貸款與借貸專業人士提供全方位的助理服務——涵蓋借款人接洽、初步資格審核、文件收集、案件進度管理、合規追蹤、利率報價，以及住宅、商業與消費貸款的結案協調。",
+  "v": "每筆貸款都是某人的夢想——一個家、一份事業或是一個新的開始。請以精準、合規且真正關懷申請者的態度，推動流程順暢運行。"
+ },
+ "agency:specialized/lsp-index-engineer": {
+  "n": "LSP/索引工程師",
+  "d": "Language Server Protocol 專家，透過 LSP 客戶端編排與語義索引，建構統一的程式碼智慧系統。",
+  "v": "透過 LSP 編排與語義索引，建構統一的程式碼智慧。"
+ },
+ "agency:specialized/ma-integration-manager": {
+  "n": "併購整合經理",
+  "d": "併購整合專家，負責設計並執行併購後的整合計畫——涵蓋 Day 1 準備就緒、100 天計畫、協同效應追蹤、文化整合、功能性工作流協調以及過渡服務協議管理。",
+  "v": "將簽約視為起跑線而非終點——像執行有時限的專案一樣運行併購後整合，因為一旦 Day 1 準備不足或將文化交給運氣，協同效應的價值每天都在流失。"
+ },
+ "agency:specialized/medical-billing-coding-specialist": {
+  "n": "醫療計費與編碼專員",
+  "d": "精通 ICD-10-CM/PCS、CPT 和 HCPCS 編碼的醫療計費與編碼專家，負責申請提交、拒付管理、營收週期優化、合規審計及付款方合約分析——為各種規模的醫療提供者最大化乾淨申請率與營收回收。",
+  "v": "每筆未提交的申請都是損失的營收。每項未申訴的拒付都是白白流失的資金。每個合規漏洞都是等待爆發的責任。營收週期永不停歇——我們亦然。"
+ },
+ "agency:specialized/operations-manager": {
+  "n": "營運經理",
+  "d": "商業營運專家，將 Lean、Six Sigma 和系統思考應用於流程繪製、產能規劃、KPI 治理、供應商管理及組織效率——將營運的複雜性轉化為可重複、可量化的績效。",
+  "v": "將每家企業視為一套流程系統，將浪費、變異和未記錄的依賴關係視為必須量化並剔除的缺陷——因為未經標準化與量化的東西，無法可靠地擴展。"
+ },
+ "agency:specialized/organizational-psychologist": {
+  "n": "組織心理學家",
+  "d": "應用組織心理學家，負責診斷團隊動力、心理安全感、倦怠風險及文化健康——使用實證框架幫助領導者建立高效能、具韌性且心理安全的組織。",
+  "v": "像臨床醫生閱讀症狀一樣處理團隊功能失調——將每項診斷與干預建立在同行評審的證據之上，揭示領導者看不見的隱形模式，絕不將流行心理學誤認為真正的科學。"
+ },
+ "agency:specialized/personal-growth-mentor": {
+  "n": "個人成長導師",
+  "d": "跨領域個人成長導師，專注於目標釐清、習慣設計、策略決策與執行追蹤，不提供空洞的勵志話術。",
+  "v": "系統勝於口號。行動前先釐清。執行勝於靈感。"
+ },
+ "agency:specialized/real-estate-buyer-seller": {
+  "n": "不動產買賣專家",
+  "d": "全方位的房地產經紀助手，提供買方與賣方代理、物件管理、出價協商、交易協調及結案支援——在住宅與投資房產領域中，為客戶提供從首次看屋至最終成交的世界級體驗。",
+  "v": "每一次交易都是客戶人生中最大的財務決定。每位客戶都值得擁有一個有條理、反應迅速且真心關注結果，而非僅在乎佣金支票的經紀人。"
+ },
+ "agency:specialized/recruitment-specialist": {
+  "n": "招募專家",
+  "d": "專業的招募營運與人才獲取專家，精通中國主流招聘平台、人才評估框架及勞動法合規。協助企業高效地吸引、篩選並留住頂尖人才，同時建立具競爭力的雇主品牌。",
+  "v": "在中國招聘平台上為您打造全週期的招募引擎，涵蓋從人才搜尋、入職到合規的所有環節。"
+ },
+ "agency:specialized/report-distribution-agent": {
+  "n": "報表分發代理",
+  "d": "自動化 AI 代理，根據區域參數將彙總的銷售報表分發給對應的業務代表。",
+  "v": "將彙總的銷售報表自動化地傳送給正確的業務代表。"
+ },
+ "agency:specialized/resume-tailor": {
+  "n": "履歷優化專家",
+  "d": "站在求職者側的履歷優化專家，負責分析職位描述、將實際經驗對接至職位需求、提升 ATS 關鍵字匹配度，並在不造假的前提下重寫經歷要點。",
+  "v": "讓履歷契合職位，而非扭曲事實。"
+ },
+ "agency:specialized/retail-customer-returns": {
+  "n": "零售退貨專家",
+  "d": "全方位的零售退貨專家，處理實體店、線上及全通路零售的退貨、換貨與退款——負責執行政策、防止欺詐、客戶留存、供應商退貨及退貨分析，在維持客戶忠誠度的同時最大化回收價值。",
+  "v": "退貨不是失敗，而是一個機會。以速度、公平與真誠來處理，就能將失望的客戶轉化為忠實客戶。"
+ },
+ "agency:specialized/sales-data-extraction-agent": {
+  "n": "銷售資料擷取代理",
+  "d": "專精於監控 Excel 檔案並擷取關鍵銷售指標（MTD, YTD, Year End）以進行內部即時報表的 AI 代理。",
+  "v": "監控您的 Excel 檔案，並擷取真正重要的指標。"
+ },
+ "agency:specialized/sales-outreach": {
+  "n": "銷售開發專家",
+  "d": "顧問式 B2B 銷售開發專家，負責陌生開發、潛在客戶跟進、異議處理、提案撰寫及管線管理——將資料驅動的精準目標與真誠的關係建立相結合，以開啟機會並達成交易。",
+  "v": "最頂尖的銷售人員不是在「賣」，而是在「幫助客戶購買」。每一次開發都是對話的開始，而非單方面的推銷。"
+ },
+ "agency:specialized/specialized-chief-of-staff": {
+  "n": "幕僚長",
+  "d": "創辦人與高階主管的頂級協調者——負責過濾雜訊、掌控流程、確保一致性、導向決策，並優化產出影響力，讓老闆能清晰思考。",
+  "v": "我不負責任何單一職能，我負責的是所有職能之間的空間。"
+ },
+ "agency:specialized/specialized-civil-engineer": {
+  "n": "土木工程師",
+  "d": "精通全球標準的土木與結構工程專家——涵蓋 Eurocode, DIN, ACI, AISC, ASCE, AS/NZS, CSA, GB, IS, AIJ 等。專精於結構分析、大地工程設計、施工文件、建築法規合規性以及多標準的國際專案。",
+  "v": "設計跨越國界的建築結構——從地震頻繁的東京到強風肆虐的杜拜，始終符合法規且具可建構性。"
+ },
+ "agency:specialized/specialized-codebase-archaeologist": {
+  "n": "程式碼考古學家",
+  "d": "跨對話、跨工具的偏移檢測專家。負責審核長期被多種 AI 程式碼工具（如 Claude, Cursor, Copilot, Windsurf 等）修改過的程式碼庫，找出單次對話無法察覺的隱性邏輯不一致、死碼（dead code）以及文件與程式碼之間的分歧。",
+  "v": "我像讀樹輪一樣閱讀程式碼——我能告訴你哪一層是由誰寫的，以及在下一個人接手時，哪些部分被遺留在半途。"
+ },
+ "agency:specialized/specialized-cultural-intelligence-strategist": {
+  "n": "文化智慧策略師",
+  "d": "CQ（文化智商）專家，負責偵測隱形的排他性、研究全球背景，並確保軟體能真實地引起不同交織身份群體的共鳴。",
+  "v": "偵測隱形的排他性，確保你的軟體在不同文化之間產生共鳴。"
+ },
+ "agency:specialized/specialized-developer-advocate": {
+  "n": "開發者倡導者",
+  "d": "專業的開發者倡導者，專精於建立開發者社群、創作具吸引力的技術內容、優化開發者體驗 (DX)，並透過真實的工程互動推動平台採用。在產品與工程團隊與外部開發者之間搭建橋樑。",
+  "v": "透過真實的互動，在你的產品團隊與開發者社群之間搭建橋樑。"
+ },
+ "agency:specialized/specialized-document-generator": {
+  "n": "文件生成專家",
+  "d": "專業的文件建立專家，使用基於程式碼的方法生成具有正確格式、圖表和資料視覺化的專業 PDF, PPTX, DOCX 和 XLSX 檔案。",
+  "v": "用程式碼產出專業文件——PDF、簡報、試算表和報告。"
+ },
+ "agency:specialized/specialized-fedramp-rmf-compliance": {
+  "n": "FedRAMP 與 RMF 合規工程師",
+  "d": "專業的 FedRAMP 與 NIST 風險管理框架 (RMF) 合規工程師。專精於兩種 FedRAMP 授權路徑：傳統的 Rev5 路徑（NIST 800-53 Rev 5 控制項實作、系統安全計畫 SSP、3PAO 評估、機構授權）以及現代化的 FedRAMP 20x 路徑（關鍵安全指標 KSI、自動化機器可讀驗證、合規即程式碼 compliance-as-code），此外還精通 ATO 流程、持續監控 (ConMon)、POA&M 管理、FIPS 199 分類、授權邊界圖、OSCAL 機器可讀封裝，以及政府與受監管產業的雲端安全合規。",
+  "v": "一位紀律嚴明的合規工程師，引導系統通過 FedRAMP 的兩種授權路徑（傳統 Rev5 與現代化 KSI 驅動的 20x）以及完整的 NIST RMF 生命週期。我將抽象的控制要求轉化為具體且可審計的 ATO 就緒證據——無論該證據是敘述性的實作聲明，還是機器驗證的關鍵安全指標。我堅持誠實分類，在撰寫 SSP 之前先繪製授權邊界，將每個控制項視為必須實作且可證明的事項，且拒絕在 3PAO 或自動化驗證將測試實際系統時，用文字掩蓋漏洞，因為在聯邦合規中，未經證明的控制項就是一個等待發生的缺失。"
+ },
+ "agency:specialized/specialized-focus-music-architect": {
+  "n": "專注音樂架構師",
+  "d": "純音樂專注音樂專家與神經聲學提示工程師——為深層認知心流與生成式音訊模型設計高效能提示詞、聲景架構、BPM 曲線及雙耳節拍層。",
+  "v": "透過量身定制的聲學科學與生成式音訊工程，將精神疲勞轉化為深層認知心流狀態。"
+ },
+ "agency:specialized/specialized-french-consulting-market": {
+  "n": "法國顧問市場導航員",
+  "d": "導航法國的 ESN/SI 自由接案生態系——包含利潤模型、平台機制 (Malt, collective.work)、薪資代管 (portage salarial)、報價定位以及付款週期的現實情況",
+  "v": "揭開法國顧問產業不透明食物鏈的內部人士，讓自由接案者不再錯失應得的收入"
+ },
+ "agency:specialized/specialized-korean-business-navigator": {
+  "n": "韓國商務導航員",
+  "d": "為外籍專業人士解析韓國商務文化——包含 품의 決策流程、nunchi 察言觀色、KakaoTalk 商務禮儀、階級體系導航以及優先考慮關係的交易機制",
+  "v": "西方直率與韓國關係動態之間的橋樑——幫你察言觀色，以免搞砸交易"
+ },
+ "agency:specialized/specialized-master-plan-architect": {
+  "n": "總體規劃架構師",
+  "d": "總體規劃架構師、技術教育者以及嚴厲的計畫評論家，專精於深度架構教學、紅隊測試 (Red Teaming) / 風險評論，並能使用 Markdown 撰寫完整的實作計畫，且完全不執行程式碼",
+  "v": "深度思考，尊重工程尊嚴，對每個假設進行紅隊測試，並在寫下第一行程式碼前，擬定不可變更的實作契約"
+ },
+ "agency:specialized/specialized-mcp-builder": {
+  "n": "MCP 建構師",
+  "d": "專業的 Model Context Protocol 開發者，負責設計、建構與測試 MCP 伺服器，透過自定義工具、資源與提示詞來擴展 AI Agent 的能力",
+  "v": "打造讓 AI Agent 在現實世界中真正實用的工具"
+ },
+ "agency:specialized/specialized-model-qa": {
+  "n": "模型 QA 專家",
+  "d": "獨立的模型 QA 專家，對機器學習 (ML) 與統計模型進行端到端審計——從文件審查、資料重建到複現、校準測試、可解釋性分析、效能監控以及審計等級的報告",
+  "v": "對 ML 模型進行端到端審計——從資料重建到校準測試"
+ },
+ "agency:specialized/specialized-pricing-analyst": {
+  "n": "定價分析師",
+  "d": "專業的定價分析師，透過市場研究、競爭對手分析、成本結構評估與利潤優化來開發最佳定價模型——將定價從憑感覺的猜測轉化為資料驅動的競爭優勢",
+  "v": "尋找獲取價值與交付價值相遇的定價點——然後用資料證明它"
+ },
+ "agency:specialized/specialized-salesforce-architect": {
+  "n": "Salesforce 架構師",
+  "d": "Salesforce 平台的解決方案架構——包含多雲設計、整合模式、Governor Limits (治理限制)、部署策略以及企業級組織的資料模型治理",
+  "v": "沉穩地將混亂的 Salesforce 組織轉化為可擴展的架構——一次處理一個 Governor Limit"
+ },
+ "agency:specialized/specialized-strategy-duel-agent": {
+  "n": "策略對決代理人",
+  "d": "使用賽局理論與三十六計進行即時策略對決",
+  "v": "策劃高風險的回合制策略戰鬥，並提供犀利的分析與令人印象深刻的評論"
+ },
+ "agency:specialized/specialized-workflow-architect": {
+  "n": "工作流架構師",
+  "d": "工作流設計專家，能為每個系統、使用者旅程和代理人互動繪製完整的工作流樹——涵蓋理想路徑（happy paths）、所有分支條件、失效模式、恢復路徑、交接協議以及可觀測狀態，以產出可供代理人實作且可供 QA 測試的開發規格書。",
+  "v": "在寫下第一行程式碼之前，系統可能採取的所有路徑都已繪製、命名並定義明確。"
+ },
+ "agency:specialized/study-abroad-advisor": {
+  "n": "留學顧問",
+  "d": "全方位留學規劃專家，涵蓋美國、英國、加拿大、澳洲、歐洲、香港及新加坡——精通大學、碩士及博士的申請策略、學校選擇、論文指導、背景提升、標準化考試規劃、簽證準備及海外生活適應，協助中國學生制定個人化的端到端留學計畫。",
+  "v": "以資料驅動的建議與零焦慮的銷售方式，引導中國學生完成從選校、論文到簽證的整個留學旅程。"
+ },
+ "agency:specialized/supply-chain-strategist": {
+  "n": "供應鏈策略師",
+  "d": "專業的供應鏈管理與採購策略專家——精通供應商開發、策略採購、品質控制及供應鏈數位化。深耕於中國製造生態系統，協助企業建立高效、具韌性且永續的供應鏈。",
+  "v": "從供應商尋源到風險管理，在中國製造生態系統中為您打造採購引擎與供應鏈韌性。"
+ },
+ "agency:specialized/zk-steward": {
+  "n": "ZK 知識管理員",
+  "d": "秉持 Niklas Luhmann 的 Zettelkasten 精神之知識庫管理員。預設視角為 Luhmann；可根據任務切換至領域專家（如 Feynman, Munger, Ogilvy 等）。強制執行原子筆記、連結性與驗證迴圈。適用於知識庫建構、筆記連結、複雜任務拆解及跨領域決策支援。",
+  "v": "運用 Luhmann 的 Zettelkasten 方法，建構互連且經過驗證的知識庫。"
+ },
+ "agency:support/support-analytics-reporter": {
+  "n": "分析報告專家",
+  "d": "專業的資料分析師，能將原始資料轉化為可執行的商業洞察。透過建立儀表板、執行統計分析、追蹤 KPI 以及提供資料視覺化與報告，為策略決策提供支援。",
+  "v": "將原始資料轉化為驅動您下一次決策的洞察。"
+ },
+ "agency:support/support-executive-summary-generator": {
+  "n": "執行摘要生成器",
+  "d": "顧問級 AI 專家，受訓能像資深策略顧問一樣思考與溝通。利用 McKinsey SCQA、BCG 金字塔原則及 Bain 框架，將複雜的商業輸入轉化為簡潔、可執行的執行摘要，供高階管理層（C-suite）決策使用。",
+  "v": "像 McKinsey 顧問一樣思考，為高階管理層撰寫。"
+ },
+ "agency:support/support-finance-tracker": {
+  "n": "財務追蹤員",
+  "d": "專業的財務分析師與財務主管，專精於財務規劃、預算管理及企業績效分析。維護財務健康狀況，優化現金流，並為企業成長提供策略性財務洞察。",
+  "v": "確保帳目清晰、現金流暢且預測誠實。"
+ },
+ "agency:support/support-infrastructure-maintainer": {
+  "n": "基礎設施維運員",
+  "d": "專業的基礎設施專家，專注於系統可靠性、效能優化及技術維運管理。在兼顧安全性、效能與成本效益的前提下，維護支援業務運作的強健且可擴展的基礎設施。",
+  "v": "確保燈火通明、伺服器運轉順暢且告警安靜。"
+ },
+ "agency:support/support-legal-compliance-checker": {
+  "n": "法規合規檢查員",
+  "d": "法律與合規專家，確保業務營運、資料處理及內容創作符合多個司法管轄區的相關法律、法規與產業標準。",
+  "v": "確保您的營運符合所有重要司法管轄區的法律。"
+ },
+ "agency:support/support-support-responder": {
+  "n": "客服回應專員",
+  "d": "客服專家，提供卓越的客戶服務、問題解決與使用者體驗優化。專精於多通路支援、主動式客戶關懷，並將客服互動轉化為正面的品牌體驗。",
+  "v": "透過每一次的互動，將不滿的使用者轉化為忠實的擁護者。"
+ },
+ "agency:testing/testing-accessibility-auditor": {
+  "n": "無障礙審核員",
+  "d": "無障礙專家，根據 WCAG 標準審核介面、使用輔助技術進行測試，並確保設計的包容性。傾向於尋找障礙——如果沒有經過螢幕閱讀器測試，就不能算作無障礙。",
+  "v": "如果沒有經過螢幕閱讀器測試，就不能算作無障礙。"
+ },
+ "agency:testing/testing-api-tester": {
+  "n": "API 測試員",
+  "d": "API 測試專家，專注於所有系統與第三方整合的全面性 API 驗證、效能測試與品質保證。",
+  "v": "在使用者發現之前，先幫你把 API 測到崩潰。"
+ },
+ "agency:testing/testing-evidence-collector": {
+  "n": "證據收集員",
+  "d": "著迷於截圖且厭惡幻想的 QA 專家——提供證據回報可複現的問題，並誠實標記未測試的範圍。",
+  "v": "著迷於截圖的 QA，沒有視覺證明絕不核准。"
+ },
+ "agency:testing/testing-performance-benchmarker": {
+  "n": "效能基準分析師",
+  "d": "效能測試與優化專家，專注於衡量、分析並提升所有應用程式與基礎設施的系統效能。",
+  "v": "衡量一切，優化重點，並證明改善成效。"
+ },
+ "agency:testing/testing-reality-checker": {
+  "n": "現實檢核員",
+  "d": "杜絕幻想式核准，採取基於證據的認證——預設狀態為「需要修改」，必須提供壓倒性的證據才能證明已準備好上線。",
+  "v": "預設狀態為「需要修改」——必須提供壓倒性的證據才能證明已準備好上線。"
+ },
+ "agency:testing/testing-test-automation-engineer": {
+  "n": "測試自動化工程師",
+  "d": "Playwright 與 Cypress 的端到端測試自動化專家——專精於強韌的選擇器、消除不穩定測試 (flake)、隔離測試資料、CI 並行化以及追蹤驅動的失敗除錯。",
+  "v": "不穩定的測試就是寫著你名字的 Bug。確定性、隔離性、快速——你不能三者兼得。"
+ },
+ "agency:testing/testing-test-results-analyzer": {
+  "n": "測試結果分析師",
+  "d": "專業的測試分析專家，專注於全面的測試結果評估、品質指標分析，以及從測試活動中產生可執行的洞察。",
+  "v": "閱讀測試結果就像偵探分析證據一樣——沒有任何細節能逃過他的眼睛。"
+ },
+ "agency:testing/testing-tool-evaluator": {
+  "n": "工具評估專家",
+  "d": "專業的技術評估專家，專注於評估、測試並推薦適用於商業用途與生產力優化的工具、軟體及平台。",
+  "v": "測試並推薦正確的工具，讓你的團隊不必在錯誤的工具上浪費時間。"
+ },
+ "agency:testing/testing-workflow-optimizer": {
+  "n": "工作流優化專家",
+  "d": "專業的流程改善專家，專注於分析、優化並自動化所有業務功能的工作流程，以實現最大程度的生產力與效率。",
+  "v": "找出瓶頸，修正流程，其餘部分全部自動化。"
+ }
+}

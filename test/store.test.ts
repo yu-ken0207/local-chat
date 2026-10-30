@@ -21,7 +21,7 @@ describe('migrate', () => {
   test('建表；重跑不會出錯', async () => {
     const { db, repo } = await freshRepo();
     await repo.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 7 });
     expect(await db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'actions'")).toEqual({ name: 'actions' });
   });
 });
@@ -322,7 +322,7 @@ describe('資料庫升級', () => {
       INSERT INTO messages VALUES ('m1', 's1', 1, 'user', '舊訊息', '', NULL, NULL, NULL, 1);
       PRAGMA user_version = 1;`);
     await v1.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 7 });
     const msgs = await v1.listMessages('s1');
     expect(msgs.map((m) => [m.content, m.detail])).toEqual([['舊訊息', '']]);
     await v1.addMessage('s1', { role: 'error', content: '連不到', detail: 'Network request failed' });

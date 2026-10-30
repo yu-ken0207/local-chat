@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+"""把兩個 MIT 授權的 Agent 集合轉成 App 的「圖鑑」。
+
+來源（固定版本，要更新就改下面的 SOURCES）：
+- lobehub/lobe-chat-agents：505 個，每個都有繁中與英文
+- msitarzewski/agency-agents：283 個，英文；名字、介紹、個性的繁中在 scripts/catalog/agency-zh.json
+
+產生：
+- src/agents/catalog.json：索引（名字、介紹、分類、emoji、作者、原文在哪個分片），打包進 App
+- assets/agents/prompts-NN.txt：角色原文（JSON），分片放，用到才讀
+
+用法：
+  python3 scripts/build_catalog.py                  下載（有快取）並產生上面的檔案
+  python3 scripts/build_catalog.py --translate URL  先用 Ollama（URL 例如 http://100.100.0.31:11434）把還沒翻的 agency 欄位翻成繁中
+"""
+
+import argparse
+import io
+import json
+import re
+import sys
+import tarfile
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CACHE = Path.home() / '.cache' / 'local-chat-catalog'
+ZH_FILE = ROOT / 'scripts' / 'catalog' / 'agency-zh.json'
+OUT_INDEX = ROOT / 'src' / 'agents' / 'catalog.json'
+OUT_DIR = ROOT / 'assets' / 'agents'
+SHARD_BYTES = 400_000
+
+SOURCES = {
+    'lobe': {'repo': 'lobehub/lobe-chat-agents', 'sha': 'ba090ca25a0981107589568210b056f427c1c843'},
+    'agency': {'repo': 'msitarzewski/agency-agents', 'sha': 'b37b5bb33b78f2c1d6567d98e25ca818e3259219'},
+}
+
+# 兩邊的分類合併成 App 的 12 類（名稱在 src/agents/catalog.ts）
+CATEGORY = {
+    'lobe': {
+        'general': 'general', 'programming': 'code', 'design': 'design', 'copywriting': 'writing',
+        'translation': 'language', 'education': 'education', 'academic': 'academic', 'career': 'business',
+        'office': 'business', 'marketing': 'marketing', 'life': 'life', 'emotions': 'emotions',
+        'entertainment': 'fun', 'games': 'fun',
+    },
+    'agency': {
+        'engineering': 'code', 'testing': 'code', 'spatial-computing': 'code', 'gis': 'code', 'security': 'code',
+        'design': 'design', 'academic': 'academic', 'research': 'academic', 'finance': 'business',
+        'product': 'business', 'project-management': 'business', 'sales': 'business', 'support': 'business',
+        'specialized': 'business', 'marketing': 'marketing', 'paid-media': 'marketing', 'healthcare': 'life',
+        'game-development': 'fun',
+    },
+}
+
+# 暫時不公開所以照原樣放；公開前要再檢查（越獄、髒話）
+REVIEW = {'lobe:dan', 'lobe:gpt-4-dan-assistant', 'lobe:profanity-assistant', 'lobe:bad-language-helper'}
+
+
+def fetch(name: str) -> tarfile.TarFile:
+    src = SOURCES[name]
+    path = CACHE / f"{src['repo'].replace('/', '__')}-{src['sha']}.tar.gz"
+    if not path.exists():
+        CACHE.mkdir(parents=True, exist_ok=True)
+        url = f"https://codeload.github.com/{src['repo']}/tar.gz/{src['sha']}"
+        print(f'下載 {url}', file=sys.stderr)
+        with urllib.request.urlopen(url, timeout=120) as r:
+            path.write_bytes(r.read())
+    return tarfile.open(path, 'r:gz')
+
+
+def read_files(tar: tarfile.TarFile) -> dict[str, str]:
+    """tar 裡的文字檔（不解壓到磁碟）：路徑去掉最上層資料夾"""
+    files = {}
+    for m in tar.getmembers():
+        if not m.isfile() or not m.name.endswith(('.json', '.md', 'LICENSE')):
+            continue
+        rel = m.name.split('/', 1)[1] if '/' in m.name else m.name
+        files[rel] = tar.extractfile(m).read().decode('utf-8')
+    return files
+
+
+def lobe_entries(files: dict[str, str]) -> list[dict]:
+    out = []
+    for path in sorted(p for p in files if re.fullmatch(r'src/[^/]+\.json', p)):
+        d = json.loads(files[path])
+        ident = d['identifier']
+        loc = {lang: json.loads(files[f'locales/{ident}/{f}']) for lang, f in (('zh', 'index.zh-TW.json'), ('en', 'index.json'))}
+        meta = d['meta']
+        out.append({
+            'id': f'lobe:{ident}',
+            'c': CATEGORY['lobe'][meta['category']],
+            'e': meta.get('avatar', ''),
+            'n': [loc['zh']['meta']['title'], loc['en']['meta']['title']],
+            'd': [loc['zh']['meta'].get('description', ''), loc['en']['meta'].get('description', '')],
+            't': sorted(set(loc['zh']['meta'].get('tags', []) + loc['en']['meta'].get('tags', []))),
+            'a': d.get('author', ''),
+            'u': d.get('homepage', ''),
+            'prompt': {'zh': loc['zh']['config']['systemRole'], 'en': loc['en']['config']['systemRole']},
+        })
+    return out
+
+
+def front_matter(text: str) -> tuple[dict, str]:
+    m = re.match(r'---\n(.*?)\n---\n?', text, re.S)
+    if not m:
+        return {}, text
+    meta = {}
+    for k, v in re.findall(r'^(\w+):\s*(.*)$', m.group(1), re.M):
+        meta[k] = v.strip().strip('"')
+    return meta, text[m.end():].lstrip()
+
+
+def agency_entries(files: dict[str, str], zh: dict) -> list[dict]:
+    divisions = json.loads(files['divisions.json'])['divisions']
+    out = []
+    for path in sorted(files):
+        div = path.split('/', 1)[0]
+        if div not in divisions or not path.endswith('.md'):
+            continue
+        meta, body = front_matter(files[path])
+        if not meta.get('name') or not meta.get('description'):
+            continue
+        ident = f'agency:{div}/{Path(path).stem}'
+        t = zh.get(ident, {})
+        out.append({
+            'id': ident,
+            'c': CATEGORY['agency'][div],
+            'e': meta.get('emoji', ''),
+            'n': [t.get('n', ''), meta['name']],
+            'd': [t.get('d', ''), meta['description']],
+            'v': [t.get('v', ''), meta.get('vibe', '')],
+            't': [divisions[div]['label']],
+            'a': meta.get('author', '') or 'msitarzewski/agency-agents',
+            'u': f"https://github.com/{SOURCES['agency']['repo']}/blob/{SOURCES['agency']['sha']}/{path}",
+            'prompt': {'en': body},
+        })
+    return out
+
+
+def translate(entries: list[dict], url: str, model: str) -> None:
+    """agency 的名字、介紹、個性一句話翻成繁中（台灣用語），已經翻過的跳過；每批存一次"""
+    zh = json.loads(ZH_FILE.read_text()) if ZH_FILE.exists() else {}
+    todo = [e for e in entries if e['id'] not in zh]
+    schema = {
+        'type': 'object',
+        'properties': {'items': {'type': 'array', 'items': {
+            'type': 'object',
+            'properties': {'id': {'type': 'string'}, 'n': {'type': 'string'}, 'd': {'type': 'string'}, 'v': {'type': 'string'}},
+            'required': ['id', 'n', 'd', 'v'],
+        }}},
+        'required': ['items'],
+    }
+    def one(batch: list[dict]) -> list[dict]:
+        src = [{'id': e['id'], 'name': e['n'][1], 'description': e['d'][1], 'vibe': e['v'][1]} for e in batch]
+        prompt = (
+            '把下面每個 AI 角色的 name、description、vibe 翻成繁體中文（台灣用語，例如「軟體」不是「软件」、「資料」不是「数据」、「品質」不是「质量」）。\n'
+            '- n：職稱或角色名，簡短（2–8 個字），像「歷史學家」「資安架構師」\n'
+            '- d：description 的意思完整翻出來，通順，不要加原文沒有的內容\n'
+            '- v：vibe 那句個性話，保留語氣\n'
+            '- 專有名詞（產品、平台名）保留原文，例如 Roblox、Unity、Salesforce\n'
+            '- id 照抄\n\n' + json.dumps(src, ensure_ascii=False, indent=1)
+        )
+        body = json.dumps({'model': model, 'stream': False, 'format': schema, 'options': {'temperature': 0.2},
+                           'messages': [{'role': 'user', 'content': prompt}]}).encode()
+        req = urllib.request.Request(f'{url}/api/chat', data=body, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=900) as r:
+            return json.loads(json.loads(r.read())['message']['content'])['items']
+
+    # 主機有開並行（例如 OLLAMA_NUM_PARALLEL=4）：同時送 4 批；每批回來就存一次
+    batches = [todo[i:i + 8] for i in range(0, len(todo), 8)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(one, b): b for b in batches}
+        for fut in as_completed(futures):
+            want = {e['id'] for e in futures[fut]}
+            try:
+                items = fut.result()
+            except Exception as e:  # 這批失敗：下次再跑會補
+                print(f'這批失敗：{e}', file=sys.stderr)
+                continue
+            for it in items:
+                if it['id'] in want and it['n'].strip() and it['d'].strip():
+                    zh[it['id']] = {'n': it['n'].strip(), 'd': it['d'].strip(), 'v': it['v'].strip()}
+            ZH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            ZH_FILE.write_text(json.dumps(dict(sorted(zh.items())), ensure_ascii=False, indent=1) + '\n')
+            print(f'翻好 {len(zh)}/{len(entries)}', file=sys.stderr)
+
+
+def build(entries: list[dict], licenses: list[dict], draft: bool = False) -> None:
+    missing = [e['id'] for e in entries if not e['n'][0] or not e['d'][0]]
+    if missing and draft:
+        # 草稿：還沒翻的先用英文（開發時先跑測試用，不要 commit）
+        for e in entries:
+            for k in ('n', 'd', 'v'):
+                if k in e and not e[k][0]:
+                    e[k][0] = e[k][1]
+    elif missing:
+        sys.exit(f'還有 {len(missing)} 個沒有繁中名字或介紹（先跑 --translate）：{missing[:5]}')
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    for old in OUT_DIR.glob('prompts-*.txt'):
+        old.unlink()
+    shards: list[dict] = [{}]
+    size = 0
+    index = []
+    for e in entries:
+        prompt = e.pop('prompt')
+        n = len(json.dumps(prompt, ensure_ascii=False).encode())
+        if size and size + n > SHARD_BYTES:
+            shards.append({})
+            size = 0
+        shards[-1][e['id']] = prompt
+        size += n
+        e['s'] = len(shards) - 1
+        if e['id'] in REVIEW:
+            e['r'] = 1
+        if 'v' in e and not any(e['v']):
+            del e['v']
+        index.append(e)
+    for i, shard in enumerate(shards):
+        (OUT_DIR / f'prompts-{i:02d}.txt').write_text(json.dumps(shard, ensure_ascii=False, separators=(',', ':')))
+    OUT_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    OUT_INDEX.write_text(json.dumps({'shards': len(shards), 'licenses': licenses, 'entries': index}, ensure_ascii=False, separators=(',', ':')))
+    # 分片檔要靜態 require，產生對照表
+    lines = ['// 由 scripts/build_catalog.py 產生，不要手改', '/* eslint-disable */', 'export const PROMPT_SHARDS: number[] = [']
+    lines += [f"  require('../../assets/agents/prompts-{i:02d}.txt')," for i in range(len(shards))]
+    lines += ['];', '']
+    (OUT_INDEX.parent / 'shards.ts').write_text('\n'.join(lines))
+    total = sum(p.stat().st_size for p in OUT_DIR.glob('prompts-*.txt'))
+    print(f'{len(index)} 個 Agent、{len(shards)} 個分片（{total / 1e6:.1f} MB）、索引 {OUT_INDEX.stat().st_size / 1e3:.0f} KB', file=sys.stderr)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--translate', metavar='OLLAMA_URL')
+    ap.add_argument('--model', default='gemma4:31b')
+    ap.add_argument('--draft', action='store_true', help='還沒翻的先用英文（不要 commit）')
+    args = ap.parse_args()
+    lobe_files = read_files(fetch('lobe'))
+    agency_files = read_files(fetch('agency'))
+    zh = json.loads(ZH_FILE.read_text()) if ZH_FILE.exists() else {}
+    agency = agency_entries(agency_files, zh)
+    if args.translate:
+        translate(agency, args.translate.rstrip('/'), args.model)
+        return
+    licenses = [
+        {'name': SOURCES[k]['repo'], 'url': f"https://github.com/{SOURCES[k]['repo']}", 'sha': SOURCES[k]['sha'], 'text': files['LICENSE']}
+        for k, files in (('lobe', lobe_files), ('agency', agency_files))
+    ]
+    build(lobe_entries(lobe_files) + agency, licenses, args.draft)
+
+
+if __name__ == '__main__':
+    main()
