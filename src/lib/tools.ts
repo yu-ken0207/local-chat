@@ -43,6 +43,8 @@ export type PhoneTool = {
   choices?: Record<string, () => Promise<{ value: string; label: string }[]>>;
   /** 確認卡上的一句白話 */
   describe?(input: ToolInput): string;
+  /** 清單卡上的一行（短版：好幾件疊在一起時好掃過去；讀螢幕照樣唸完整的那句） */
+  brief?(input: ToolInput): string;
   /** 補上使用者沒說的欄位，回傳哪些是補的（確認卡上標淡色） */
   fillDefaults?(input: ToolInput, ctx: ToolContext): { input: ToolInput; guessed: string[] };
   /** 執行前的 App 規則檢查，不通過回原因（英文，交給模型） */

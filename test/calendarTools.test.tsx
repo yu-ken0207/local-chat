@@ -142,7 +142,11 @@ describe('加行程', () => {
 
 describe('加提醒', () => {
   test('有時間、沒時間；可以復原；沒給權限丟權限錯誤', async () => {
-    const { api, createReminder } = tools();
+    const { api, createReminder, createEvent } = tools();
+    // 清單卡上的短版：標題 · 時間
+    expect(createEvent.brief!({ title: '校慶運動會', start: '2026-11-07T09:00', end: '2026-11-07T10:00' })).toBe('校慶運動會 · 11/7（週六）09:00–10:00');
+    expect(createReminder.brief!({ title: '繳電費', due: '2026-10-30T09:00' })).toBe('繳電費 · 10/30（週五）09:00');
+    expect(createReminder.brief!({ title: '買牛奶' })).toBe('買牛奶');
     expect(createReminder.describe!({ title: '繳電費', due: '2026-10-30T09:00' })).toBe('10/30（週五）09:00 提醒你「繳電費」');
     expect(createReminder.describe!({ title: '買牛奶' })).toBe('在「提醒事項」加一項「買牛奶」');
     const out = await createReminder.run({ title: '繳電費', due: '2026-10-30T09:00' });

@@ -136,7 +136,7 @@ export function ActionListCard({
                 accessibilityLabel={tool?.describe?.(input) ?? tool?.label ?? a.tool}
                 style={styles.itemMain}>
                 <Text style={[styles.check, on && { color: C.accent }]}>{on ? '☑' : '☐'}</Text>
-                <Text style={[styles.text, styles.flex, !on && styles.off]}>{tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
+                <Text style={[styles.text, styles.flex, !on && styles.off]}>{tool?.brief?.(input) ?? tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
               </Pressable>
               {tool?.fields && editing !== a.id ? <ActionButton text={t('修改')} onPress={() => setEditing(a.id)} /> : null}
             </View>
