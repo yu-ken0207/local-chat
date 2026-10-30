@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, Keyboard, ScrollView } from 'react-native';
+import { AccessibilityInfo, ActionSheetIOS, Alert, Keyboard, ScrollView } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import type { NewPhoto } from '../src/lib/photos';
@@ -307,6 +307,27 @@ describe('選單', () => {
     expect(opts.options[opts.destructiveButtonIndex as number]).toBe('刪除');
     // 長按開選單時輕震一下
     expect(impact).toHaveBeenCalledWith('medium');
+  });
+
+  test('「復原」提示還在時回答中長按：不排一個之後才跳的提示，改成輕震、讀螢幕播報', async () => {
+    const { net, store } = await setup();
+    await send(store, '第一題');
+    await send(store, '第二題');
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '重寫中' }, done: false }], hang: true });
+    // 重新產生前面的回答：後面的訊息先拿掉，出現「復原」提示，同時開始回答
+    const first = store.getState().messages[1];
+    void store.regenerate(first.id);
+    await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+    expect(store.getState().undo).not.toBeNull();
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => {});
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
+    expect(announce).toHaveBeenCalledWith('AI 正在回答，答完再試一次。');
+    await act(async () => {
+      await store.dismissUndo();
+    });
+    expect(screen.queryByText('AI 正在回答，答完再試一次。')).toBeNull();
+    store.stop();
   });
 
   test('AI 回答中長按訊息：不開選單、不震，說答完再試', async () => {

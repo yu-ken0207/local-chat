@@ -1,7 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
-import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { AccessibilityInfo, Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -141,7 +141,12 @@ export function ChatScreen(p: ChatScreenProps) {
   /** 長按訊息的選單：真的要開才輕震一下（跟 iPhone 長按一樣的手感）；AI 回答中先不開，說一聲 */
   function messageMenu(m: Message) {
     if (state.streaming) {
-      showToast(t('AI 正在回答，答完再試一次。'));
+      const busy = t('AI 正在回答，答完再試一次。');
+      // 「復原」提示還在時一般提示排不上（會等它消失才跳，那時可能已經答完了）：改成輕震＋讀螢幕播報
+      if (state.undo) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        AccessibilityInfo.announceForAccessibility(busy);
+      } else showToast(busy);
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
