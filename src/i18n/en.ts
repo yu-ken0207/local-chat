@@ -415,6 +415,7 @@ export const en: Record<string, string> = {
   "{p0}：{p1}（AI 猜的）": "{p0}: {p1} (guessed by the AI)",
   "{p0}：{p1}": "{p0}: {p1}",
   "{p0}（AI 猜的）": "{p0} (AI's guess)",
+  "討論串": "Thread",
   "要改成怎樣？（可以不填）": "What should be different? (optional)",
   "不要": "No",
   "修改": "Edit",

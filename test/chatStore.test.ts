@@ -818,6 +818,84 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
   });
 });
 
+describe('討論串', () => {
+  async function twoTopics() {
+    const ctx = await ready();
+    await ctx.store.send('台南有什麼小吃');
+    await ctx.store.send('Go 怎麼裝');
+    const main = ctx.store.getState().session!;
+    const [question, answer] = ctx.store.getState().messages;
+    return { ...ctx, main, question, answer };
+  }
+
+  test('針對某一題開討論串：只帶那一題的問與答，送給模型的也只有這些（不帶別的主題）', async () => {
+    const { store, net, main, answer } = await twoTopics();
+    await store.openThread(answer.id);
+    const thread = store.getState().session!;
+    expect(thread).toMatchObject({ parentId: main.id, title: '台南有什麼小吃' });
+    expect(store.getState().messages.map((m) => [m.role, m.content, m.detail])).toEqual([
+      ['user', '台南有什麼小吃', 'thread-root'],
+      ['assistant', '回答：台南有什麼小吃', 'thread-root'],
+    ]);
+    const titles = net.titleBodies().length;
+    await store.send('牛肉湯哪家好');
+    const sent = net.chatBodies().at(-1).messages.map((m: any) => m.content);
+    expect(sent.slice(1)).toEqual(['台南有什麼小吃', '回答：台南有什麼小吃', '牛肉湯哪家好']);
+    // 討論串的標題就是那一題，不另外請模型取
+    expect(net.titleBodies()).toHaveLength(titles);
+  });
+
+  test('回到原對話：看得到問了幾次；同一題再開是同一個討論串', async () => {
+    const { store, main, question, answer } = await twoTopics();
+    await store.openThread(question.id);
+    const thread = store.getState().session!.id;
+    await store.send('牛肉湯哪家好');
+    await store.leaveThread();
+    expect(store.getState().session?.id).toBe(main.id);
+    expect(store.getState().threads).toEqual({ [question.id]: { id: thread, count: 1 } });
+    await store.openThread(answer.id);
+    expect(store.getState().session?.id).toBe(thread);
+  });
+
+  test('什麼都沒問就回去：不留空的討論串', async () => {
+    const { store, repo, main, answer } = await twoTopics();
+    await store.openThread(answer.id);
+    const thread = store.getState().session!.id;
+    await store.leaveThread();
+    expect(store.getState().session?.id).toBe(main.id);
+    expect(store.getState().threads).toEqual({});
+    expect(await repo.getSession(thread)).toBeNull();
+  });
+
+  test('討論串裡不能再開討論串；帶進去的那一題不能重新產生、編輯、刪除', async () => {
+    const { store, net, answer } = await twoTopics();
+    await store.openThread(answer.id);
+    const thread = store.getState().session!.id;
+    const [rootQ, rootA] = store.getState().messages;
+    await store.openThread(rootA.id);
+    expect(store.getState().session?.id).toBe(thread);
+    const before = net.chatBodies().length;
+    await store.regenerate(rootA.id);
+    await store.editAndResend(rootQ.id, '改掉');
+    await store.deleteMessage(rootQ.id);
+    expect(net.chatBodies()).toHaveLength(before);
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['台南有什麼小吃', '回答：台南有什麼小吃']);
+  });
+
+  test('刪掉目前的討論串：回到它那段對話，可以復原', async () => {
+    const { store, main, question, answer } = await twoTopics();
+    await store.openThread(answer.id);
+    const thread = store.getState().session!.id;
+    await store.send('牛肉湯哪家好');
+    await store.deleteSession(thread);
+    expect(store.getState().session?.id).toBe(main.id);
+    await store.undoLast();
+    expect(store.getState().session?.id).toBe(thread);
+    await store.leaveThread();
+    expect(store.getState().threads[question.id]?.count).toBe(1);
+  });
+});
+
 describe('設定', () => {
   test('偏好設定會存起來，重開 App 還在', async () => {
     const { net, store, repo } = await ready();

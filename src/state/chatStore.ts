@@ -7,7 +7,7 @@ import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
-import { RECORD_NOTE, isRecordNote, type Action, type Attachment, type Host, type Message, type Repo, type Session } from '../store/repo';
+import { RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Attachment, type Host, type Message, type Repo, type Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
 
@@ -131,6 +131,8 @@ export type ChatState = {
   prefs: Prefs;
   /** 清單卡正在一件一件做：做到第幾件 */
   acting: { messageId: string; done: number; total: number } | null;
+  /** 目前這段對話的討論串：key 是開討論串的那一題（使用者訊息的 id），count 是裡面問了幾次 */
+  threads: Record<string, { id: string; count: number }>;
 };
 
 type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
@@ -265,6 +267,7 @@ export class ChatStore {
     undo: null,
     prefs: DEFAULT_PREFS,
     acting: null,
+    threads: {},
   };
   private pendingUndo: PendingUndo | null = null;
   private undoCounter = 0;
@@ -361,8 +364,8 @@ export class ChatStore {
   private async openLatestOrNew(): Promise<void> {
     const { repo } = this.deps;
     const latest = (await repo.listSessions())[0];
-    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '' });
-    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '', threads: await this.threadMap(latest) });
+    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
   }
 
   // ---- 查詢 ----
@@ -405,6 +408,7 @@ export class ChatStore {
       hosts,
       session,
       messages: await repo.listMessages(session.id),
+      threads: await this.threadMap(session),
       prefs,
       ready: true,
     });
@@ -976,7 +980,7 @@ export class ChatStore {
       think: s?.think ?? null,
     });
     await repo.deleteEmptySessions(next.id);
-    this.set({ session: next, messages: [], context: null, notice: '' });
+    this.set({ session: next, messages: [], context: null, notice: '', threads: {} });
   }
 
   async openSession(id: string): Promise<void> {
@@ -987,7 +991,7 @@ export class ChatStore {
     const session = await repo.getSession(id);
     if (!session) return;
     const current = this.state.session;
-    this.set({ session, messages: await repo.listMessages(id), context: null, notice: '' });
+    this.set({ session, messages: await repo.listMessages(id), context: null, notice: '', threads: await this.threadMap(session) });
     if (current && current.id !== id) await repo.deleteEmptySessions(id);
     if (session.hostUrl && !this.state.models[session.hostUrl]) void this.loadModels(session.hostUrl);
   }
@@ -999,11 +1003,71 @@ export class ChatStore {
     if (wasCurrent) this.stop();
     const session = await repo.getSession(id);
     await repo.trashSessions([id]);
-    if (wasCurrent) await this.openLatestOrNew();
+    // 刪的是討論串：回到它那段對話
+    if (wasCurrent) await (session?.parentId ? this.openSession(session.parentId) : this.openLatestOrNew());
     await this.offerUndo(t('已刪除「{p0}」', { p0: session?.title || t('對話') }), async () => {
       await repo.restoreSessions([id]);
       await this.openSession(id);
     });
+  }
+
+  // ---- 討論串 ----
+
+  /** 這段對話的討論串（討論串裡面不能再開，回空的） */
+  private async threadMap(session: Session): Promise<ChatState['threads']> {
+    if (session.parentId) return {};
+    const out: ChatState['threads'] = {};
+    for (const th of await this.deps.repo.threadsOf(session.id)) out[th.parentMessageId] = { id: th.id, count: th.count };
+    return out;
+  }
+
+  /**
+   * 針對某一題開討論串（已經開過就回到那一個）。點問題或回答都可以：帶進去的是那一題的問與答，
+   * 不帶整段對話（不會越聊越長、不被別的主題干擾）。討論串裡不能再開（只有一層）
+   */
+  async openThread(messageId: string): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    if (!s || s.parentId || this.state.streaming) return;
+    const msgs = this.state.messages;
+    const i = msgs.findIndex((m) => m.id === messageId);
+    if (i < 0) return;
+    const qi = msgs[i].role === 'user' ? i : msgs.slice(0, i).map((m) => m.role).lastIndexOf('user');
+    if (qi < 0) return;
+    const question = msgs[qi];
+    const existing = await repo.findThread(s.id, question.id);
+    if (existing) return this.openSession(existing.id);
+    // 那一題的回答：同一輪裡最後一則有字的（叫工具的那幾則跳過）
+    const next = msgs.findIndex((m, j) => j > qi && m.role === 'user');
+    const answer = msgs.slice(qi + 1, next < 0 ? undefined : next).filter((m) => m.role === 'assistant' && m.content.trim()).at(-1);
+    const thread = await repo.createSession({
+      hostUrl: s.hostUrl,
+      model: s.model,
+      think: s.think,
+      title: question.content.trim().slice(0, 40) || t('討論串'),
+      parentId: s.id,
+      parentMessageId: question.id,
+    });
+    await repo.addMessage(thread.id, {
+      role: 'user',
+      content: question.content,
+      attachments: question.attachments.map(({ base64, width, height }) => ({ base64, width, height })),
+      detail: THREAD_ROOT,
+    });
+    if (answer) await repo.addMessage(thread.id, { role: 'assistant', content: answer.content, model: answer.model, hostLabel: answer.hostLabel, detail: THREAD_ROOT });
+    await this.openSession(thread.id);
+  }
+
+  /** 從討論串回到它那段對話；什麼都沒問就回去的話，不留空的討論串 */
+  async leaveThread(): Promise<void> {
+    const s = this.state.session;
+    if (!s?.parentId) return;
+    const asked = this.state.messages.some((m) => m.role === 'user' && !isThreadRoot(m));
+    await this.openSession(s.parentId);
+    if (!asked) {
+      await this.deps.repo.deleteSession(s.id);
+      if (this.state.session?.id === s.parentId) this.set({ threads: await this.threadMap(this.state.session) });
+    }
   }
 
   /** 最近刪除的對話 */
@@ -1072,7 +1136,7 @@ export class ChatStore {
   async regenerate(assistantId: string, override?: { hostUrl: string; model: string }): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
-    const target = this.state.messages.find((m) => m.id === assistantId && m.role === 'assistant');
+    const target = this.state.messages.find((m) => m.id === assistantId && m.role === 'assistant' && !isThreadRoot(m));
     if (!s || !target || this.state.streaming) return;
     if (override) await this.selectModel(override.hostUrl, override.model);
     // 舊回答收成版本（可以用 ‹ › 切回來）；它後面的訊息先藏起來
@@ -1109,7 +1173,7 @@ export class ChatStore {
   async editAndResend(userId: string, text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
-    const target = this.state.messages.find((m) => m.id === userId && m.role === 'user');
+    const target = this.state.messages.find((m) => m.id === userId && m.role === 'user' && !isThreadRoot(m));
     if (!s || !target || this.state.streaming) return;
     if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     if (!text.trim() && images.length === 0) return;
@@ -1153,7 +1217,8 @@ export class ChatStore {
   async deleteMessage(id: string): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
-    if (!s || this.state.streaming?.messageId === id) return;
+    // 討論串帶進去的那一題是背景，刪了 AI 就不知道在談什麼
+    if (!s || this.state.streaming?.messageId === id || this.state.messages.some((m) => m.id === id && isThreadRoot(m))) return;
     await repo.softDeleteMessages([id]);
     this.set({ messages: await repo.listMessages(s.id) });
     await this.offerUndo(t('已刪除訊息'), async () => {
@@ -1669,7 +1734,7 @@ export class ChatStore {
     const { repo } = this.deps;
     this.stop();
     const ids = await repo.trashAllSessions();
-    this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '' });
+    this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
     await this.offerUndo(t('已刪除 {p0} 段對話', { p0: ids.length }), async () => {
       await repo.restoreSessions(ids);
       await repo.deleteEmptySessions();
