@@ -358,6 +358,8 @@ describe('畫面', () => {
   test('修改開始時間：結束跟著移、保持長度；把結束改得比開始早，當場提示且不能加入', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));
+    // 離開修改的按鈕叫「不改了」（「取消」會被誤會成取消整件事）
+    expect(screen.getByText('不改了')).toBeTruthy();
     await fireEvent(screen.getByLabelText('開始時間'), 'valueChange', new Date(2000, 0, 1, 17, 0));
     expect(screen.getByLabelText('結束時間').props.value).toEqual(new Date(2026, 10, 4, 18, 0));
     await fireEvent(screen.getByLabelText('結束時間'), 'valueChange', new Date(2000, 0, 1, 16, 0));

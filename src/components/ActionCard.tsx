@@ -132,6 +132,7 @@ export function ActionListCard({
             </View>
             {editing === a.id && tool ? (
               <FieldEditor
+                indent
                 tool={tool}
                 input={input}
                 done={t('好')}
@@ -234,7 +235,7 @@ function defaultTime(values: Record<string, string | boolean>): string {
 }
 
 /** 確認卡上可以改的欄位（文字、數字、是非；時間用時間選擇器） */
-function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool; input: ToolInput; done: string; onDone: (values: ToolInput) => void; onCancel: () => void }) {
+function FieldEditor({ tool, input, done, onDone, onCancel, indent }: { tool: PhoneTool; input: ToolInput; done: string; onDone: (values: ToolInput) => void; onCancel: () => void; indent?: boolean }) {
   const fields = Object.entries(tool.fields ?? {});
   const required = new Set(tool.inputSchema.required ?? []);
   // 全天：可能在欄位裡（可以切換），也可能只在 AI 給的輸入裡
@@ -254,7 +255,7 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
   const timeOf = (k: string) => (typeof values[k] === 'string' && values[k] ? parseLocal(String(values[k])).getTime() : NaN);
   const endTooEarly = timeOf('end') < timeOf('start');
   return (
-    <View style={styles.editor}>
+    <View style={[styles.editor, indent && styles.editorIndent]}>
       {fields.map(([key, label]) => {
         const { type, format } = tool.inputSchema.properties[key] ?? {};
         const v = values[key];
@@ -306,7 +307,8 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
         );
       })}
       <View style={styles.buttons}>
-        <ActionButton text={t('取消')} onPress={onCancel} />
+        {/* 「取消」會被誤會成取消整件事：改成「不改了」 */}
+        <ActionButton text={t('不改了')} onPress={onCancel} />
         <ActionButton text={done} primary disabled={endTooEarly} onPress={() => onDone(collect())} />
       </View>
     </View>
@@ -451,8 +453,11 @@ const styles = StyleSheet.create({
   skip: { justifyContent: 'center', paddingHorizontal: 6 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   shrink: { flexShrink: 1 },
-  editor: { gap: 6, paddingLeft: 24 },
-  input: { ...TEXT.body, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  editor: { gap: 6 },
+  // 清單卡裡的編輯區跟項目文字對齊（勾選框右邊）；單張卡不用多縮
+  editorIndent: { paddingLeft: 24 },
+  // 輸入框不設 lineHeight：iOS 的 TextInput 設了 lineHeight 字會偏下
+  input: { fontFamily: TEXT.body.fontFamily, fontSize: TEXT.body.fontSize, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   item: { gap: 6 },
