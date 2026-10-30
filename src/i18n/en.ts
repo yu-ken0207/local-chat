@@ -364,6 +364,8 @@ export const en: Record<string, string> = {
   "跳過：{p0}（你直接打字了）": "Skipped: {p0} (you typed a new message)",
   "加上": "Set",
   "不改了": "Keep as is",
+  "正在下載 {p0}…（{p1}%）": "Downloading {p0}… ({p1}%)",
+  "查看下載": "View download",
   "已連上「{p0}」。這台電腦還沒有模型，下載一個就能開始聊天。": "Connected to {p0}. This computer has no models yet; download one to start chatting.",
   "下載一個模型": "Download a model",
   "已經連上電腦，但上面還沒有模型。下載一個就能開始聊天。": "Connected, but this computer has no models yet. Download one to start chatting.",

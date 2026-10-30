@@ -136,14 +136,15 @@ describe('第一次使用', () => {
     expect(await screen.findByText('連接你的電腦')).toBeTruthy();
   });
 
-  test('已經連上電腦但還沒有模型：空白畫面給「選擇模型」，面板裡直接從手機下載', async () => {
+  test('已經連上電腦但上面還沒有模型：空白畫面給「下載一個模型」，面板裡直接從手機下載', async () => {
     const net = new FakeOllamaNet();
     net.addHost(A, { models: [] });
     const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, autoScan: false });
     await store.init();
     await store.addHost('192.168.1.20');
     await render(<ChatScreen store={store} pickPhotos={jest.fn()} copyText={jest.fn()} />);
-    await fireEvent.press(screen.getByRole('button', { name: '選擇模型' }));
+    expect(await screen.findByText(/上面還沒有模型/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: '下載一個模型' }));
     expect(await screen.findByText(/這台電腦還沒有模型/)).toBeTruthy();
     await fireEvent.press(screen.getByText('選一個模型下載'));
     // 直接連 Ollama 不知道配備：推薦中等大小的

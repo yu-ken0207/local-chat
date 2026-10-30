@@ -38,6 +38,8 @@ export type FakeHelper = {
   downloadEngines?: string[];
   /** 下載工作：每問一次進度多一半，完成時模型加進清單；名稱 nope 會失敗 */
   jobs?: any[];
+  /** 下載停在進行中（測「下載中」的畫面） */
+  stalled?: boolean;
 };
 
 /**
@@ -101,7 +103,7 @@ export class FakeOllamaNet {
       if (path === '/helper/v1/info') return json({ id: helper.id, name: helper.name, download_engines: helper.downloadEngines ?? ['ollama'], hardware: helper.hardware ?? { memory_bytes: 32e9, gpus: [], unified: false } });
       if (path === '/helper/v1/downloads' && init.method === 'GET') {
         for (const j of jobs) {
-          if (j.status !== 'downloading') continue;
+          if (j.status !== 'downloading' || helper.stalled) continue;
           if (j.model === 'nope') Object.assign(j, { status: 'failed', code: 'not_found', error: 'file does not exist' });
           else if ((j.completed += j.total / 2) >= j.total) {
             j.status = 'done';

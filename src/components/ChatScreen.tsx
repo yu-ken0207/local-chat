@@ -151,6 +151,9 @@ export function ChatScreen(p: ChatScreenProps) {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
   }, [state.session?.id]);
 
+  // 空白畫面要講的那台電腦：這段對話用的；還沒綁電腦時（例如剛配對、電腦上沒有模型）看最近加入的那台
+  const statusHost = state.session?.hostUrl ?? state.hosts[state.hosts.length - 1]?.url;
+
   // 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（使用者決定，10/30）
   const metaShown = new Set<string>();
   let lastMeta = '';
@@ -297,8 +300,9 @@ export function ChatScreen(p: ChatScreenProps) {
                 phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
                 scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
                 modelLabel={modelLabel}
-                hostState={session?.hostUrl ? state.hostStatus[session.hostUrl]?.state : undefined}
-                noModels={!!session?.hostUrl && state.models[session.hostUrl]?.loading === false && state.models[session.hostUrl]?.list.length === 0 && !state.models[session.hostUrl]?.error}
+                hostState={statusHost ? state.hostStatus[statusHost]?.state : undefined}
+                downloading={statusHost ? state.downloads[statusHost]?.find((j) => j.status === 'downloading') : undefined}
+                noModels={!!statusHost && state.models[statusHost]?.loading === false && state.models[statusHost]?.list.length === 0 && !state.models[statusHost]?.error}
                 onConnect={() => setConnect({ help: false })}
                 onHelp={() => setConnect({ help: true })}
                 onPickModel={() => setSheetOpen(true)}
@@ -432,6 +436,7 @@ function EmptyState({
   modelLabel,
   hostState,
   noModels,
+  downloading,
   onConnect,
   onHelp,
   onPickModel,
@@ -443,6 +448,8 @@ function EmptyState({
   hostState?: 'checking' | 'online' | 'offline';
   /** 電腦連上了，但上面一個模型都沒有：要說「下載一個」，不是「選一個」 */
   noModels?: boolean;
+  /** 這台電腦正在下載的模型（有的話先說進度） */
+  downloading?: { model: string; completed: number; total: number };
   onConnect: () => void;
   onHelp: () => void;
   onPickModel: () => void;
@@ -473,6 +480,13 @@ function EmptyState({
         </>
       ) : checking ? (
         <Text style={styles.hint}>{t('正在連線到你的電腦…')}</Text>
+      ) : phase === 'noModel' && downloading ? (
+        <>
+          <Text style={styles.hint}>
+            {t('正在下載 {p0}…（{p1}%）', { p0: friendlyModelName(downloading.model), p1: downloading.total > 0 ? Math.floor((downloading.completed / downloading.total) * 100) : 0 })}
+          </Text>
+          <PrimaryButton text={t('查看下載')} onPress={onPickModel} />
+        </>
       ) : phase === 'noModel' && noModels ? (
         <>
           <PrimaryButton text={t('下載一個模型')} onPress={onPickModel} />

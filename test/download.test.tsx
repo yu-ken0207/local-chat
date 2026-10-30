@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
@@ -90,6 +90,21 @@ describe('透過小幫手下載', () => {
     expect(pc.helper!.jobs![0]).toMatchObject({ model: 'gemma4:12b', engine: 'ollama' });
     await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:12b'));
     expect(events).toContain('downloaded');
+  });
+
+  test('電腦還沒有模型、正在下載：空白畫面寫下載進度，按「查看下載」打開選模型', async () => {
+    const { pc, store } = await pairedHelper();
+    pc.helper!.stalled = true;
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await act(async () => {
+      await store.startDownload(H, 'gemma4:12b');
+    });
+    expect(await screen.findByText(/正在下載 Gemma 4 · 12B…（\d+%）/)).toBeTruthy();
+    await fireEvent.press(screen.getByText('查看下載'));
+    expect(await screen.findByRole('header', { name: '選擇模型' })).toBeTruthy();
+    // 放行讓下載完成，不然 App 會一直問進度
+    pc.helper!.stalled = false;
+    await waitFor(() => expect(store.getState().downloads[H]?.[0].status).toBe('done'));
   });
 
   test('只有 LM Studio：下載到 LM Studio；名稱打錯說找不到', async () => {
