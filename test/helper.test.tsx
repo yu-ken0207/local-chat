@@ -21,6 +21,7 @@ async function setup(options: { db?: ReturnType<typeof memoryDb>; secrets?: Retu
   const pc = net.hosts.get(H) ?? net.addHelper(H, { id: 'h1', name: '書房電腦', code: '123456' }, { models: [{ name: 'gemma4:12b', vision: true }] });
   const db = options.db ?? memoryDb();
   const secrets = options.secrets ?? memorySecrets();
+  const events: string[] = [];
   const store = new ChatStore({
     repo: new Repo(db),
     client: net.client,
@@ -29,9 +30,10 @@ async function setup(options: { db?: ReturnType<typeof memoryDb>; secrets?: Retu
     wifiIp: async () => '192.168.1.5',
     throttleMs: 5,
     autoScan: false,
+    onEvent: (e) => events.push(e),
   });
   await store.init();
-  return { net, pc, db, secrets, store };
+  return { net, pc, db, secrets, store, events };
 }
 
 describe('QR code 內容', () => {
@@ -72,13 +74,15 @@ describe('配對', () => {
   });
 
   test('自動尋找：沒配對過的小幫手列出來；輸入配對碼後連上', async () => {
-    const { store } = await setup();
+    const { store, events } = await setup();
     await store.scanLan({ userInitiated: true });
     expect(store.getState().scan?.helpers).toEqual([{ url: H, id: 'h1', name: '書房電腦', pairing: true }]);
     expect(store.getState().hosts).toEqual([]);
     await store.pairHelper(H, '123 456');
     expect(store.getState().scan?.helpers).toEqual([]);
     expect(store.getState().session).toMatchObject({ hostUrl: H, model: 'gemma4:12b' });
+    // 配對成功由連接面板震一次就好；不再發「回答好了」（以前連震兩次，播報也說錯）
+    expect(events).not.toContain('answered');
   });
 
   test('小幫手換了位址：自動尋找認得是同一台，電腦和對話都改成新位址', async () => {

@@ -624,7 +624,7 @@ export class ChatStore {
     });
     if (this.state.session) this.set({ session: (await repo.getSession(this.state.session.id)) ?? this.state.session });
     await this.connectHost(url);
-    this.deps.onEvent?.('answered');
+    // 不發 'answered'：連接面板配對成功時自己會震一次（以前會連震兩次，播報也說成「回答好了」）
     return url;
   }
 
