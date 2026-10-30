@@ -197,6 +197,11 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
   }, [store, version]);
 
   const daysLeft = (deletedAt: number) => Math.max(1, TRASH_DAYS - Math.floor((Date.now() - deletedAt) / 86_400_000));
+  // 「還會保留 N 天」：英文剩 1 天時要用單數（不然唸成 1 more days）
+  const keptFor = (deletedAt: number) => {
+    const n = daysLeft(deletedAt);
+    return n === 1 ? t('還會保留 1 天') : t('還會保留 {n} 天', { n });
+  };
 
   function forever(s: TrashItem, name: string) {
     Alert.alert(t('永久刪除「{p0}」？', { p0: name }), t('永久刪除後就救不回來了。'), [
@@ -258,7 +263,7 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
                   <Pressable
                     onPress={() => menu(s, name)}
                     accessibilityRole="button"
-                    accessibilityLabel={t('已刪除的對話 {p0}，還會保留 {n} 天', { p0: name, n: daysLeft(s.deletedAt) })}
+                    accessibilityLabel={t('已刪除的對話 {p0}，{p1}', { p0: name, p1: keptFor(s.deletedAt) })}
                     accessibilityActions={[{ name: 'restore', label: t('救回') }, { name: 'delete', label: t('永久刪除') }]}
                     onAccessibilityAction={(e) => {
                       if (e.nativeEvent.actionName === 'restore') void restore(s);
@@ -270,7 +275,7 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
                         <Text style={styles.rowTitle} numberOfLines={1}>
                           {name}
                         </Text>
-                        <Text style={styles.preview}>{t('還會保留 {n} 天', { n: daysLeft(s.deletedAt) })}</Text>
+                        <Text style={styles.preview}>{keptFor(s.deletedAt)}</Text>
                       </View>
                       <Pressable onPress={() => void restore(s)} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('救回 {p0}', { p0: name })}>
                         <Text style={styles.restore}>{t('救回')}</Text>

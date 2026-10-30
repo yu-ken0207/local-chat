@@ -78,3 +78,9 @@ test('英文：時間欄位讀螢幕的標籤唸起來通順（欄位名是 Star
   expect(t('{p0}時間', { p0: t('什麼時候提醒') })).toBe('Remind at, time');
   expect(t('拿掉{p0}', { p0: t('結束') })).toBe('Remove the Ends field');
 });
+
+test('英文：最近刪除剩 1 天時用單數（不唸成 1 more days）', () => {
+  setLanguage('en');
+  expect(t('還會保留 1 天')).toBe('Kept for 1 more day');
+  expect(t('已刪除的對話 {p0}，{p1}', { p0: 'Lunch', p1: t('還會保留 1 天') })).toBe('Deleted chat Lunch, Kept for 1 more day');
+});
