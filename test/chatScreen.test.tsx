@@ -279,6 +279,14 @@ describe('對話', () => {
     expect(screen.getByTestId('chat-title').props.children).toBe('中午吃什麼');
   });
 
+  test('回答下的「模型 · 電腦」只在換了模型或電腦時才顯示', async () => {
+    const { store } = await setup();
+    await send(store, '第一題');
+    await send(store, '第二題');
+    // 輸入列下方一次＋第一則回答一次；第二則同一個模型就不再重複
+    expect(screen.getAllByText('Gemma 4 · 31B · 192.168.1.20')).toHaveLength(2);
+  });
+
   test('AI 回了空白：寫「AI 沒有回答」，可以按重新產生', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '' }, done: true }] });

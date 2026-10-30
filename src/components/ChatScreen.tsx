@@ -17,7 +17,7 @@ import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Co
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView } from './ActionCard';
-import { MessageView } from './Messages';
+import { MessageView, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer } from './SideDrawer';
@@ -140,6 +140,16 @@ export function ChatScreen(p: ChatScreenProps) {
     nearBottom.current = true;
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
   }, [state.session?.id]);
+
+  // 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（使用者決定，10/30）
+  const metaShown = new Set<string>();
+  let lastMeta = '';
+  for (const m of state.messages) {
+    if (m.role !== 'assistant' || !m.content.trim()) continue;
+    const meta = metaLine(m);
+    if (meta !== lastMeta) metaShown.add(m.id);
+    lastMeta = meta;
+  }
 
   const session = state.session;
   const model = store.currentModel();
@@ -283,6 +293,7 @@ export function ChatScreen(p: ChatScreenProps) {
                   message={m}
                   streaming={state.streaming}
                   isLast={i === state.messages.length - 1}
+                  showMeta={metaShown.has(m.id)}
                   onOpenImage={(images, index) => setViewer({ images, index })}
                   onCopyCode={copy}
                   onLongPress={messageMenu}

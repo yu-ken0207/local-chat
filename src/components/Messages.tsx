@@ -12,6 +12,8 @@ import { Markdown } from './Markdown';
 import { t } from '../i18n';
 
 type Handlers = {
+  /** 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（沒給就顯示） */
+  showMeta?: boolean;
   onOpenImage: (images: Attachment[], index: number) => void;
   onCopyCode: (code: string) => void;
   onLongPress?: (message: Message) => void;
@@ -35,6 +37,19 @@ function moreActions(onMore?: () => void) {
   return onMore ? { accessibilityActions: [{ name: 'more', label: t('更多動作') }], onAccessibilityAction: () => onMore() } : {};
 }
 
+/** 開著 VoiceOver：回答下的「模型 · 電腦」一律顯示（「更多動作」掛在那一行） */
+function useScreenReader(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isScreenReaderEnabled?.()
+      .then(setOn)
+      .catch(() => {});
+    const sub = AccessibilityInfo.addEventListener?.('screenReaderChanged', setOn);
+    return () => sub?.remove();
+  }, []);
+  return on;
+}
+
 /** 長按訊息：先輕震一下（跟 iPhone 長按一樣的手感），再開選單 */
 function longPress(open: () => void) {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -43,6 +58,7 @@ function longPress(open: () => void) {
 
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
+  const screenReader = useScreenReader();
   if (m.role === 'user') {
     return (
       <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
@@ -96,7 +112,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
             {h.extra}
             {live ? (
               <Working streaming={live} />
-            ) : toolTurn ? null : (
+            ) : toolTurn || (h.showMeta === false && !screenReader && !m.versions) ? null : (
               <View style={styles.metaRow}>
                 {m.versions && h.onSwitchVersion ? <Versions versions={m.versions} onSwitch={h.onSwitchVersion} /> : null}
                 <Text style={[styles.meta, styles.flex]} {...moreActions(h.onLongPress && (() => h.onLongPress!(m)))}>
