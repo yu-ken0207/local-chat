@@ -352,14 +352,15 @@ export function ChatScreen(p: ChatScreenProps) {
   // 「你按了復原」那種紀錄行不算最後一則：上面 AI 的回答照樣有複製、重新產生
   const lastIndex = state.messages.findLastIndex((m) => !isRecordNote(m) && !isThreadRoot(m));
   // 討論串的入口：放在那一題那一輪的最後一則後面（下一則是另一題、或已經是最後）
-  const threadAfter = new Map<number, { questionId: string; count: number }>();
+  const threadAfter = new Map<number, { questionId: string; count: number; running: boolean; fresh: boolean }>();
   if (!state.session?.parentId) {
     let question = '';
     state.messages.forEach((m, i) => {
       if (m.role === 'user') question = m.id;
       const next = state.messages[i + 1];
       const thread = question ? state.threads[question] : undefined;
-      if (thread && thread.count > 0 && (!next || next.role === 'user')) threadAfter.set(i, { questionId: question, count: thread.count });
+      if (thread && thread.count > 0 && (!next || next.role === 'user'))
+        threadAfter.set(i, { questionId: question, count: thread.count, running: thread.id in state.running, fresh: state.fresh.includes(thread.id) });
     });
   }
 
@@ -526,7 +527,14 @@ export function ChatScreen(p: ChatScreenProps) {
             onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
             extra={actionsOf(m)}
           />
-          {threadAfter.has(i) ? <ThreadLink count={threadAfter.get(i)!.count} onPress={(pageY) => void openThread(threadAfter.get(i)!.questionId, pageY)} /> : null}
+          {threadAfter.has(i) ? (
+                  <ThreadLink
+                    count={threadAfter.get(i)!.count}
+                    running={threadAfter.get(i)!.running}
+                    fresh={threadAfter.get(i)!.fresh}
+                    onPress={(pageY) => void openThread(threadAfter.get(i)!.questionId, pageY)}
+                  />
+                ) : null}
           {isThreadRoot(m) && !(state.messages[i + 1] && isThreadRoot(state.messages[i + 1])) ? <ThreadDivider /> : null}
           </Fragment>
         ))

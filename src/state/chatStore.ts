@@ -133,6 +133,10 @@ export type ChatState = {
   acting: { messageId: string; done: number; total: number } | null;
   /** 目前這段對話的討論串：key 是開討論串的那一題（使用者訊息的 id），count 是裡面問了幾次 */
   threads: Record<string, { id: string; count: number }>;
+  /** 正在回答的對話（換到別段、關掉討論串都照樣在背景回答）：值是它掛在哪段對話底下（一般對話是 null） */
+  running: Record<string, string | null>;
+  /** 在背景答完、還沒打開看過的討論串 */
+  fresh: string[];
 };
 
 type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
@@ -268,11 +272,12 @@ export class ChatStore {
     prefs: DEFAULT_PREFS,
     acting: null,
     threads: {},
+    running: {},
+    fresh: [],
   };
   private pendingUndo: PendingUndo | null = null;
   private undoCounter = 0;
   private listeners = new Set<() => void>();
-  private abort: AbortController | null = null;
   /** 正在幫對話取標題（測試用來等它完成） */
   titleTask: Promise<void> | null = null;
   /** 開 App 時的檢查主機＋自動掃描（測試用來等它完成） */
@@ -364,8 +369,8 @@ export class ChatStore {
   private async openLatestOrNew(): Promise<void> {
     const { repo } = this.deps;
     const latest = (await repo.listSessions())[0];
-    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '', threads: await this.threadMap(latest) });
-    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
+    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '', threads: await this.threadMap(latest), streaming: this.runs.get(latest.id)?.streaming ?? null });
+    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {}, streaming: null });
   }
 
   // ---- 查詢 ----
@@ -971,7 +976,7 @@ export class ChatStore {
   /** 開新對話；目前這段還沒講話就不另開。沿用目前的模型與思考設定 */
   async newSession(): Promise<void> {
     const { repo } = this.deps;
-    this.stop();
+    // 不停掉回答：目前這段在背景照樣答完
     const s = this.state.session;
     if (s && this.state.messages.length === 0) return;
     const next = await repo.createSession({
@@ -980,18 +985,26 @@ export class ChatStore {
       think: s?.think ?? null,
     });
     await repo.deleteEmptySessions(next.id);
-    this.set({ session: next, messages: [], context: null, notice: '', threads: {} });
+    this.set({ session: next, messages: [], context: null, notice: '', threads: {}, streaming: null });
   }
 
   async openSession(id: string): Promise<void> {
     const { repo } = this.deps;
     // 點的就是目前這段：什麼都不用做（不要把回答停掉）
     if (this.state.session?.id === id) return;
-    this.stop();
+    // 不停掉回答：原本那段在背景照樣答完；換到的這段如果正在回答，接著看它的串流
     const session = await repo.getSession(id);
     if (!session) return;
     const current = this.state.session;
-    this.set({ session, messages: await repo.listMessages(id), context: null, notice: '', threads: await this.threadMap(session) });
+    this.set({
+      session,
+      messages: await repo.listMessages(id),
+      context: null,
+      notice: '',
+      threads: await this.threadMap(session),
+      streaming: this.runs.get(id)?.streaming ?? null,
+      fresh: this.state.fresh.filter((x) => x !== id),
+    });
     if (current && current.id !== id) await repo.deleteEmptySessions(id);
     if (session.hostUrl && !this.state.models[session.hostUrl]) void this.loadModels(session.hostUrl);
   }
@@ -1000,7 +1013,7 @@ export class ChatStore {
   async deleteSession(id: string): Promise<void> {
     const { repo } = this.deps;
     const wasCurrent = this.state.session?.id === id;
-    if (wasCurrent) this.stop();
+    this.stopSession(id);
     // 上一個還能復原的操作先確定（例如清除全部資料）：不然它確定時會看到這段剛被移到最近刪除，直接永久刪掉
     await this.dismissUndo();
     const session = await repo.getSession(id);
@@ -1189,7 +1202,7 @@ export class ChatStore {
     const old = await repo.softDeleteFrom(s.id, target.seq);
     this.set({ messages: await repo.listMessages(s.id) });
     await this.offerUndo(t('已取代原本的訊息'), async () => {
-      this.stop();
+      this.stopSession(s.id);
       const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id));
       for (const m of added) await repo.deleteMessage(m.id);
       await repo.restoreMessages(old);
@@ -1235,24 +1248,51 @@ export class ChatStore {
     });
   }
 
-  /** 中途停止回答 */
+  /** 每段對話正在跑的回答（同一段同時只有一個）；畫面用的 state.streaming 是目前這段的那一個 */
+  private runs = new Map<string, { abort: AbortController; streaming: Streaming; parentId: string | null }>();
+
+  /** 把正在跑的回答整理到畫面：哪幾段在回答、目前這段的串流 */
+  private publishRuns(): void {
+    const running: Record<string, string | null> = {};
+    for (const [id, r] of this.runs) running[id] = r.parentId;
+    const cur = this.state.session?.id;
+    this.set({ running, streaming: (cur ? this.runs.get(cur)?.streaming : null) ?? null });
+  }
+
+  /** 中途停止回答（目前這段） */
   stop(): void {
-    this.abort?.abort();
+    const cur = this.state.session?.id;
+    if (cur) this.runs.get(cur)?.abort.abort();
+  }
+
+  /** 停掉某段對話（連它的討論串）在背景的回答：刪掉那段時用 */
+  private stopSession(id: string): void {
+    for (const [sid, r] of this.runs) if (sid === id || r.parentId === id) r.abort.abort();
+  }
+
+  /** 全部停掉：刪除所有對話、清除全部資料、從備份還原時用 */
+  private stopAll(): void {
+    for (const r of this.runs.values()) r.abort.abort();
   }
 
   /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
-  private async answer(options: { altGroup?: string; retried?: boolean } = {}): Promise<void> {
+  /**
+   * 依某段對話（預設目前這段）的內容向模型要一則新的回答（send、重新產生、編輯重送、工具做完接著答共用）。
+   * 換到別段對話、關掉討論串都不停：照樣在背景答完、存進那段；畫面只在還是同一段時更新
+   */
+  private async answer(options: { altGroup?: string; retried?: boolean; sessionId?: string } = {}): Promise<void> {
     const { repo } = this.deps;
-    const s = this.state.session!;
-    // 回答中可能換到別段對話：畫面、提示只在還是同一段時才更新
+    const s = options.sessionId ? await repo.getSession(options.sessionId) : this.state.session;
+    if (!s?.hostUrl || !s.model || this.runs.has(s.id)) return;
     const here = () => this.state.session?.id === s.id;
-    const url = s.hostUrl!;
-    const model = s.model!;
-    const info = this.currentModel();
+    const url = s.hostUrl;
+    const model = s.model;
+    const info = this.state.models[url]?.list.find((m) => m.name === model);
     const tools = this.toolsFor(info);
+    const msgs = await repo.listMessages(s.id);
     // 設定裡關掉的：模型還是可能照前面的對話去叫，所以先跟它說
     const toolsOff = info?.tools ? this.toolGroups().filter((g) => this.state.prefs.toolsOff?.includes(g)) : [];
-    const { messages: history, droppedImages } = buildChatMessages(this.state.messages, {
+    const { messages: history, droppedImages } = buildChatMessages(msgs, {
       vision: info ? info.vision : true,
       systemPrompt:
         REPLY_PROMPTS[this.appLanguage()] +
@@ -1260,14 +1300,22 @@ export class ChatStore {
         (toolsOff.length > 0 ? '\n\n' + toolsOffPrompt(toolsOff) : ''),
     });
     // 這一輪使用者說「不要」、改過才做的：最後再提醒一次，不然模型常照自己原本提的講（「已經改好了」、原本的日期）
-    const note = this.lastRoundNote();
+    const note = this.lastRoundNote(msgs);
     if (note) history.push({ role: 'system', content: note });
-    if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
+    if (droppedImages > 0 && here()) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
     const hostLabel = this.hostLabel(url);
     const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel, altGroup: options.altGroup ?? null });
-    const streaming: Streaming = { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' };
-    this.set({ streaming, messages: [...this.state.messages, placeholder] });
+    const abort = new AbortController();
+    const run = { abort, parentId: s.parentId, streaming: { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' } as Streaming };
+    this.runs.set(s.id, run);
+    if (here()) this.set({ messages: [...this.state.messages, placeholder] });
+    this.publishRuns();
+    const update = (patch: Partial<Streaming>) => {
+      if (this.runs.get(s.id) !== run) return;
+      run.streaming = { ...run.streaming, ...patch };
+      if (here()) this.set({ streaming: run.streaming });
+    };
 
     // 串流的字先累積，固定間隔才更新畫面
     let content = '';
@@ -1280,34 +1328,26 @@ export class ChatStore {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
       timer = null;
-      if (this.state.streaming?.messageId !== placeholder.id) return;
       const allThinking = thinking + leaked;
-      this.set({
-        streaming: { ...this.state.streaming, content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' },
-      });
+      update({ content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' });
     };
 
-    this.abort = new AbortController();
-    const signal = this.abort.signal;
+    const signal = abort.signal;
     // 同時確認連不連得到：根本連不到時馬上停下來找原因，不用等到聊天逾時（最多 3 分鐘）
     let unreachable = false;
-    const abortForThis = this.abort;
     const isHelper = !!this.state.hosts.find((h) => h.url === url)?.helperId;
     this.clientFor(url)
       .ping(isHelper, this.deps.probeTimeoutMs ?? 5000)
       .catch((e) => {
-        if (e instanceof OllamaError && (e.kind === 'network' || e.kind === 'timeout') && !content && !thinking && this.abort === abortForThis) {
+        if (e instanceof OllamaError && (e.kind === 'network' || e.kind === 'timeout') && !content && !thinking && this.runs.get(s.id) === run) {
           unreachable = true;
-          abortForThis.abort();
+          abort.abort();
         }
       });
     // 模型載入了沒：沒有的話畫面說明第一次比較久
     this.clientFor(url)
       .loaded()
-      .then((list) => {
-        const st = this.state.streaming;
-        if (st?.messageId === placeholder.id) this.set({ streaming: { ...st, loading: !list.some((m) => m.name === model) } });
-      })
+      .then((list) => update({ loading: !list.some((m) => m.name === model) }))
       .catch(() => {});
     let retryMoved = false;
     let next: 'continue' | 'wait' | 'done' = 'done';
@@ -1346,7 +1386,8 @@ export class ChatStore {
       if (here()) this.set({ context: { used, limit, level: contextLevel(used, limit) } });
       // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
       if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls);
-      else this.deps.onEvent?.('answered');
+      // 在背景答完的不震、不播報（使用者正在看別段，不要打擾）
+      else if (here()) this.deps.onEvent?.('answered');
       // 有文字的回答出來、這段還沒有標題：請模型取標題（不擋住下一次輸入；第一個回答被停掉的話，下一個回答再取）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
       if (answered >= 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
@@ -1373,36 +1414,35 @@ export class ChatStore {
           s.id,
           cancelled ? { role: 'note', content: t('已停止') } : { role: 'error', content: t('沒有得到回答：{p0}', { p0: reason }), detail: errorDetail(e) }
         );
-        this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
+        if (here()) this.deps.onEvent?.(cancelled ? 'stopped' : 'failed');
       }
     } finally {
       if (timer) clearTimeout(timer);
-      if (this.abort === abortForThis) this.abort = null;
+      if (this.runs.get(s.id) === run) this.runs.delete(s.id);
       const latest = await repo.listMessages(s.id);
-      // 串流狀態只收自己的；換到別段對話時畫面已經是那段，不要把這段的訊息蓋上去
-      this.set({ ...(this.state.streaming?.messageId === placeholder.id ? { streaming: null } : {}), ...(here() ? { messages: latest } : {}) });
+      if (here()) this.set({ messages: latest });
+      this.publishRuns();
+      // 討論串在背景答完：入口寫「新回答」（打開看過就拿掉）；目前看的是它那段對話時，順便更新問了幾次
+      if (s.parentId && !here()) {
+        if (!this.state.fresh.includes(s.id)) this.set({ fresh: [...this.state.fresh, s.id] });
+        if (this.state.session?.id === s.parentId) this.set({ threads: await this.threadMap(this.state.session) });
+      }
       void this.refreshLoaded(url);
     }
-    // 換到別段對話：不再接著做（不然會用那段的內容回答、存進那段）。
-    // 本來要接著問模型（工具剛做完、電腦換了位址要自動再問）的，在那段留一行「已停止」，回去時可以「重新回答」
-    if (!here()) {
-      if (next === 'continue' || retryMoved) await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
-      return;
-    }
-    // 工具做完之前按了停止：不再接著問模型
+    // 按了停止（不是連不到）：不再接著問模型
     if (signal.aborted && !unreachable) {
       if (next === 'continue') {
         await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
-        const msgs = await repo.listMessages(s.id);
-        if (here()) this.set({ messages: msgs });
-        this.deps.onEvent?.('stopped');
+        const after = await repo.listMessages(s.id);
+        if (here()) this.set({ messages: after });
+        if (here()) this.deps.onEvent?.('stopped');
       }
       return;
     }
-    // 電腦換了位址：已經改好，自動再問一次
-    if (retryMoved) await this.answer({ ...options, retried: true });
+    // 電腦換了位址：已經改好，自動再問一次（換到別段也照樣在背景問）
+    if (retryMoved) await this.answer({ ...options, retried: true, sessionId: s.id });
     // 工具都做完了（不用等使用者）：把結果交回模型，接著回答
-    else if (next === 'continue') await this.continueAfterTools();
+    else if (next === 'continue') await this.continueAfterTools(s.id);
   }
 
   // ---- 手機上動手做事 ----
@@ -1511,24 +1551,24 @@ export class ChatStore {
   }
 
   /** 從最後一則使用者訊息之後，AI 已經叫了幾輪工具 */
-  private toolRounds(): number {
-    const msgs = this.state.messages;
+  private toolRounds(msgs: Message[]): number {
     const lastUser = msgs.map((m) => m.role).lastIndexOf('user');
     return msgs.slice(lastUser + 1).filter((m) => m.role === 'assistant' && m.toolCalls?.length).length;
   }
 
-  /** 工具都有結果了：交回模型接著回答；叫太多輪就停下來 */
-  private async continueAfterTools(): Promise<void> {
-    const s = this.state.session;
-    if (!s || this.state.streaming) return;
-    if (this.state.messages.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
-    if (this.toolRounds() >= MAX_TOOL_ROUNDS) {
-      await this.deps.repo.addMessage(s.id, { role: 'note', content: t('做到一半停下來了：AI 叫了太多次工具。已經做的事在上面，可以復原。') });
-      const msgs = await this.deps.repo.listMessages(s.id);
-      if (this.state.session?.id === s.id) this.set({ messages: msgs });
+  /** 工具都有結果了：交回模型接著回答（那段在背景也一樣）；叫太多輪就停下來 */
+  private async continueAfterTools(sessionId = this.state.session?.id): Promise<void> {
+    const { repo } = this.deps;
+    if (!sessionId || this.runs.has(sessionId)) return;
+    const msgs = await repo.listMessages(sessionId);
+    if (msgs.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
+    if (this.toolRounds(msgs) >= MAX_TOOL_ROUNDS) {
+      await repo.addMessage(sessionId, { role: 'note', content: t('做到一半停下來了：AI 叫了太多次工具。已經做的事在上面，可以復原。') });
+      const after = await repo.listMessages(sessionId);
+      if (this.state.session?.id === sessionId) this.set({ messages: after });
       return;
     }
-    await this.answer();
+    await this.answer({ sessionId });
   }
 
   private actionBusy = new Set<string>();
@@ -1619,8 +1659,7 @@ export class ChatStore {
    * 送給模型時最後補的提醒：這段對話裡按過「復原」的；
    * 剛按完確認卡（最後一則是工具結果）時，再加那一輪按「不要」、取消勾選、改過才做的
    */
-  private lastRoundNote(): string {
-    const messages = this.state.messages;
+  private lastRoundNote(messages: Message[]): string {
     const name = (a: Action) => this.itemOf(a).item ?? this.toolFor(a.tool)?.label ?? a.tool;
     const undone = messages.flatMap((m) => m.actions ?? []).filter((a) => a.status === 'undone').map(name);
     const notes = [undone.length > 0 ? undonePrompt(undone) : ''];
@@ -1675,9 +1714,8 @@ export class ChatStore {
 
   /** 確認卡都處理完了就接著問模型 */
   private async afterAction(sessionId: string): Promise<void> {
-    if (this.state.session?.id !== sessionId) return;
-    this.set({ messages: await this.deps.repo.listMessages(sessionId) });
-    await this.continueAfterTools();
+    if (this.state.session?.id === sessionId) this.set({ messages: await this.deps.repo.listMessages(sessionId) });
+    await this.continueAfterTools(sessionId);
   }
 
   /** 復原做過的動作（例如刪掉剛加的行程） */
@@ -1742,7 +1780,7 @@ export class ChatStore {
   /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦與模型設定；換成一段新的空白對話 */
   async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
-    this.stop();
+    this.stopAll();
     await this.dismissUndo();
     const ids = await repo.trashAllSessions();
     this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
@@ -1759,7 +1797,7 @@ export class ChatStore {
    */
   async resetAll(): Promise<void> {
     const { repo } = this.deps;
-    this.stop();
+    this.stopAll();
     this.stopScan();
     const snapshot = await repo.snapshotSettings();
     // 本來就在最近刪除的也一起清掉；按「復原」只救回這次移過去的
@@ -1808,7 +1846,7 @@ export class ChatStore {
    */
   async restoreFromBackup(source: Db): Promise<void> {
     const { repo } = this.deps;
-    this.stop();
+    this.stopAll();
     this.stopScan();
     await this.dismissUndo();
     const snapshot = this.deps.openMemoryDb ? await this.deps.openMemoryDb() : null;

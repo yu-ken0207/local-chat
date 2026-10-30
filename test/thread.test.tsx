@@ -139,3 +139,36 @@ test('討論串浮在原對話上：後面墊著剛才原對話的截圖；讀�
   await fireEvent(modal, 'accessibilityEscape');
   expect(await screen.findByText('Go 怎麼裝', {}, { timeout: 3000 })).toBeTruthy();
 });
+
+test('討論串還在回答就關掉：不停掉，入口寫「回答中…」，答完寫「新回答」，打開看過就拿掉；原對話照樣可以問', async () => {
+  const { store, net } = await setup();
+  menu('開討論串');
+  await longPress(store.getState().messages[1].id);
+  await screen.findByText('以下是討論串');
+  let finish!: () => void;
+  const holdLast = new Promise<void>((r) => (finish = r));
+  const host = net.hosts.get(A)!;
+  host.reply = (body: any) =>
+    body.messages.at(-1).content === '牛肉湯哪家好'
+      ? { lines: [{ message: { content: '阿村' }, done: false }, { message: { content: '牛肉湯' }, done: false }, { message: { content: '' }, done: true }], holdLast }
+      : { lines: [{ message: { content: '回答：' + body.messages.at(-1).content }, done: false }, { message: { content: '' }, done: true }] };
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '牛肉湯哪家好');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  expect(await screen.findByText('討論串 · 回答中…', {}, { timeout: 3000 })).toBeTruthy();
+  // 原對話照樣可以問
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '那 Python 呢');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  expect(await screen.findByText('回答：那 Python 呢')).toBeTruthy();
+  // 側邊欄：這段（它的討論串在背景回答）寫「回答中…」
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  expect(await screen.findByText('回答中…')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('關閉對話清單'));
+  finish();
+  expect(await screen.findByText('討論串（1 則）· 新回答', {}, { timeout: 3000 })).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('討論串，有新回答，點一下打開'));
+  expect(await screen.findByText('阿村牛肉湯')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  expect(await screen.findByText('討論串（1 則）', {}, { timeout: 3000 })).toBeTruthy();
+});

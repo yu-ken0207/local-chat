@@ -46,7 +46,9 @@ export function SessionList({
   const [items, setItems] = useState<ListItem[] | null>(null);
   const [version, setVersion] = useState(0);
   const reload = () => setVersion((v) => v + 1);
-  const { undo, session } = useChatState(store);
+  const { undo, session, running } = useChatState(store);
+  // 正在回答的（自己或它的討論串在背景回答）：清單上寫「回答中…」
+  const answering = new Set(Object.entries(running).map(([id, parent]) => parent ?? id));
 
   // 設定面板關上時也重新載入（可能在「最近刪除」救回了對話）
   useEffect(() => {
@@ -132,7 +134,11 @@ export function SessionList({
                         </Text>
                         <Text style={styles.when}>{fmtWhen(s.updatedAt, now)}</Text>
                       </View>
-                      {s.pending ? (
+                      {answering.has(s.id) ? (
+                        <Text style={[styles.preview, { color: C.accent }]} numberOfLines={1}>
+                          {t('回答中…')}
+                        </Text>
+                      ) : s.pending ? (
                         <Text style={[styles.preview, { color: C.accent }]} numberOfLines={1}>
                           {t('等你確認')}
                         </Text>

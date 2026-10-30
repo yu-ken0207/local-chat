@@ -3,6 +3,7 @@
  */
 import { REPLY_PROMPTS } from '../src/lib/history';
 import { ChatStore, HostOfflineError, type ChatEvent } from '../src/state/chatStore';
+import { waitFor } from '@testing-library/react-native';
 import { Repo } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
 import { memoryDb } from './helpers/nodeDb';
@@ -281,26 +282,59 @@ describe('傳送與串流', () => {
     await p;
   });
 
-  test('回答中換到別段對話：畫面只顯示那段，收到一半的字留在原本那段', async () => {
-    const { net, store, repo } = await ready();
+  test('回答中換到別段對話：不停掉，在背景照樣答完存進原本那段；畫面只顯示換到的那段，可以接著在那段問', async () => {
+    const { net, store, repo, events } = await ready();
+    await store.send('第一段');
+    const first = store.getState().session!.id;
+    await store.newSession();
+    const second = store.getState().session!.id;
+    let finish!: () => void;
+    const holdLast = new Promise<void>((r) => (finish = r));
+    net.hosts.get(A)!.reply = (body) =>
+      body.messages.at(-1).content === '第二段'
+        ? { lines: [{ message: { content: '寫到一半' }, done: false }, { message: { content: '，寫完了' }, done: false }, { message: { content: '' }, done: true }], holdLast }
+        : { lines: [{ message: { content: '回答：' + body.messages.at(-1).content }, done: false }, { message: { content: '' }, done: true }] };
+    const p = store.send('第二段');
+    await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+    events.length = 0;
+    await store.openSession(first);
+    // 換過去的那段沒有在回答；背景那段記在 running
+    expect(store.getState().streaming).toBeNull();
+    expect(store.getState().running).toEqual({ [second]: null });
+    expect(store.getState().messages.map((m) => m.content)).not.toContain('第二段');
+    // 在這段照樣可以問（兩邊同時）
+    await store.send('第三段');
+    expect(store.getState().messages.at(-1)?.content).toBe('回答：第三段');
+    finish();
+    await p;
+    expect(store.getState().running).toEqual({});
+    expect((await repo.listMessages(second)).map((m) => [m.role, m.content])).toEqual([
+      ['user', '第二段'],
+      ['assistant', '寫到一半，寫完了'],
+    ]);
+    // 在背景答完的不震、不播報；這段的畫面沒被蓋掉
+    expect(events.filter((e) => e === 'answered')).toHaveLength(1);
+    expect(store.getState().session?.id).toBe(first);
+    // 回去那段：看得到答完的內容
+    await store.openSession(second);
+    expect(store.getState().messages.at(-1)?.content).toBe('寫到一半，寫完了');
+  });
+
+  test('回答中換到別段、再換回來：接著看它的串流', async () => {
+    const { net, store } = await ready();
     await store.send('第一段');
     const first = store.getState().session!.id;
     await store.newSession();
     const second = store.getState().session!.id;
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
-    const p = store.send('第二段');
-    await flush();
+    void store.send('第二段');
+    await waitFor(() => expect(store.getState().streaming?.content).toBe('寫到一半'));
     await store.openSession(first);
-    await p;
-    const st = store.getState();
-    expect(st.session?.id).toBe(first);
-    expect(st.streaming).toBeNull();
-    expect(st.messages.map((m) => m.content)).not.toContain('第二段');
-    expect((await repo.listMessages(second)).map((m) => [m.role, m.content])).toEqual([
-      ['user', '第二段'],
-      ['assistant', '寫到一半'],
-      ['note', '已停止'],
-    ]);
+    await store.openSession(second);
+    expect(store.getState().streaming?.content).toBe('寫到一半');
+    store.stop();
+    await waitFor(() => expect(store.getState().streaming).toBeNull());
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' });
   });
 
   test('連不到電腦：不留空白回答，加一則白話錯誤，技術細節另外存', async () => {
