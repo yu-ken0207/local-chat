@@ -112,7 +112,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
       <ScrollView contentContainerStyle={styles.content}>
         {/* 說明緊跟著它在講的那一列：語言的說明以前排在「你的電腦」下面，看起來像在講電腦 */}
         <Section title={t('一般')}>
-          <Row icon="globe" label={t('語言')} value={languageName(prefs.language)} onPress={pickLanguage} last />
+          <Row icon="globe" label={t('語言')} value={languageName(prefs.language)} onPress={pickLanguage} accessory="menu" last />
         </Section>
         <Text style={styles.footnote}>{t('AI 也會用這個語言回答。')}</Text>
 
@@ -138,8 +138,8 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
 
         <Section title={t('資料')}>
           <Row icon="trash.slash" label={t('最近刪除')} value={info ? t('{p0} 段', { p0: info.trash }) : ''} onPress={onOpenTrash} accessibilityLabel={t('最近刪除，{p0} 段', { p0: info?.trash ?? 0 })} />
-          <Row icon="square.and.arrow.up" label={t('備份所有對話')} onPress={backup} />
-          {pickBackup ? <Row icon="square.and.arrow.down" label={t('從備份還原')} onPress={restore} last /> : null}
+          <Row icon="square.and.arrow.up" label={t('備份所有對話')} onPress={backup} accessory="none" />
+          {pickBackup ? <Row icon="square.and.arrow.down" label={t('從備份還原')} onPress={restore} accessory="none" last /> : null}
         </Section>
         <Text style={styles.footnote}>{t('對話只存在這支手機。刪除的對話會在「最近刪除」保留 {n} 天。', { n: TRASH_DAYS })}</Text>
 
@@ -271,6 +271,7 @@ function Row({
   danger,
   last,
   accessibilityLabel,
+  accessory = 'push',
 }: {
   icon: SFSymbol;
   label: string;
@@ -279,6 +280,8 @@ function Row({
   danger?: boolean;
   last?: boolean;
   accessibilityLabel?: string;
+  /** 右邊的符號照 iOS 慣例：推進新的一頁「›」、跳出選單「⌃⌄」、直接執行不放 */
+  accessory?: 'push' | 'menu' | 'none';
 }) {
   return (
     <Pressable
@@ -294,7 +297,7 @@ function Row({
             {value}
           </Text>
         ) : null}
-        {!danger ? <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} /> : null}
+        {danger || accessory === 'none' ? null : <SymbolView name={accessory === 'menu' ? 'chevron.up.chevron.down' : 'chevron.right'} size={13} tintColor={C.tertiary} />}
       </View>
       {!last ? <View style={styles.separator} /> : null}
     </Pressable>

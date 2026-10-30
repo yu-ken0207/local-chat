@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
@@ -37,6 +37,15 @@ async function setup(pickBackup?: () => Promise<Db | null>) {
 const pickAction = (index: number) => jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_o, cb) => cb(index));
 
 afterEach(() => jest.restoreAllMocks());
+
+test('右邊的符號照 iOS 慣例：跳出選單 ⌃⌄、推進新的一頁 ›、直接執行的不放', async () => {
+  await setup(jest.fn(async () => null));
+  const row = (label: string | RegExp) => within(screen.getByLabelText(label));
+  expect(row('語言，跟著系統').getByTestId('symbol-chevron.up.chevron.down', { includeHiddenElements: true })).toBeTruthy();
+  expect(row(/^最近刪除/).getByTestId('symbol-chevron.right', { includeHiddenElements: true })).toBeTruthy();
+  expect(row('備份所有對話').queryByTestId('symbol-chevron.right', { includeHiddenElements: true })).toBeNull();
+  expect(row('從備份還原').queryByTestId('symbol-chevron.right', { includeHiddenElements: true })).toBeNull();
+});
 
 test('語言：預設跟著系統，可以改成 English', async () => {
   const { store } = await setup();
