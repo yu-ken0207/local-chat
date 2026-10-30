@@ -443,6 +443,7 @@ export const en: Record<string, string> = {
   "AI 問你：{p0}": "The AI asks: {p0}",
   "你的回答": "Your answer",
   "自己輸入…": "Type my own…",
+  "先按「好」或「取消」結束修改": "Tap OK or Cancel to finish editing first",
   "不回答": "Skip",
   "問你一個問題": "Ask you a question",
   "你回答：{p0}": "You answered: {p0}",

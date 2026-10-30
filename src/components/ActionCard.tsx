@@ -171,12 +171,15 @@ export function ActionListCard({
             </>
           ) : (
             <>
-              <ActionButton text={t('全部不要')} onPress={() => setDeclining(true)} />
-              <ActionButton text={busy ? t('處理中…') : verb} primary onPress={() => !busy && editing === null && void (chosen.length === 0 ? declineAll() : go())} />
+              {/* 全部取消勾選時主按鈕已經是「都不要」，不再並排一顆「全部不要」 */}
+              {chosen.length > 0 ? <ActionButton text={t('全部不要')} onPress={() => setDeclining(true)} /> : null}
+              {/* 改到一半：主按鈕先按不了，並說要先按「好」或「取消」（以前按了沒反應） */}
+              <ActionButton text={busy ? t('處理中…') : verb} primary disabled={editing !== null} onPress={() => !busy && void (chosen.length === 0 ? declineAll() : go())} />
             </>
           )}
         </View>
       )}
+      {editing !== null && !progress ? <Text style={[styles.small, styles.dim]}>{t('先按「好」或「取消」結束修改')}</Text> : null}
     </View>
   );
 }
