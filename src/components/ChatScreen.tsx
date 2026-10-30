@@ -186,7 +186,8 @@ export function ChatScreen(p: ChatScreenProps) {
 
   /** 點標題：改名或刪除這段對話（跟對話清單的 ⋯ 一樣） */
   function sessionMenu() {
-    if (!session || state.streaming) return;
+    // 回答中也能改名、刪除（刪除本來就會先停掉回答）；以前回答中點標題沒反應
+    if (!session) return;
     chooseOption(title, [t('重新命名'), t('刪除這段對話')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, (text) => void store.renameSession(session.id, text), 'plain-text', session.title);
       if (i === 1) void deleteSession(store, session.id);

@@ -202,6 +202,17 @@ describe('VoiceOver', () => {
 });
 
 describe('選單', () => {
+  test('回答中點標題也會出現「重新命名／刪除」選單', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+    await fireEvent.press(screen.getByTestId('chat-title'));
+    expect(sheet).toHaveBeenCalledTimes(1);
+    expect(sheet.mock.calls[0][0].options).toContain('刪除這段對話');
+    store.stop();
+  });
+
   test('長按訊息：選單裡的「刪除」顯示成紅色（危險選項）', async () => {
     const { store } = await setup();
     await send(store, 'hi');
