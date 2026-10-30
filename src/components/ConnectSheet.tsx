@@ -26,8 +26,8 @@ type Props = {
 
 /** 連接你的電腦：自動尋找、手動輸入位址、你的電腦清單、連不上時的說明 */
 export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage, onNeedModel }: Props) {
-  // 配對成功但這台電腦還沒有模型：面板最上面說清楚，給下一步
-  const [pairedNoModel, setPairedNoModel] = useState('');
+  // 配對成功但還不能聊：電腦還沒有模型（給下載），或讀不到電腦上的模型（給再試一次）；面板最上面說清楚
+  const [pairedNoModel, setPairedNoModel] = useState<{ url: string; name: string; failed: boolean } | null>(null);
   const [helpOpen, setHelpOpen] = useState(!!showHelp);
   /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
   const [adding, setAdding] = useState<string | null>(null);
@@ -54,19 +54,28 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage
     }
   }
 
-  /** 配對成功：選好模型就關掉面板，可以直接聊天；電腦還沒有模型就說清楚、給「選一個模型下載」 */
-  function paired() {
+  /**
+   * 配對成功：選好模型就關掉面板，可以直接聊天；電腦還沒有模型就說清楚、給「選一個模型下載」。
+   * 讀模型清單失敗（例如電腦上的模型服務還沒開）不是「沒有模型」：說讀不到、給「再試一次」
+   */
+  function paired(url: string) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const s = store.getState().session;
-    if (s?.model) return onClose();
-    setPairedNoModel(store.hostLabel(s?.hostUrl) || t('你的電腦'));
+    const st = store.getState();
+    if (st.session?.model) return onClose();
+    setPairedNoModel({ url, name: store.hostLabel(url) || t('你的電腦'), failed: !!st.models[url]?.error });
+  }
+
+  async function retryModels(url: string) {
+    await store.connectHost(url);
+    if (store.getState().session?.model) return onClose();
+    setPairedNoModel({ url, name: store.hostLabel(url) || t('你的電腦'), failed: !!store.getState().models[url]?.error });
   }
 
   /** 掃到 QR code：配對成功回 null，失敗回說明（掃描畫面會顯示） */
   async function scanned(data: string): Promise<string | null> {
     try {
-      await store.pairFromQr(data);
-      afterScanner.current = paired;
+      const url = await store.pairFromQr(data);
+      afterScanner.current = () => paired(url);
       setScannerOpen(false);
       // 保險：iOS 沒回報關好時也要繼續
       setTimeout(scannerClosed, 1500);
@@ -84,8 +93,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage
       async (code) => {
         setAdding(name || url);
         try {
-          await store.pairHelper(url, code);
-          paired();
+          paired(await store.pairHelper(url, code));
         } catch (e) {
           Alert.alert(t('沒有配對成功'), e instanceof Error ? e.message : String(e));
         } finally {
@@ -200,9 +208,16 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {pairedNoModel ? (
+        {pairedNoModel?.failed ? (
           <View style={styles.pairedCard} accessibilityLiveRegion="polite">
-            <Text style={styles.lead}>{t('已連上「{p0}」。這台電腦還沒有模型，下載一個就能開始聊天。', { p0: pairedNoModel })}</Text>
+            <Text style={styles.lead}>{t('已配對「{p0}」，但讀不到電腦上的模型。電腦上的模型服務可能還沒開，開好再試一次。', { p0: pairedNoModel.name })}</Text>
+            <Pressable onPress={() => void retryModels(pairedNoModel.url)} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
+              <Text style={styles.primaryText}>{t('再試一次')}</Text>
+            </Pressable>
+          </View>
+        ) : pairedNoModel ? (
+          <View style={styles.pairedCard} accessibilityLiveRegion="polite">
+            <Text style={styles.lead}>{t('已連上「{p0}」。這台電腦還沒有模型，下載一個就能開始聊天。', { p0: pairedNoModel.name })}</Text>
             <Pressable onPress={() => (onNeedModel ? onNeedModel() : onClose())} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
               <Text style={styles.primaryText}>{t('選一個模型下載')}</Text>
             </Pressable>

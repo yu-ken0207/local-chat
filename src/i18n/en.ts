@@ -415,6 +415,8 @@ export const en: Record<string, string> = {
   "{p0}：{p1}（AI 猜的）": "{p0}: {p1} (guessed by the AI)",
   "{p0}：{p1}": "{p0}: {p1}",
   "{p0}（AI 猜的）": "{p0} (AI's guess)",
+  "已配對「{p0}」，但讀不到電腦上的模型。電腦上的模型服務可能還沒開，開好再試一次。": "Paired with \u201c{p0}\u201d, but couldn't read its models. The model service on the computer may not be running yet. Start it, then try again.",
+  "再試一次": "Try again",
   "討論串": "Thread",
   "開討論串": "Start a thread",
   "打開討論串": "Open thread",

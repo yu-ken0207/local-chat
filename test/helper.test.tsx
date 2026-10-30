@@ -168,6 +168,22 @@ describe('連接面板', () => {
     expect(await screen.findByRole('header', { name: '選擇模型' }, { timeout: 3000 })).toBeTruthy();
   });
 
+  test('配對成功但讀不到電腦上的模型（模型服務沒開）：不說成「沒有模型」，給「再試一次」', async () => {
+    const net = new FakeOllamaNet();
+    const host = net.addHelper(H, { id: 'h1', name: '書房電腦', code: '123456' }, { models: [{ name: 'gemma4:12b' }], noEngine: true });
+    const { store } = await setup({ net });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('掃描 QR code'));
+    await fireEvent(await screen.findByTestId('qr-camera'), 'barcodeScanned', { data: payload('123456') });
+    expect(await screen.findByText(/讀不到電腦上的模型/, {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.queryByText(/這台電腦還沒有模型/)).toBeNull();
+    host.noEngine = false;
+    await fireEvent.press(screen.getByText('再試一次'));
+    await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:12b'));
+    await waitFor(() => expect(screen.queryByText('掃描 QR code')).toBeNull(), { timeout: 3000 });
+  });
+
   test('從選模型面板新增電腦：配對回來後，面板切到新加的那台（不會停在舊電腦）', async () => {
     const net = new FakeOllamaNet();
     const OLD = 'http://192.168.1.20:11434';
