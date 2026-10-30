@@ -20,7 +20,7 @@ import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Co
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
-import { parseConclusion } from '../agents/discussion';
+import { CONCLUSION, parseConclusion } from '../agents/discussion';
 import { BubbleView, ConclusionCard, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, PinnedConclusion, conclusionText, replyTargets } from './GroupChat';
 import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
@@ -73,7 +73,8 @@ export function ChatScreen(p: ChatScreenProps) {
   // 這時訊息數沒變、也不在串流中，下面 onContentSizeChange 的判斷抓不到；只算收尾後 1 秒內，
   // 不然之後自己點開「思考過程」也會被拉走
   const answerEnded = useRef(false);
-  const streamingNow = !!state.streaming;
+  // 多 AI 討論：最後一輪舉手時沒有串流，但還沒講完；講完時「複製」「重新產生」才冒出來，也要跟著捲
+  const streamingNow = !!state.streaming || (!!state.session && state.session.id in state.running);
   useLayoutEffect(() => {
     answerEnded.current = !streamingNow;
     if (streamingNow) return;
@@ -392,8 +393,10 @@ export function ChatScreen(p: ChatScreenProps) {
   // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
   const replies = group ? replyTargets(state.messages, state.agents, t('你')) : null;
   const mention = group ? /(?:^|\s)@([^\s@]*)$/.exec(draftText) : null;
-  const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim());
-  const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant';
+  // 討論串帶進來的背景不算（剛開還沒問就不顯示「大家說完了」）；最後一則是結論卡就已經收尾了
+  const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim() && !isThreadRoot(m));
+  const concluded = state.messages.findLast((m) => !isRecordNote(m))?.detail === CONCLUSION;
+  const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant' && !concluded;
   const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftText;
   const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
   const pinnedCard = pinnedMessage ? parseConclusion(pinnedMessage.content) : null;
@@ -706,6 +709,8 @@ export function ChatScreen(p: ChatScreenProps) {
       onThink={(v) => store.setThink(v)}
       pickPhotos={p.pickPhotos}
       injected={injected}
+      // 塞進去的字套用一次就清掉：不然輸入框換位置重建時（打開討論串）又被放回去
+      onInjected={() => setInjected(null)}
       accessory={
         mention && !editing ? (
           <MentionPicker

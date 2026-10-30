@@ -30,6 +30,8 @@ type Props = {
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   /** 由外面塞進輸入框的文字（例如提示詞範本、編輯訊息） */
   injected?: { text: string; photos?: NewPhoto[]; nonce: number } | null;
+  /** 塞進來的字套用好了（外面可以清掉，輸入框重建時才不會再放一次） */
+  onInjected?: () => void;
   /** 輸入框上方的額外內容（例如「編輯中」提示） */
   accessory?: ReactNode;
   /** 還不能送出時輸入框的提示（例如「先連接你的電腦」） */
@@ -113,6 +115,7 @@ export function Composer(p: Props) {
     replaceDraft(p.injected.text);
     // 確定模型看不懂圖片才不放回照片；讀不到模型資訊時照樣放回（之後送出時才會知道）
     if (p.injected.photos) setPhotos(modelKnown && !p.canAttach ? [] : p.injected.photos);
+    p.onInjected?.();
   }, [p.injected?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canSend = !p.busy && !sending && !!p.modelLabel && (draft.trim().length > 0 || photos.length > 0);

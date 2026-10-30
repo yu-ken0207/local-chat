@@ -207,4 +207,25 @@ test('收尾：按「收尾」出結論卡（票數、共識、待辦），可�
   expect(screen.getByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeTruthy();
   await fireEvent.press(screen.getAllByLabelText('取消釘選')[0]);
   await waitFor(() => expect(screen.queryByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeNull());
+  // 已經收尾了：下面不再顯示「大家說完了」「收尾」
+  expect(screen.queryByText('大家說完了')).toBeNull();
+});
+
+test('多人對話開討論串：剛開還沒問不顯示「大家說完了」；之前 @ 選人塞進輸入框的字不會跑回來', async () => {
+  const { net, store, agents } = await setup();
+  for (const a of Object.values(agents)) await store.addMember(a.id);
+  script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+  await store.send('要換伺服器嗎');
+  await screenOf(store);
+  expect(await screen.findByText('大家說完了')).toBeTruthy();
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '@財');
+  await fireEvent.press(await screen.findByLabelText('提到 財務長'));
+  expect(await screen.findByDisplayValue('@財務長 ')).toBeTruthy();
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '');
+  await act(async () => {
+    await store.openThread(store.getState().messages[0].id);
+  });
+  expect(await screen.findByText('以下是討論串')).toBeTruthy();
+  expect(screen.queryByText('大家說完了')).toBeNull();
+  expect(screen.queryByDisplayValue('@財務長 ')).toBeNull();
 });
