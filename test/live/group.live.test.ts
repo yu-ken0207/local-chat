@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { PromptStore, entryIntro, entryName, getEntry, searchCatalog, type PromptShard } from '../../src/agents/catalog';
-import { parseConclusion } from '../../src/agents/discussion';
+import { estimateTokens, parseConclusion } from '../../src/agents/discussion';
 import { ChatStore } from '../../src/state/chatStore';
 import { OllamaClient } from '../../src/lib/ollama';
 import { Repo } from '../../src/store/repo';
@@ -60,9 +60,17 @@ const prompts = new PromptStore(async (i) => JSON.parse(readFileSync(join(__dirn
     const spoken = s.messages.filter((m) => m.role === 'assistant' && m.agentId);
     expect(s.messages.some((m) => m.role === 'error')).toBe(false);
     expect(spoken.length).toBeGreaterThanOrEqual(2);
+    // 自由搶話：沒人想講就停，不保證每個人都講到（每個人都表態的是下面的投票）；至少要有兩個人講
     expect(new Set(spoken.map((m) => m.agentId)).size).toBeGreaterThanOrEqual(2);
-    // 開頭不寫自己的名字（cleanReply 會拿掉，留下來表示格式不對）
-    for (const m of spoken) expect(m.content.startsWith(`【${name(m.agentId)}】`)).toBe(false);
+    for (const m of spoken) {
+      // 不替別人說話：內文沒有「【別人】」，也沒有哪一行用「別人：」開頭
+      for (const other of names.filter((n) => n !== name(m.agentId))) {
+        expect(m.content).not.toContain(`【${other}】`);
+        expect(m.content).not.toMatch(new RegExp(`^\\s*${other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[：:]`, 'm'));
+      }
+      // 回覆短（規則是 1–4 句）：一則不超過約 250 個字
+      expect(estimateTokens(m.content)).toBeLessThan(250);
+    }
     const card = parseConclusion(s.messages.find((m) => m.detail === 'conclusion')!.content)!;
     expect(card.options.length).toBeGreaterThanOrEqual(2);
     expect(card.options.reduce((n, o) => n + o.votes.length, 0)).toBe(s.members.length);
