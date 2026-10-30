@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { BASE_SCHEMA, NotBackupError, Repo, likePattern } from '../src/store/repo';
+import { BASE_SCHEMA, NotBackupError, Repo, THREAD_ROOT, likePattern } from '../src/store/repo';
 import { memoryDb } from './helpers/nodeDb';
 
 /** 每次呼叫時間加 1，方便檢查排序 */
@@ -21,7 +21,7 @@ describe('migrate', () => {
   test('建表；重跑不會出錯', async () => {
     const { db, repo } = await freshRepo();
     await repo.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 5 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
     expect(await db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'actions'")).toEqual({ name: 'actions' });
   });
 });
@@ -191,6 +191,64 @@ describe('搜尋對話', () => {
   });
 });
 
+describe('討論串', () => {
+  async function withThread() {
+    const { db, repo } = await freshRepo();
+    const main = await repo.createSession();
+    const q = await repo.addMessage(main.id, { role: 'user', content: '台南有什麼小吃' });
+    await repo.addMessage(main.id, { role: 'assistant', content: '牛肉湯、碗粿' });
+    const other = await repo.createSession();
+    await repo.addMessage(other.id, { role: 'user', content: '別的' });
+    const thread = await repo.createSession({ parentId: main.id, parentMessageId: q.id, title: '台南有什麼小吃' });
+    await repo.addMessage(thread.id, { role: 'user', content: '台南有什麼小吃', detail: THREAD_ROOT });
+    await repo.addMessage(thread.id, { role: 'assistant', content: '牛肉湯、碗粿', detail: THREAD_ROOT });
+    return { db, repo, main, other, thread, q };
+  }
+
+  test('清單、最近刪除、計數都不另外列討論串；討論串裡有新訊息時它那段對話排到上面', async () => {
+    const { repo, main, other, thread } = await withThread();
+    expect((await repo.listSessions()).map((s) => s.id)).toEqual([main.id, other.id]);
+    expect(await repo.countSessions()).toBe(2);
+    expect(await repo.getSession(thread.id)).toMatchObject({ parentId: main.id });
+  });
+
+  test('找得到某一題的討論串；算的是帶進去那一題以外問了幾次', async () => {
+    const { repo, main, thread, q } = await withThread();
+    expect((await repo.findThread(main.id, q.id))?.id).toBe(thread.id);
+    expect(await repo.threadsOf(main.id)).toEqual([{ id: thread.id, parentMessageId: q.id, count: 0 }]);
+    await repo.addMessage(thread.id, { role: 'user', content: '牛肉湯哪家好' });
+    expect((await repo.threadsOf(main.id))[0].count).toBe(1);
+  });
+
+  test('搜尋時討論串裡的字算它那段對話的', async () => {
+    const { repo, main, thread } = await withThread();
+    await repo.addMessage(thread.id, { role: 'user', content: '阿村牛肉湯' });
+    expect((await repo.listSessions('阿村')).map((s) => s.id)).toEqual([main.id]);
+  });
+
+  test('刪掉、救回、永久刪除對話時，它的討論串一起', async () => {
+    const { repo, main, thread } = await withThread();
+    await repo.trashSessions([main.id]);
+    expect(await repo.findThread(main.id, (await repo.getSession(thread.id))!.parentMessageId!)).toBeNull();
+    expect((await repo.listTrash()).map((s) => s.id)).toEqual([main.id]);
+    expect(await repo.countTrash()).toBe(1);
+    await repo.restoreSessions([main.id]);
+    expect(await repo.threadsOf(main.id)).toHaveLength(1);
+    await repo.deleteSession(main.id);
+    expect(await repo.getSession(thread.id)).toBeNull();
+  });
+
+  test('開討論串的那一題過了保留期限真的刪掉時，討論串一起刪', async () => {
+    const { repo, thread, q } = await withThread();
+    await repo.softDeleteMessages([q.id]);
+    await repo.purgeExpired();
+    expect(await repo.getSession(thread.id)).not.toBeNull();
+    const later = new Repo((repo as any).db, () => Date.now() + 40 * 24 * 60 * 60 * 1000);
+    await later.purgeExpired();
+    expect(await later.getSession(thread.id)).toBeNull();
+  });
+});
+
 describe('設定', () => {
   test('設定存取與覆寫', async () => {
     const { repo } = await freshRepo();
@@ -264,7 +322,7 @@ describe('資料庫升級', () => {
       INSERT INTO messages VALUES ('m1', 's1', 1, 'user', '舊訊息', '', NULL, NULL, NULL, 1);
       PRAGMA user_version = 1;`);
     await v1.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 5 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
     const msgs = await v1.listMessages('s1');
     expect(msgs.map((m) => [m.content, m.detail])).toEqual([['舊訊息', '']]);
     await v1.addMessage('s1', { role: 'error', content: '連不到', detail: 'Network request failed' });

@@ -26,6 +26,10 @@ export type Session = {
   systemPrompt: string;
   createdAt: number;
   updatedAt: number;
+  /** 討論串：掛在哪一段對話（一般對話是 null） */
+  parentId: string | null;
+  /** 討論串：從那段對話的哪一題（使用者的那則訊息）開的 */
+  parentMessageId: string | null;
 };
 
 export type Attachment = { id: string; base64: string; width: number; height: number };
@@ -92,12 +96,15 @@ export type Message = {
 
 /** 「你按了復原」這種只是紀錄的提示行：不能「重新回答」，也不算最後一則（上面 AI 的回答照樣有複製、重新產生） */
 export const RECORD_NOTE = 'record';
+/** 討論串一開始帶進去的那一題（從原對話複製來的問與答）：只是背景，不能重新產生、編輯、刪除 */
+export const THREAD_ROOT = 'thread-root';
+export const isThreadRoot = (m: Pick<Message, 'detail'>) => m.detail === THREAD_ROOT;
 export const isRecordNote = (m: Pick<Message, 'role' | 'detail'>) => m.role === 'note' && m.detail === RECORD_NOTE;
 
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
@@ -129,6 +136,10 @@ const MIGRATIONS: Record<number, string> = {
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS actions_by_session ON actions(session_id, created_at);`,
+  // 討論串：針對某一題另開的小對話，掛在原本那段對話底下
+  6: `ALTER TABLE sessions ADD COLUMN parent_id TEXT;
+      ALTER TABLE sessions ADD COLUMN parent_message_id TEXT;
+      CREATE INDEX IF NOT EXISTS sessions_by_parent ON sessions(parent_id);`,
 };
 
 /** 最近刪除保留幾天 */
@@ -253,6 +264,8 @@ type SessionRow = {
   system_prompt: string;
   created_at: number;
   updated_at: number;
+  parent_id: string | null;
+  parent_message_id: string | null;
 };
 
 type MessageRow = {
@@ -321,6 +334,8 @@ const toSession = (r: SessionRow): Session => ({
   systemPrompt: r.system_prompt,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  parentId: r.parent_id ?? null,
+  parentMessageId: r.parent_message_id ?? null,
 });
 
 export class Repo {
@@ -404,23 +419,43 @@ export class Repo {
 
   // ---- 對話 ----
 
-  async createSession(init: { hostUrl?: string | null; model?: string | null; think?: ThinkSetting | null; systemPrompt?: string } = {}): Promise<Session> {
+  async createSession(
+    init: { hostUrl?: string | null; model?: string | null; think?: ThinkSetting | null; systemPrompt?: string; title?: string; parentId?: string; parentMessageId?: string } = {}
+  ): Promise<Session> {
     const now = this.now();
     const s: Session = {
       id: newId(),
-      title: '',
+      title: init.title ?? '',
       hostUrl: init.hostUrl ?? null,
       model: init.model ?? null,
       think: init.think ?? null,
       systemPrompt: init.systemPrompt ?? '',
       createdAt: now,
       updatedAt: now,
+      parentId: init.parentId ?? null,
+      parentMessageId: init.parentMessageId ?? null,
     };
     await this.db.run(
-      'INSERT INTO sessions (id, title, host_url, model, think, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [s.id, s.title, s.hostUrl, s.model, encodeThink(s.think), s.systemPrompt, s.createdAt, s.updatedAt]
+      'INSERT INTO sessions (id, title, host_url, model, think, system_prompt, created_at, updated_at, parent_id, parent_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [s.id, s.title, s.hostUrl, s.model, encodeThink(s.think), s.systemPrompt, s.createdAt, s.updatedAt, s.parentId, s.parentMessageId]
     );
     return s;
+  }
+
+  /** 某一題的討論串（還沒刪的） */
+  async findThread(parentId: string, parentMessageId: string): Promise<Session | null> {
+    const row = await this.db.get<SessionRow>('SELECT * FROM sessions WHERE parent_id = ? AND parent_message_id = ? AND deleted_at IS NULL', [parentId, parentMessageId]);
+    return row ? toSession(row) : null;
+  }
+
+  /** 這段對話的討論串：掛在哪一題、裡面問了幾次（不算帶進去的那一題） */
+  async threadsOf(parentId: string): Promise<{ id: string; parentMessageId: string; count: number }[]> {
+    const rows = await this.db.all<{ id: string; parent_message_id: string; n: number }>(
+      `SELECT s.id, s.parent_message_id, (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND ${VISIBLE} AND m.role = 'user' AND m.detail != '${THREAD_ROOT}') AS n
+       FROM sessions s WHERE s.parent_id = ? AND s.deleted_at IS NULL`,
+      [parentId]
+    );
+    return rows.map((r) => ({ id: r.id, parentMessageId: r.parent_message_id, count: Number(r.n) }));
   }
 
   async getSession(id: string): Promise<Session | null> {
@@ -454,12 +489,14 @@ export class Repo {
    */
   async listSessions(search = ''): Promise<(Session & { preview: string; pending: number })[]> {
     const q = search.trim();
+    // 討論串不另外列出；搜尋時討論串裡的字也算它那段對話的
     const where = q
-      ? `AND (s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND ${VISIBLE} AND m.content LIKE ? ESCAPE '\\'))`
+      ? `AND (s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND ${VISIBLE} AND m.content LIKE ? ESCAPE '\\')
+           OR EXISTS (SELECT 1 FROM sessions t JOIN messages m ON m.session_id = t.id WHERE t.parent_id = s.id AND t.deleted_at IS NULL AND ${VISIBLE} AND m.content LIKE ? ESCAPE '\\'))`
       : '';
-    const params = q ? [likePattern(q), likePattern(q)] : [];
+    const params = q ? [likePattern(q), likePattern(q), likePattern(q)] : [];
     const rows = await this.db.all<SessionRow & { preview: string | null; pending: number }>(
-      `SELECT s.*, ${PREVIEW} AS preview, ${PENDING} AS pending FROM sessions s WHERE s.deleted_at IS NULL ${where} ORDER BY s.updated_at DESC, s.created_at DESC`,
+      `SELECT s.*, ${PREVIEW} AS preview, ${PENDING} AS pending FROM sessions s WHERE s.deleted_at IS NULL AND s.parent_id IS NULL ${where} ORDER BY s.updated_at DESC, s.created_at DESC`,
       params
     );
     return rows.map((r) => ({ ...toSession(r), preview: r.preview ?? '', pending: Number(r.pending ?? 0) }));
@@ -468,24 +505,24 @@ export class Repo {
   /** 最近刪除的對話，最近刪的在上面 */
   async listTrash(): Promise<(Session & { preview: string; deletedAt: number })[]> {
     const rows = await this.db.all<SessionRow & { preview: string | null; deleted_at: number }>(
-      `SELECT s.*, ${PREVIEW} AS preview FROM sessions s WHERE s.deleted_at IS NOT NULL ORDER BY s.deleted_at DESC`
+      `SELECT s.*, ${PREVIEW} AS preview FROM sessions s WHERE s.deleted_at IS NOT NULL AND s.parent_id IS NULL ORDER BY s.deleted_at DESC`
     );
     return rows.map((r) => ({ ...toSession(r), preview: r.preview ?? '', deletedAt: r.deleted_at }));
   }
 
-  /** 移到最近刪除（30 天內可以復原） */
+  /** 移到最近刪除（30 天內可以復原）；它的討論串一起 */
   async trashSessions(ids: string[]): Promise<void> {
     const now = this.now();
-    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = ? WHERE id = ?', [now, id]);
+    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = ? WHERE id = ? OR parent_id = ?', [now, id, id]);
   }
 
   async restoreSessions(ids: string[]): Promise<void> {
-    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ?', [id]);
+    for (const id of ids) await this.db.run('UPDATE sessions SET deleted_at = NULL WHERE id = ? OR parent_id = ?', [id, id]);
   }
 
-  /** 永久刪除（連訊息與照片） */
+  /** 永久刪除（連訊息與照片、它的討論串） */
   async deleteSession(id: string): Promise<void> {
-    await this.db.run('DELETE FROM sessions WHERE id = ?', [id]);
+    await this.db.run('DELETE FROM sessions WHERE id = ? OR parent_id = ?', [id, id]);
   }
 
   /** 清空最近刪除，之後壓縮檔案釋放空間 */
@@ -499,6 +536,8 @@ export class Repo {
     const cutoff = this.now() - TRASH_DAYS * DAY_MS;
     await this.db.run('DELETE FROM sessions WHERE deleted_at IS NOT NULL AND deleted_at < ?', [cutoff]);
     await this.db.run('DELETE FROM messages WHERE deleted_at IS NOT NULL AND deleted_at < ?', [cutoff]);
+    // 開討論串的那一題已經真的刪掉了：討論串再也點不到，一起刪
+    await this.db.run('DELETE FROM sessions WHERE parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = sessions.parent_message_id)');
   }
 
   /** 刪掉沒有任何訊息的空白對話（開了新對話卻沒講話） */
@@ -580,7 +619,8 @@ export class Repo {
         a.height,
       ]);
     }
-    await this.db.run('UPDATE sessions SET updated_at = ? WHERE id = ?', [now, sessionId]);
+    // 討論串裡有新訊息：它那段對話也算有新動靜（清單裡排到上面）
+    await this.db.run('UPDATE sessions SET updated_at = ? WHERE id = ? OR id = (SELECT parent_id FROM sessions WHERE id = ?)', [now, sessionId, sessionId]);
     return msg;
   }
 
@@ -813,11 +853,11 @@ export class Repo {
 
   /** 對話有幾段 */
   async countSessions(): Promise<number> {
-    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NULL'))?.n ?? 0;
+    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NULL AND parent_id IS NULL'))?.n ?? 0;
   }
 
   async countTrash(): Promise<number> {
-    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NOT NULL'))?.n ?? 0;
+    return (await this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NOT NULL AND parent_id IS NULL'))?.n ?? 0;
   }
 
   /** 資料庫目前的大小（位元組） */
