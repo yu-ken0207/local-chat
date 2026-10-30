@@ -285,6 +285,17 @@ describe('畫面', () => {
     expect(cal.created[0]).toMatchObject({ start: '2026-11-05T16:00', end: '2026-11-05T18:30' });
   });
 
+  test('修改裡拿掉選填的欄位：真的拿掉，不會用回 AI 原本的值', async () => {
+    const { cal, net } = await screenWithCard();
+    await fireEvent.press(screen.getByText('修改'));
+    await fireEvent.press(screen.getByLabelText('拿掉結束'));
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(cal.created).toHaveLength(1));
+    expect(cal.created[0]).toEqual({ title: '帶小孩看牙醫', start: '2026-11-04T15:00' });
+    await waitFor(() => expect(net.chatBodies()).toHaveLength(2));
+    expect(JSON.parse(net.chatBodies()[1].messages.filter((m: any) => m.role === 'tool').at(-1).content).note).toContain('end: "2026-11-04T16:00" -> null');
+  });
+
   test('沒按確認卡就直接打字：那一行寫「跳過」，跟按「不要」分開', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改成兩小時');

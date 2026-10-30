@@ -188,6 +188,20 @@ describe('接上 App', () => {
     open.mockRestore();
   });
 
+  test('提醒按修改、拿掉時間：設成沒有時間的提醒（不會用回 AI 原本的時間）', async () => {
+    const { host, store, api } = await setup();
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_reminder', { title: '繳電費', due: '2026-10-31T09:00' }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '提醒我明天九點繳電費');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await fireEvent.press(await screen.findByText('修改'));
+    await fireEvent.press(screen.getByLabelText('拿掉什麼時候提醒'));
+    await fireEvent.press(screen.getByText('設提醒'));
+    await waitFor(() => expect(api.reminders).toHaveLength(1));
+    expect(api.reminders[0]).toEqual({ title: '繳電費' });
+  });
+
   test('全天的行程按修改：時間選擇器只選日期，選了就是那天的全天', async () => {
     const { host, store, api } = await setup();
     let n = 0;

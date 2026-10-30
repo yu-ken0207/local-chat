@@ -1471,9 +1471,15 @@ export class ChatStore {
   /** 使用者改過的內容：照格式檢查（不對就丟錯，什麼都不做）；選擇題的回答直接放進去 */
   private editedInput(action: Action, edited?: ToolInput): ToolInput {
     if (!edited) return action.input;
+    // 改成空字串的欄位是使用者拿掉了，不是沿用 AI 原本的值
+    const merged: ToolInput = { ...action.input };
+    for (const [key, value] of Object.entries(edited)) {
+      if (value === '') delete merged[key];
+      else merged[key] = value;
+    }
     const tool = this.toolFor(action.tool);
-    if (!tool || tool.kind === 'question') return { ...action.input, ...edited };
-    const checked = validateInput(tool.inputSchema, { ...action.input, ...edited });
+    if (!tool || tool.kind === 'question') return merged;
+    const checked = validateInput(tool.inputSchema, merged);
     if (!checked.ok) throw new Error(t('改過的內容格式不對，請再檢查一次。'));
     return checked.value;
   }

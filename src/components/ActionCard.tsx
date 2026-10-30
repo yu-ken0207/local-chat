@@ -236,11 +236,12 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
   const [values, setValues] = useState<Record<string, string | boolean>>(() =>
     Object.fromEntries(fields.map(([key]) => [key, tool.inputSchema.properties[key]?.type === 'boolean' ? !!input[key] : toText(input[key])]))
   );
+  // 清空的欄位也要送（空字串＝拿掉），不然會用回 AI 原本的值
   const collect = (): ToolInput => {
     const out: ToolInput = {};
     for (const [key] of fields) {
       const v = values[key];
-      if (typeof v === 'boolean' || v.trim() !== '') out[key] = typeof v === 'string' ? v.trim() : v;
+      out[key] = typeof v === 'string' ? v.trim() : v;
     }
     return out;
   };
