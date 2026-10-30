@@ -66,6 +66,7 @@ export function SideDrawer({ open, onOpenChange, renderDrawer, closeLabel, swipe
   const target = useRef(0);
   const start = useRef(0);
   const reduceMotion = useRef(false);
+  const fade = useRef(new Animated.Value(1)).current; // 減少動態效果時用淡入淡出代替滑動
   const [mounted, setMounted] = useState(open);
   const latest = useRef({ open, onOpenChange, width, swipeEnabled });
   latest.current = { open, onOpenChange, width, swipeEnabled };
@@ -90,10 +91,16 @@ export function SideDrawer({ open, onOpenChange, renderDrawer, closeLabel, swipe
     const done = ({ finished }: { finished: boolean }) => {
       if (finished && target.current === 0) setMounted(false);
     };
-    const config = reduceMotion.current
-      ? Animated.timing(x, { toValue: to, duration: 160, useNativeDriver: true })
-      : Animated.spring(x, { toValue: to, velocity, stiffness: STIFFNESS, damping: DAMPING, mass: 1, overshootClamping: true, useNativeDriver: true });
-    config.start(done);
+    if (reduceMotion.current) {
+      // 減少動態效果：不滑動。整個畫面淡出、直接換到新位置、再淡入（大面積換位置時不要移動）
+      fade.stopAnimation();
+      Animated.timing(fade, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+        x.setValue(to);
+        Animated.timing(fade, { toValue: 1, duration: 160, useNativeDriver: true }).start(() => done({ finished: target.current === to }));
+      });
+      return;
+    }
+    Animated.spring(x, { toValue: to, velocity, stiffness: STIFFNESS, damping: DAMPING, mass: 1, overshootClamping: true, useNativeDriver: true }).start(done);
   }
 
   // 外面改了 open（按「對話」、點遮罩、選了一段對話）就滑到對應的位置
@@ -141,7 +148,7 @@ export function SideDrawer({ open, onOpenChange, renderDrawer, closeLabel, swipe
   return (
     <View style={styles.root} testID="side-drawer" {...responder.panHandlers}>
       <Animated.View
-        style={[styles.fill, { transform: [{ translateX: x }] }]}
+        style={[styles.fill, { opacity: fade, transform: [{ translateX: x }] }]}
         accessibilityElementsHidden={open}
         importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}>
         {children}
@@ -151,7 +158,7 @@ export function SideDrawer({ open, onOpenChange, renderDrawer, closeLabel, swipe
         <Pressable style={styles.fill} onPress={() => onOpenChange(false)} accessibilityRole="button" accessibilityLabel={closeLabel} />
       </Animated.View>
       <Animated.View
-        style={[styles.drawer, { width: width + OVERDRAG, left: -OVERDRAG, paddingLeft: OVERDRAG, transform: [{ translateX: Animated.subtract(x, width) }] }]}
+        style={[styles.drawer, { opacity: fade, width: width + OVERDRAG, left: -OVERDRAG, paddingLeft: OVERDRAG, transform: [{ translateX: Animated.subtract(x, width) }] }]}
         accessibilityElementsHidden={!open}
         importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
         onAccessibilityEscape={() => onOpenChange(false)}>

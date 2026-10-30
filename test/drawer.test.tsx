@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { AccessibilityInfo } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { claimSwipe, drawerWidth, project, rubberband, shouldOpen } from '../src/components/SideDrawer';
@@ -122,6 +123,16 @@ test('側邊欄最下面的「設定」不放「›」（它是從下面升起�
   await fireEvent.press(screen.getByLabelText('對話清單'));
   expect(await screen.findByText('設定')).toBeTruthy();
   expect(screen.queryByTestId('symbol-chevron.right', { includeHiddenElements: true })).toBeNull();
+});
+
+test('開了「減少動態效果」：側邊欄照樣打開、關上（改用淡入淡出，不滑動）', async () => {
+  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+  await setup();
+  await act(async () => {});
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  expect(await screen.findByLabelText('搜尋對話')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('關閉對話清單'));
+  await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
 });
 
 test('點右邊變暗的地方關上；按「對話」也能打開', async () => {
