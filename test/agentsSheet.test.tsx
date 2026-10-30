@@ -66,6 +66,8 @@ test('圖鑑：搜尋、分類、直接加；加過的打勾；切回「我的 A
   await fireEvent.changeText(screen.getByLabelText('搜尋圖鑑'), 'historian');
   const name = getEntry('agency:academic/academic-historian')!.n[0];
   expect(await screen.findByText(name)).toBeTruthy();
+  // 圖鑑的角色有像素頭像
+  expect(screen.getByTestId('avatar-agency:academic/academic-historian')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText(`加到我的 Agent：${name}`));
   expect(await screen.findByLabelText('已加入')).toBeTruthy();
   await fireEvent.press(screen.getByText('學術研究'));
