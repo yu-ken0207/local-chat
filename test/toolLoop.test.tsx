@@ -341,6 +341,21 @@ describe('畫面', () => {
     expect(cal.created[0]).toMatchObject({ start: '2026-11-05T16:00', end: '2026-11-05T18:30' });
   });
 
+  test('修改開始時間：結束跟著移、保持長度；把結束改得比開始早，當場提示且不能加入', async () => {
+    const { cal } = await screenWithCard();
+    await fireEvent.press(screen.getByText('修改'));
+    await fireEvent(screen.getByLabelText('開始時間'), 'valueChange', new Date(2000, 0, 1, 17, 0));
+    expect(screen.getByLabelText('結束時間').props.value).toEqual(new Date(2026, 10, 4, 18, 0));
+    await fireEvent(screen.getByLabelText('結束時間'), 'valueChange', new Date(2000, 0, 1, 16, 0));
+    expect(screen.getByText('結束要比開始晚')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '加入' }).props.accessibilityState).toMatchObject({ disabled: true });
+    await fireEvent(screen.getByLabelText('結束時間'), 'valueChange', new Date(2000, 0, 1, 19, 0));
+    expect(screen.queryByText('結束要比開始晚')).toBeNull();
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(cal.created).toHaveLength(1));
+    expect(cal.created[0]).toMatchObject({ start: '2026-11-04T17:00', end: '2026-11-04T19:00' });
+  });
+
   test('修改裡拿掉選填的欄位：真的拿掉，不會用回 AI 原本的值', async () => {
     const { cal, net } = await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));

@@ -41,6 +41,6 @@ jest.mock('@react-native-community/datetimepicker', () => {
   const { View } = require('react-native');
   return {
     __esModule: true,
-    default: (p: any) => <View accessibilityLabel={p.accessibilityLabel} accessibilityHint={p.mode} onValueChange={(d: Date) => p.onValueChange?.({ type: 'set' }, d)} />,
+    default: (p: any) => <View accessibilityLabel={p.accessibilityLabel} accessibilityHint={p.mode} {...({ value: p.value } as any)} onValueChange={(d: Date) => p.onValueChange?.({ type: 'set' }, d)} />,
   };
 });

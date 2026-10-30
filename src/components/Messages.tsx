@@ -156,13 +156,15 @@ function ErrorActions({ detail, onRetry, onHelp }: { detail: string; onRetry?: (
   );
 }
 
-export function ActionButton({ text, onPress, primary }: { text: string; onPress: () => void; primary?: boolean }) {
+export function ActionButton({ text, onPress, primary, disabled }: { text: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       hitSlop={6}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.actionButton, primary && styles.actionPrimary, pressed && styles.pressed]}>
+      accessibilityState={disabled ? { disabled: true } : undefined}
+      style={({ pressed }) => [styles.actionButton, primary && styles.actionPrimary, disabled && styles.actionDisabled, pressed && styles.pressed]}>
       <Text style={[styles.actionText, primary && styles.actionTextPrimary]}>{text}</Text>
     </Pressable>
   );
@@ -300,6 +302,7 @@ const styles = StyleSheet.create({
   errorActions: { gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   actionButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  actionDisabled: { opacity: 0.35 },
   actionPrimary: { backgroundColor: C.accent, borderColor: C.accent },
   actionText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
   actionTextPrimary: { color: '#ffffff' },

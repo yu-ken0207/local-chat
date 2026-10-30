@@ -245,12 +245,23 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
     }
     return out;
   };
+  // 結束早於開始：當場說，不要等送出後才跳出看不懂的錯誤
+  const timeOf = (k: string) => (typeof values[k] === 'string' && values[k] ? parseLocal(String(values[k])).getTime() : NaN);
+  const endTooEarly = timeOf('end') < timeOf('start');
   return (
     <View style={styles.editor}>
       {fields.map(([key, label]) => {
         const { type, format } = tool.inputSchema.properties[key] ?? {};
         const v = values[key];
-        const set = (next: string | boolean) => setValues((s) => ({ ...s, [key]: next }));
+        const set = (next: string | boolean) =>
+          setValues((s) => {
+            // 改開始時結束跟著移，保持原本的長度（跟 iPhone「行事曆」App 一樣）
+            if (key === 'start' && typeof next === 'string' && typeof s.start === 'string' && typeof s.end === 'string' && s.end) {
+              const [before, after, end] = [s.start, next, s.end].map((x) => parseLocal(x).getTime());
+              if (![before, after, end].some(isNaN)) return { ...s, start: next, end: toLocalText(new Date(end + after - before)) };
+            }
+            return { ...s, [key]: next };
+          });
         if (format === 'date-time' || format === 'date') {
           // 全天的行程只選日期；選填的時間可以拿掉、沒填的可以加上
           const text = String(v);
@@ -268,6 +279,7 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
                 {text ? <TimeField value={text} dateOnly={format === 'date' || ('allDay' in values ? values.allDay : input.allDay) === true} label={label} onChange={set} /> : null}
                 {!text ? <ActionButton text={t('加上')} onPress={() => set(defaultTime(values))} /> : null}
               </View>
+              {key === 'end' && endTooEarly ? <Text style={[styles.small, styles.red]}>{t('結束要比開始晚')}</Text> : null}
             </View>
           );
         }
@@ -290,7 +302,7 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
       })}
       <View style={styles.buttons}>
         <ActionButton text={t('取消')} onPress={onCancel} />
-        <ActionButton text={done} primary onPress={() => onDone(collect())} />
+        <ActionButton text={done} primary disabled={endTooEarly} onPress={() => onDone(collect())} />
       </View>
     </View>
   );
