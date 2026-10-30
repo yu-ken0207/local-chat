@@ -112,9 +112,10 @@ export function ChatScreen(p: ChatScreenProps) {
   // 用氣泡畫：有成員，或有 Agent 說過話、有結論卡（成員清空了、剛切過來成員還沒讀到時，不會印出結論卡原文）
   const bubbles = group || state.messages.some((m) => !!m.agentId || m.detail === CONCLUSION);
   const discussing = !!state.session && state.session.id in state.running && group;
+  // 「我的 Agent」：@ 名單（一般聊天也可以 @ 拉人進來）、成員面板要用
   useEffect(() => {
-    if (group || membersOpen) void store.loadMyAgents();
-  }, [store, group, membersOpen, state.session?.id]);
+    void store.loadMyAgents();
+  }, [store, membersOpen, state.session?.id]);
 
   function showToast(text: string, action?: ToastData['action']) {
     setToast({ id: Date.now(), text, action });
@@ -483,7 +484,8 @@ export function ChatScreen(p: ChatScreenProps) {
   const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen;
   // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
   const replies = bubbles ? replyTargets(state.messages, state.agents, t('你')) : null;
-  const mention = group ? mentionQuery : null;
+  // 一般聊天也有 @ 名單（只列「我的 Agent」）：選了送出就把他拉進來
+  const mention = group || state.myAgents.length > 0 ? mentionQuery : null;
   // 討論串帶進來的背景不算（剛開還沒問就不顯示「大家說完了」）；最後一則是結論卡就已經收尾了
   const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim() && !isThreadRoot(m));
   // 最後一則是錯誤：下面已經有「重試」，不再多一列
@@ -550,8 +552,9 @@ export function ChatScreen(p: ChatScreenProps) {
   function sessionMenu() {
     // 回答中也能改名、刪除（刪除本來就會先停掉回答）；以前回答中點標題沒反應
     if (!session) return;
+    // 討論串有自己的成員（跟原對話分開）：在這裡邀請 Agent
     if (inThread) {
-      chooseOption(title, [t('刪除這個討論串')], () => void store.deleteSession(session.id), 0);
+      chooseOption(title, [t('成員與討論設定'), t('刪除這個討論串')], (i) => (i === 0 ? setMembersOpen(true) : void store.deleteSession(session.id)), 1);
       return;
     }
     chooseOption(title, [t('重新命名'), t('成員與討論設定'), t('刪除這段對話')], (i) => {

@@ -1299,7 +1299,7 @@ export class ChatStore {
     const s = this.state.session;
     if (!s) return;
     // 多 AI 討論：大家在講的時候也可以插話
-    const group = (await repo.listMembers(s.id)).length > 0;
+    let group = (await repo.listMembers(s.id)).length > 0;
     if (!group && this.state.streaming) return;
     if (!s.hostUrl || !s.model) throw new Error(t('請先選一個模型'));
     if (images.length > 0 && this.refusesImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
@@ -1311,8 +1311,10 @@ export class ChatStore {
     this.concludeFailed.delete(s.id);
     // background：只等訊息存好就回來（畫面用：回答、討論在背景跑，換到別段照樣可以問）
     const go = (task: Promise<void>) => (background ? void task.catch(() => {}) : task);
-    if (!group) return go(this.answer());
+    // @ 了「我的 Agent」：拉進來（一般聊天也是，拉進來就變成多人討論，原本的 AI 退場）
     await this.joinMentioned(s.id, content);
+    group ||= (await repo.listMembers(s.id)).length > 0;
+    if (!group) return go(this.answer());
     const run = this.runs.get(s.id);
     // 正在討論、收尾：插話，下一個人從你這句重新選
     if (run && !run.abort.signal.aborted) {
