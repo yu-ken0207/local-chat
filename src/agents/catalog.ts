@@ -79,6 +79,19 @@ export const entryName = (e: CatalogEntry): string => pick(e.n);
 export const entryIntro = (e: CatalogEntry): string => pick(e.d);
 export const entryVibe = (e: CatalogEntry): string => pick(e.v);
 
+/**
+ * 從圖鑑來的 Agent：名字、介紹還是圖鑑原樣（中文或英文任一個）就跟著 App 語言顯示；改過的照改過的。
+ * （加入時存的是當時語言的版本，之後換語言才不會卡在舊的語言）
+ */
+export function localizeName(catalogId: string | null, name: string): string {
+  const e = catalogId ? byId.get(catalogId) : undefined;
+  return e && e.n.includes(name) ? entryName(e) : name;
+}
+export function localizeIntro(catalogId: string | null, intro: string): string {
+  const e = catalogId ? byId.get(catalogId) : undefined;
+  return e && e.d.includes(intro) ? entryIntro(e) : intro;
+}
+
 /** 搜尋圖鑑：每個詞都要出現在名字、介紹、個性或標籤裡（兩種語言都比，不分大小寫）；名字對到的排前面 */
 export function searchCatalog(query: string, category?: CategoryKey | null): CatalogEntry[] {
   const list = category ? data.entries.filter((e) => e.c === category) : data.entries;

@@ -54,6 +54,19 @@ describe('Agent', () => {
     expect(c.id).not.toBe(a.id);
   });
 
+  test('從圖鑑來、沒改過的名字和介紹跟著 App 語言；改過的照改過的', async () => {
+    const { repo } = await freshRepo();
+    const e = getEntry('agency:academic/academic-historian')!;
+    const a = await repo.agentFromCatalog(e.id, { name: e.n[0], intro: e.d[0], emoji: e.e });
+    const b = await repo.createAgent({ name: '我的歷史老師', intro: '自己寫的介紹', catalogId: 'lobe:chef', mine: true });
+    setLanguage('en');
+    expect(await repo.getAgent(a.id)).toMatchObject({ name: 'Historian', intro: e.d[1] });
+    expect(await repo.getAgent(b.id)).toMatchObject({ name: '我的歷史老師', intro: '自己寫的介紹' });
+    setLanguage('zh-Hant');
+    expect((await repo.listMyAgents()).map((x) => x.name)).toEqual(['我的歷史老師']);
+    expect((await repo.getAgent(a.id))!.name).toBe(e.n[0]);
+  });
+
   test('刪掉的 Agent：不在「我的 Agent」，但說過的話照樣拿得到名字；可以復原', async () => {
     const { repo } = await freshRepo();
     const a = await repo.createAgent({ name: '財務長', mine: true });

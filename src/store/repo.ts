@@ -1,6 +1,7 @@
 import type { ThinkSetting } from '../lib/ollama';
 import type { ToolCall, ToolInput } from '../lib/tools';
 import type { Db, SqlValue } from './db';
+import { localizeIntro, localizeName } from '../agents/catalog';
 import { t } from '../i18n';
 
 // ---- 型別 ----
@@ -483,8 +484,9 @@ const toSession = (r: SessionRow): Session => ({
 const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
   catalogId: r.catalog_id,
-  name: r.name,
-  intro: r.intro,
+  // 從圖鑑來、沒改過的：跟著 App 語言
+  name: localizeName(r.catalog_id, r.name),
+  intro: localizeIntro(r.catalog_id, r.intro),
   prompt: r.prompt,
   card: parseJson<AgentCard | null>(r.card, null),
   emoji: r.emoji,
