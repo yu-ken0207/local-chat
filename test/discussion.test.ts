@@ -197,6 +197,17 @@ describe('舉手', () => {
     expect(chooseSpeaker([...low.slice(0, 2), { id: 'pm', score: 8, replyTo: '', conclude: false }], people, ctx)!.id).toBe('pm');
   });
 
+  test('最近 4 輪講越多扣越多；被別的 Agent @ 到的加分；同分時最久沒講的先講', () => {
+    const all8 = ['cfo', 'eng', 'pm'].map((id) => ({ id, score: 8, replyTo: '', conclude: false }));
+    // eng 剛講完 @ 了 cfo；cfo 兩輪前講過：cfo 8+2-3=7、pm 8、eng 8-3-3=2
+    expect(chooseSpeaker(all8, people, { ...ctx, lastSpeaker: 'eng', boost: ['cfo'], recent: ['cfo', 'eng'] })!.id).toBe('pm');
+    // 沒人講過：被 @ 的加分
+    expect(chooseSpeaker(all8, people, { ...ctx, boost: ['pm'], recent: [] })!.id).toBe('pm');
+    // 同分：最久沒講的（cfo 比 eng 早講）先講
+    const two = all8.slice(0, 2);
+    expect(chooseSpeaker(two, people, { ...ctx, recent: ['cfo', 'eng'] })!.id).toBe('cfo');
+  });
+
   test('過半成員覺得可以收尾', () => {
     const ids = new Set(['cfo', 'eng', 'pm']);
     const b = (id: string, conclude: boolean) => ({ id, score: 0, replyTo: '', conclude });

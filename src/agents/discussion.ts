@@ -171,28 +171,37 @@ export function parseBid(id: string, text: string): Bid {
 export const SPEAK_THRESHOLD = 5;
 export const OUTSIDER_THRESHOLD = 7;
 
+/** Agent 之間 @ 人：加分（不強制，不然兩個人互 @ 就一直對話，第三個人插不進來） */
+export const MENTION_BOOST = 2;
+/** 最近 4 輪（Agent 說的）每講一次扣這麼多 */
+export const RECENT_PENALTY = 3;
+
 /**
  * 從舉手結果選下一個發言的人。
- * - 上一則 @ 到的人一定講（照 @ 的順序，跳過剛講完的）
- * - 分數依積極度加減，剛講完的扣分（避免同一人連講）
- * - 成員要到門檻、還不是成員的（AI 自己加入）門檻更高
+ * - mentioned（你 @ 的人）一定講（跳過剛講完的）
+ * - 分數依積極度加減；剛講完的再扣 3；最近 4 輪每講一次扣 3；被別的 Agent @ 到的加 2
+ * - 成員要到門檻、還不是成員的（AI 自己加入）門檻更高；同分時最久沒講的先講
  * - mustReply（你剛說完）：大家都沒到門檻也要有一個成員回
  */
 export function chooseSpeaker(
   bids: Bid[],
   people: (Speaker & { member: boolean })[],
-  ctx: { lastSpeaker: string | null; mentioned: string[]; mustReply: boolean }
+  ctx: { lastSpeaker: string | null; mentioned: string[]; mustReply: boolean; boost?: string[]; recent?: string[] }
 ): { id: string; replyTo: string } | null {
   const byId = new Map(people.map((p) => [p.id, p]));
   const forced = ctx.mentioned.find((id) => id !== ctx.lastSpeaker && byId.has(id));
   if (forced) return { id: forced, replyTo: bids.find((b) => b.id === forced)?.replyTo ?? '' };
+  const recent = ctx.recent ?? [];
+  const times = (id: string) => recent.filter((x) => x === id).length;
+  const spokeAt = (id: string) => recent.lastIndexOf(id);
   const scored = bids
     .filter((b) => byId.has(b.id))
     .map((b) => {
       const p = byId.get(b.id)!;
-      return { b, p, adj: b.score + (p.talk - 0.5) * 4 - (b.id === ctx.lastSpeaker ? 3 : 0) };
+      const adj = b.score + (p.talk - 0.5) * 4 - (b.id === ctx.lastSpeaker ? 3 : 0) - times(b.id) * RECENT_PENALTY + (ctx.boost?.includes(b.id) ? MENTION_BOOST : 0);
+      return { b, p, adj };
     })
-    .sort((x, y) => y.adj - x.adj || Number(y.p.member) - Number(x.p.member) || x.p.position - y.p.position);
+    .sort((x, y) => y.adj - x.adj || Number(y.p.member) - Number(x.p.member) || spokeAt(x.b.id) - spokeAt(y.b.id) || x.p.position - y.p.position);
   const pick = scored.find((s) => s.adj >= (s.p.member ? SPEAK_THRESHOLD : OUTSIDER_THRESHOLD)) ?? (ctx.mustReply ? scored.find((s) => s.p.member) : undefined);
   return pick ? { id: pick.b.id, replyTo: pick.b.replyTo } : null;
 }

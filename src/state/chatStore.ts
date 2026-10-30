@@ -2058,7 +2058,10 @@ export class ChatStore {
       const hit = n ? [...lines].reverse().find((l) => l.who !== self && (who ? l.who === who : l.name.toLowerCase() === n)) : undefined;
       return hit?.id ?? (last && last.who !== self && last.who === null ? last.id : null);
     };
-    if (mentioned[0]) return { id: mentioned[0], replyTo: last!.id, outsider: null };
+    // 你 @ 的人一定講；Agent 之間 @ 人只加分（只回被 @ 的模式例外，靠 @ 接力）
+    const fromUser = last?.who === null;
+    if (mentioned[0] && (fromUser || group.mode === 'mention')) return { id: mentioned[0], replyTo: last!.id, outsider: null };
+    const recent = lines.flatMap((l) => (l.who && l.who !== 'ai' && l.who !== 'conclusion' ? [l.who] : [])).slice(-4);
     if (members.length === 1) return mustReply ? { id: speakers[0].id, replyTo: replyId('', speakers[0].id), outsider: null } : null;
     if (group.mode === 'mention') {
       if (!mustReply) return null;
@@ -2115,7 +2118,7 @@ export class ChatStore {
     // 成員全部問不到（電腦沒開、模型不見了）：說原因，不要默默停下來
     if (errors.length >= speakers.length && errors.length === people.length) return this.discussionError(s.id, errors[0]);
     onSuggest(wantsConclusion(bids, new Set(speakers.map((p) => p.id))));
-    const chosen = chooseSpeaker(bids, people, { lastSpeaker, mentioned: [], mustReply });
+    const chosen = chooseSpeaker(bids, people, { lastSpeaker, mentioned: [], mustReply, boost: fromUser ? [] : mentioned, recent });
     if (!chosen) return null;
     return { id: chosen.id, replyTo: replyId(chosen.replyTo, chosen.id), outsider: outsiders.find((a) => a.id === chosen.id) ?? null };
   }

@@ -445,19 +445,20 @@ test('多 AI 討論裡開討論串：沿用成員，帶進去的是那一題和�
   expect((await repo.listMembers(parent.id)).map((m) => m.joinedBy)).toEqual(['user', 'user']);
 });
 
-test('同一則 @ 了好幾個人：最久沒講話的先講（不會兩個人互 @ 一直對話）', async () => {
+test('Agent 之間互 @ 只加分不強制：兩個人互 @ 時，第三個人也輪得到（iPhone 實測 SRE 和產品經理一直互傳）', async () => {
   const { net, store } = await setup({ members: ['SRE', '產品經理', '財務'] });
+  await store.setGroupSettings({ maxStreak: 4 });
   const host = net.hosts.get(A)!;
   const said: string[] = [];
   host.reply = (body: any) => {
-    if (body.format) return { lines: [{ message: { content: '{"score":0,"reply_to":"","conclude":false}' }, done: false }, done] };
+    // 大家都很想講（31B 實測常這樣）
+    if (body.format) return { lines: [{ message: { content: '{"score":8,"reply_to":"","conclude":false}' }, done: false }, done] };
     const name = whoSpeaks(body);
     said.push(name);
-    // 每個人都先 @ 上一個講話的人、再 @ 財務（12B 實測常這樣）
     const other = name === 'SRE' ? '產品經理' : 'SRE';
-    return { lines: [{ message: { content: name === '財務' ? '財務算好了' : `@${other} 你看呢？@財務 也算一下` }, done: false }, done] };
+    return { lines: [{ message: { content: `@${other} 你看呢？` }, done: false }, done] };
   };
+  // 你 @ 的一定先講
   await store.send('@SRE 要換伺服器嗎');
-  // SRE @ 的兩個人都還沒講過：照 @ 的順序；產品經理再 @ SRE 和財務時，財務沒講過先講
   expect(said.slice(0, 3)).toEqual(['SRE', '產品經理', '財務']);
 });

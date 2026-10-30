@@ -395,7 +395,9 @@ export function ChatScreen(p: ChatScreenProps) {
   const mention = group ? /(?:^|\s)@([^\s@]*)$/.exec(draftText) : null;
   // 討論串帶進來的背景不算（剛開還沒問就不顯示「大家說完了」）；最後一則是結論卡就已經收尾了
   const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim() && !isThreadRoot(m));
-  const concluded = state.messages.findLast((m) => !isRecordNote(m))?.detail === CONCLUSION;
+  // 最後一則是錯誤：下面已經有「重試」，不再多一列
+  const lastShown = state.messages.findLast((m) => !isRecordNote(m));
+  const concluded = lastShown?.detail === CONCLUSION || lastShown?.role === 'error';
   const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant' && !concluded;
   const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftText;
   const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
