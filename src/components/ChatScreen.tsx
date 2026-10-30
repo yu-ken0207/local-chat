@@ -221,7 +221,13 @@ export function ChatScreen(p: ChatScreenProps) {
   const model = store.currentModel();
   const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect;
   // 模型在前、電腦在後：放不下時截掉的是電腦名，不會截掉 31B／12B 這種最重要的差別
-  const modelLabel = session?.hostUrl && session.model ? `${friendlyModelName(session.model)} · ${store.hostLabel(session.hostUrl)}` : null;
+  // 只有一台電腦時不寫電腦名（不會搞混，省下空間給模型名）
+  const modelLabel =
+    session?.hostUrl && session.model
+      ? state.hosts.length > 1
+        ? `${friendlyModelName(session.model)} · ${store.hostLabel(session.hostUrl)}`
+        : friendlyModelName(session.model)
+      : null;
   const failed = (title: string) => (e: unknown) => Alert.alert(title, e instanceof Error ? e.message : String(e));
   /** AI 訊息下面的確認卡與做了什麼；同一則回答有兩件以上要確認時合成清單卡 */
   const actionsOf = (m: Message) => {

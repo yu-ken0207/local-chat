@@ -71,7 +71,7 @@ describe('第一次使用', () => {
     await fireEvent.press(await screen.findByText('手動輸入位址'));
     await waitFor(() => expect(store.getState().session).toMatchObject({ hostUrl: A, model: 'gemma4:31b' }));
     expect(await screen.findByText(/已經連上/)).toBeTruthy();
-    expect(screen.getByLabelText(/模型：Gemma 4 · 31B · 192.168.1.20/)).toBeTruthy();
+    expect(screen.getByLabelText('模型：Gemma 4 · 31B，點一下切換')).toBeTruthy();
   });
 
   test('自動尋找：找到電腦就連上並選好模型', async () => {
@@ -441,12 +441,22 @@ describe('對話', () => {
     expect(screen.getByTestId('chat-title').props.maxFontSizeMultiplier).toBe(1.3);
   });
 
+  test('輸入列下方：只有一台電腦只寫模型；兩台以上才加上電腦名', async () => {
+    const { store, net } = await setup();
+    expect(screen.getByLabelText('模型：Gemma 4 · 31B，點一下切換')).toBeTruthy();
+    net.addHost('http://192.168.1.21:11434', { models: MODELS });
+    await act(async () => {
+      await store.addHost('192.168.1.21');
+    });
+    expect(await screen.findByLabelText('模型：Gemma 4 · 31B · 192.168.1.20，點一下切換')).toBeTruthy();
+  });
+
   test('回答下的「模型 · 電腦」只在換了模型或電腦時才顯示', async () => {
     const { store } = await setup();
     await send(store, '第一題');
     await send(store, '第二題');
-    // 輸入列下方一次＋第一則回答一次；第二則同一個模型就不再重複
-    expect(screen.getAllByText('Gemma 4 · 31B · 192.168.1.20')).toHaveLength(2);
+    // 只有第一則回答有；第二則同一個模型就不再重複（輸入列下方只有一台電腦時只寫模型）
+    expect(screen.getAllByText('Gemma 4 · 31B · 192.168.1.20')).toHaveLength(1);
   });
 
   test('AI 回了空白：寫「AI 沒有回答」，可以按重新產生', async () => {
@@ -470,7 +480,8 @@ describe('對話', () => {
     expect(await screen.findByText('你好')).toBeTruthy();
     expect(await screen.findByText('粗體')).toBeTruthy();
     // 回答下方的小字與輸入列下方的模型都顯示白話名稱；速度與時間收在「詳細資訊」
-    expect(screen.getAllByText('Gemma 4 · 31B · 192.168.1.20')).toHaveLength(2);
+    expect(screen.getByText('Gemma 4 · 31B · 192.168.1.20')).toBeTruthy();
+    expect(screen.getByText('Gemma 4 · 31B')).toBeTruthy();
     expect(screen.queryByText(/tok\/s/)).toBeNull();
     expect(await screen.findByText('測試對話')).toBeTruthy(); // 標題列：模型自動取的標題
   });
@@ -613,7 +624,7 @@ describe('主機與模型面板', () => {
   test('模型標示看圖、思考、已載入；卸載前先確認', async () => {
     const { net, store } = await setup();
     await send(store, '先用一次'); // 用過之後 gemma4:31b 會在已載入清單
-    await fireEvent.press(screen.getByLabelText(/模型：Gemma 4 · 31B · 192.168.1.20/));
+    await fireEvent.press(screen.getByLabelText('模型：Gemma 4 · 31B，點一下切換'));
     const row = await screen.findByLabelText('模型 Gemma 4 · 31B，看得懂圖片，可以深入思考，回答較快');
     expect(within(row).getByText('看得懂圖片')).toBeTruthy();
     expect(within(row).getByText('可以深入思考')).toBeTruthy();
