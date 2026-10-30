@@ -415,3 +415,29 @@ describe('收尾', () => {
     expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' });
   });
 });
+
+test('多 AI 討論裡開討論串：沿用成員，帶進去的是那一題和那一輪每個人說的；在討論串裡照樣討論', async () => {
+  const { net, repo, store, agents } = await setup();
+  script(net, { 財務長: [8, 0, 0], 工程師: [0, 7, 0] });
+  await store.send('要換伺服器嗎');
+  const parent = store.getState().session!;
+  const [q] = store.getState().messages;
+  await store.openThread(q.id);
+  const thread = store.getState().session!;
+  expect(thread.parentId).toBe(parent.id);
+  await store.groupTask;
+  expect(store.getState().members.map((m) => [m.agent.name, m.joinedBy])).toEqual([
+    ['財務長', 'thread'],
+    ['工程師', 'thread'],
+  ]);
+  expect(store.getState().messages.map((m) => [m.detail, m.agentId])).toEqual([
+    ['thread-root', null],
+    ['thread-root', agents['財務長'].id],
+    ['thread-root', agents['工程師'].id],
+  ]);
+  script(net, { 財務長: [0, 0], 工程師: [8, 0] });
+  await store.send('那預算呢');
+  expect(store.getState().messages.at(-1)).toMatchObject({ agentId: agents['工程師'].id, content: '工程師說第1次' });
+  // 原對話的成員不受影響
+  expect((await repo.listMembers(parent.id)).map((m) => m.joinedBy)).toEqual(['user', 'user']);
+});

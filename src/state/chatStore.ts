@@ -1154,9 +1154,11 @@ export class ChatStore {
     const question = msgs[qi];
     const existing = await repo.findThread(s.id, question.id);
     if (existing) return this.openSession(existing.id);
-    // 那一題的回答：同一輪裡最後一則有字的（叫工具的那幾則跳過）
+    // 那一題的回答：同一輪裡最後一則有字的（叫工具的那幾則跳過）；多 AI 討論帶那一輪每個人說的
     const next = msgs.findIndex((m, j) => j > qi && m.role === 'user');
-    const answer = msgs.slice(qi + 1, next < 0 ? undefined : next).filter((m) => m.role === 'assistant' && m.content.trim()).at(-1);
+    const said = msgs.slice(qi + 1, next < 0 ? undefined : next).filter((m) => m.role === 'assistant' && m.content.trim());
+    const members = await repo.listMembers(s.id);
+    const answers = members.length > 0 ? said : said.slice(-1);
     const thread = await repo.createSession({
       hostUrl: s.hostUrl,
       model: s.model,
@@ -1171,7 +1173,9 @@ export class ChatStore {
       attachments: question.attachments.map(({ base64, width, height }) => ({ base64, width, height })),
       detail: THREAD_ROOT,
     });
-    if (answer) await repo.addMessage(thread.id, { role: 'assistant', content: answer.content, model: answer.model, hostLabel: answer.hostLabel, detail: THREAD_ROOT });
+    for (const a of answers) await repo.addMessage(thread.id, { role: 'assistant', content: a.content, model: a.model, hostLabel: a.hostLabel, detail: THREAD_ROOT, agentId: a.agentId });
+    // 多 AI 討論的討論串：沿用原對話的成員
+    for (const m of members) await repo.addMember(thread.id, m.agent.id, 'thread');
     await this.openSession(thread.id);
   }
 
