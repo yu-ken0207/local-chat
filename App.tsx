@@ -12,6 +12,8 @@ import { AccessibilityInfo, ActivityIndicator, StyleSheet, Text, View, useColorS
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PromptStore } from './src/agents/catalog';
+import { loadShard } from './src/agents/shardLoader';
 import { ChatScreen } from './src/components/ChatScreen';
 import { vpnOn, wifiIp } from './src/lib/network';
 import { OllamaClient } from './src/lib/ollama';
@@ -75,7 +77,7 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const repo = new Repo(await openPhoneDb());
-      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, vpnOn, onEvent: haptic, deviceLanguage, openMemoryDb, tools: calendarTools(expoCalendarApi()) });
+      const s = new ChatStore({ repo, client: (url, token) => new OllamaClient(url, { token }), secrets, deviceName, wifiIp, vpnOn, onEvent: haptic, deviceLanguage, openMemoryDb, tools: calendarTools(expoCalendarApi()), prompts: new PromptStore(loadShard) });
       await s.init();
       setStore(s);
     })().catch((e) => setError(e instanceof Error ? e.message : String(e)));
