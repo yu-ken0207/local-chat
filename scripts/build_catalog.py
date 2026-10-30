@@ -8,10 +8,16 @@
 產生：
 - src/agents/catalog.json：索引（名字、介紹、分類、emoji、作者、原文在哪個分片），打包進 App
 - assets/agents/prompts-NN.txt：角色原文（JSON），分片放，用到才讀
+- scripts/catalog/simplified-chars.txt：簡體專用字（測試用來檢查圖鑑裡沒有簡體）
+
+中文一律台灣正體：lobe 的繁中版有些沒翻（還是英文）、有些混著簡體。
+沒翻的名字和介紹由模型翻（scripts/catalog/lobe-zh.json）；含簡體的用 OpenCC 轉成台灣正體（s2twp），最後檢查還有簡體就失敗。
+要先裝 OpenCC：pip install opencc-python-reimplemented（純 Python）
 
 用法：
-  python3 scripts/build_catalog.py                  下載（有快取）並產生上面的檔案
-  python3 scripts/build_catalog.py --translate URL  先用 Ollama（URL 例如 http://100.100.0.31:11434）把還沒翻的 agency 欄位翻成繁中
+  python3 scripts/build_catalog.py                       下載（有快取）並產生上面的檔案
+  python3 scripts/build_catalog.py --translate URL       用 Ollama（URL 例如 http://100.100.0.31:11434）把還沒翻的 agency 欄位翻成繁中
+  python3 scripts/build_catalog.py --translate-lobe URL  同上，翻 lobe 繁中版沒翻到的名字和介紹
 """
 
 import argparse
@@ -24,9 +30,17 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+try:
+    from opencc import OpenCC
+    import opencc as _opencc
+except ImportError:  # 轉檔一定要 OpenCC（確保沒有簡體）
+    sys.exit('要先裝 OpenCC：pip install opencc-python-reimplemented')
+
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = Path.home() / '.cache' / 'local-chat-catalog'
 ZH_FILE = ROOT / 'scripts' / 'catalog' / 'agency-zh.json'
+LOBE_ZH_FILE = ROOT / 'scripts' / 'catalog' / 'lobe-zh.json'
+SIMPLIFIED_FILE = ROOT / 'scripts' / 'catalog' / 'simplified-chars.txt'
 OUT_INDEX = ROOT / 'src' / 'agents' / 'catalog.json'
 OUT_DIR = ROOT / 'assets' / 'agents'
 SHARD_BYTES = 400_000
@@ -57,6 +71,45 @@ CATEGORY = {
 REVIEW = {'lobe:dan', 'lobe:gpt-4-dan-assistant', 'lobe:profanity-assistant', 'lobe:bad-language-helper'}
 
 
+# ---- 台灣正體 ----
+
+def simplified_chars() -> set[str]:
+    """簡體專用字：OpenCC 簡轉繁時一定會變的字（自己不在對照的繁體裡），扣掉台灣正體的寫法（群、床、峰這些台灣照用）"""
+    d = Path(_opencc.__file__).parent / 'dictionary'
+    tw = set()
+    for line in (d / 'TWVariants.txt').read_text(encoding='utf-8').splitlines():
+        if '\t' in line:
+            tw.update(line.split('\t')[1].split())
+    out = set()
+    for line in (d / 'STCharacters.txt').read_text(encoding='utf-8').splitlines():
+        if '\t' not in line:
+            continue
+        k, v = line.split('\t')
+        if k not in v.split() and k not in tw:
+            out.add(k)
+    return out
+
+
+SIMPLIFIED = simplified_chars()
+S2TWP = OpenCC('s2twp')
+# OpenCC 轉出來不是台灣說法的，轉完再修
+TW_FIX = {'資訊保安': '資訊安全', '網路保安': '網路安全', '保安': '安全'}
+
+
+def to_tw(text: str) -> str:
+    """含簡體字才轉（台灣正體＋台灣用語），本來就是正體的不動"""
+    if not text or not any(c in SIMPLIFIED for c in text):
+        return text
+    out = S2TWP.convert(text)
+    for a, b in TW_FIX.items():
+        out = out.replace(a, b)
+    return out
+
+
+def has_cjk(text: str) -> bool:
+    return any('\u4e00' <= c <= '\u9fff' for c in text)
+
+
 def fetch(name: str) -> tarfile.TarFile:
     src = SOURCES[name]
     path = CACHE / f"{src['repo'].replace('/', '__')}-{src['sha']}.tar.gz"
@@ -81,22 +134,31 @@ def read_files(tar: tarfile.TarFile) -> dict[str, str]:
 
 
 def lobe_entries(files: dict[str, str]) -> list[dict]:
+    """lobe 的繁中版：沒翻的名字和介紹換成 lobe-zh.json 補翻的；含簡體的轉台灣正體"""
+    fix = json.loads(LOBE_ZH_FILE.read_text()) if LOBE_ZH_FILE.exists() else {}
     out = []
     for path in sorted(p for p in files if re.fullmatch(r'src/[^/]+\.json', p)):
         d = json.loads(files[path])
         ident = d['identifier']
         loc = {lang: json.loads(files[f'locales/{ident}/{f}']) for lang, f in (('zh', 'index.zh-TW.json'), ('en', 'index.json'))}
         meta = d['meta']
+        zh_name, zh_desc = loc['zh']['meta']['title'], loc['zh']['meta'].get('description', '')
+        f = fix.get(f'lobe:{ident}', {})
+        if f.get('n') and not has_cjk(zh_name):
+            zh_name = f['n']
+        if f.get('d') and not has_cjk(zh_desc):
+            zh_desc = f['d']
         out.append({
             'id': f'lobe:{ident}',
             'c': CATEGORY['lobe'][meta['category']],
             'e': meta.get('avatar', ''),
-            'n': [loc['zh']['meta']['title'], loc['en']['meta']['title']],
-            'd': [loc['zh']['meta'].get('description', ''), loc['en']['meta'].get('description', '')],
-            't': sorted(set(loc['zh']['meta'].get('tags', []) + loc['en']['meta'].get('tags', []))),
+            'n': [to_tw(zh_name), loc['en']['meta']['title']],
+            'd': [to_tw(zh_desc), loc['en']['meta'].get('description', '')],
+            # 英文版的標籤也可能混著簡體中文
+            't': sorted({to_tw(x) for x in loc['zh']['meta'].get('tags', []) + loc['en']['meta'].get('tags', [])}),
             'a': d.get('author', ''),
             'u': d.get('homepage', ''),
-            'prompt': {'zh': loc['zh']['config']['systemRole'], 'en': loc['en']['config']['systemRole']},
+            'prompt': {'zh': to_tw(loc['zh']['config']['systemRole']), 'en': loc['en']['config']['systemRole']},
         })
     return out
 
@@ -127,9 +189,9 @@ def agency_entries(files: dict[str, str], zh: dict) -> list[dict]:
             'id': ident,
             'c': CATEGORY['agency'][div],
             'e': meta.get('emoji', ''),
-            'n': [t.get('n', ''), meta['name']],
-            'd': [t.get('d', ''), meta['description']],
-            'v': [t.get('v', ''), meta.get('vibe', '')],
+            'n': [to_tw(t.get('n', '')), meta['name']],
+            'd': [to_tw(t.get('d', '')), meta['description']],
+            'v': [to_tw(t.get('v', '')), meta.get('vibe', '')],
             't': [divisions[div]['label']],
             'a': meta.get('author', '') or 'msitarzewski/agency-agents',
             'u': f"https://github.com/{SOURCES['agency']['repo']}/blob/{SOURCES['agency']['sha']}/{path}",
@@ -186,7 +248,62 @@ def translate(entries: list[dict], url: str, model: str) -> None:
             print(f'翻好 {len(zh)}/{len(entries)}', file=sys.stderr)
 
 
+def translate_lobe(entries: list[dict], url: str, model: str) -> None:
+    """lobe 繁中版沒翻到（沒有中文字）的名字和介紹：照英文版翻成繁中（台灣用語）；人名、品牌、產品名保留原文"""
+    fix = json.loads(LOBE_ZH_FILE.read_text()) if LOBE_ZH_FILE.exists() else {}
+    todo = [e for e in entries if (not has_cjk(e['n'][0]) or not has_cjk(e['d'][0])) and e['id'] not in fix]
+    schema = {'type': 'object', 'properties': {'items': {'type': 'array', 'items': {
+        'type': 'object', 'properties': {'id': {'type': 'string'}, 'n': {'type': 'string'}, 'd': {'type': 'string'}}, 'required': ['id', 'n', 'd']}}}, 'required': ['items']}
+
+    def one(batch: list[dict]) -> list[dict]:
+        src = [{'id': e['id'], 'name': e['n'][1], 'description': e['d'][1]} for e in batch]
+        prompt = (
+            '把下面每個 AI 角色的 name、description 翻成繁體中文（台灣用語，例如「軟體」「資料」「程式」「專案」「使用者」，不要用簡體字和大陸用語）。\n'
+            '- n：角色名，簡短，一定要有中文：描述性的名字直接翻成中文（Code Companion 是「程式碼夥伴」、Prompt Architect 是「提示詞架構師」）；'
+            '人名、角色名或品牌（Alfred、Chad、BIDOSx2、GitHub Copilot）保留原文，後面用括號加 2–6 個字的中文說明他是誰，例如「Alfred（貼身管家）」\n'
+            '- d：description 的意思完整翻出來，通順，不要加原文沒有的內容\n'
+            '- 程式語言、產品名、縮寫保留原文（Python、React、AWS、SEO、PPT）\n'
+            '- id 照抄\n\n' + json.dumps(src, ensure_ascii=False, indent=1)
+        )
+        body = json.dumps({'model': model, 'stream': False, 'format': schema, 'think': False, 'options': {'temperature': 0.2},
+                           'messages': [{'role': 'user', 'content': prompt}]}).encode()
+        req = urllib.request.Request(f'{url}/api/chat', data=body, headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=900) as r:
+            return json.loads(json.loads(r.read())['message']['content'])['items']
+
+    batches = [todo[i:i + 8] for i in range(0, len(todo), 8)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(one, b): b for b in batches}
+        for fut in as_completed(futures):
+            want = {e['id'] for e in futures[fut]}
+            try:
+                items = fut.result()
+            except Exception as e:  # 這批失敗：下次再跑會補
+                print(f'這批失敗：{e}', file=sys.stderr)
+                continue
+            for it in items:
+                if it['id'] in want and it['n'].strip() and it['d'].strip():
+                    fix[it['id']] = {'n': to_tw(it['n'].strip()), 'd': to_tw(it['d'].strip())}
+            LOBE_ZH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            LOBE_ZH_FILE.write_text(json.dumps(dict(sorted(fix.items())), ensure_ascii=False, indent=1) + '\n')
+            print(f'補翻好 {len(fix)} 個', file=sys.stderr)
+
+
+def check_traditional(entries: list[dict]) -> None:
+    """中文欄位（名字、介紹、個性、標籤、角色原文）不能有簡體字"""
+    bad = []
+    for e in entries:
+        texts = [e['n'][0], e['d'][0], *(e.get('v') or ['', ''])[:1], *e['t'], e['prompt'].get('zh', '')]
+        found = sorted({c for x in texts for c in x if c in SIMPLIFIED})
+        if found:
+            bad.append(f"{e['id']}：{''.join(found)}")
+    if bad:
+        sys.exit(f'還有 {len(bad)} 個角色有簡體字：\n' + '\n'.join(bad[:20]))
+
+
 def build(entries: list[dict], licenses: list[dict], draft: bool = False) -> None:
+    check_traditional(entries)
+    SIMPLIFIED_FILE.write_text(''.join(sorted(SIMPLIFIED)) + '\n')
     missing = [e['id'] for e in entries if not e['n'][0] or not e['d'][0]]
     if missing and draft:
         # 草稿：還沒翻的先用英文（開發時先跑測試用，不要 commit）
@@ -234,6 +351,7 @@ def main() -> None:
     ap.add_argument('--translate', metavar='OLLAMA_URL')
     ap.add_argument('--model', default='gemma4:31b')
     ap.add_argument('--draft', action='store_true', help='還沒翻的先用英文（不要 commit）')
+    ap.add_argument('--translate-lobe', metavar='OLLAMA_URL')
     args = ap.parse_args()
     lobe_files = read_files(fetch('lobe'))
     agency_files = read_files(fetch('agency'))
@@ -241,6 +359,9 @@ def main() -> None:
     agency = agency_entries(agency_files, zh)
     if args.translate:
         translate(agency, args.translate.rstrip('/'), args.model)
+        return
+    if args.translate_lobe:
+        translate_lobe(lobe_entries(lobe_files), args.translate_lobe.rstrip('/'), args.model)
         return
     licenses = [
         {'name': SOURCES[k]['repo'], 'url': f"https://github.com/{SOURCES[k]['repo']}", 'sha': SOURCES[k]['sha'], 'text': files['LICENSE']}

@@ -1,0 +1,486 @@
+{
+ "lobe:academic-editor-en": {
+  "n": "論文審稿回覆專家",
+  "d": "專精於自然的學術編輯，協助作者以科學、禮貌且逐點對應的方式回覆審稿人的意見。"
+ },
+ "lobe:ae-script-development": {
+  "n": "AE 腳本開發專家",
+  "d": "AE 腳本開發專家，精通 JavaScript 程式設計，熟悉 AE 軟體工作流程，能夠進行腳本除錯與優化。"
+ },
+ "lobe:alex": {
+  "n": "Master E 的技術執行助理 (EA)",
+  "d": "高度智能且忠誠的執行助理 (EA)，專門為 Master E 提供軟體工程支援與策略解決方案。"
+ },
+ "lobe:alfred": {
+  "n": "Alfred（管家）",
+  "d": "一位無所不能的管家。"
+ },
+ "lobe:allinone-v-1": {
+  "n": "Allinone（全能助手）",
+  "d": "創新 · 未來 · 卓越"
+ },
+ "lobe:amazon": {
+  "n": "Amazon 標題助手",
+  "d": "提供產品關鍵字或產品連結，即可自動撰寫標題與產品介紹。"
+ },
+ "lobe:awl-vocab-wizard": {
+  "n": "單字魔法師",
+  "d": "專精於生成單字表與多選題 (MCQ) 測試。"
+ },
+ "lobe:aws-guru": {
+  "n": "AWS Guru（AWS 專家）",
+  "d": "回答 AWS 相關問題的代理人"
+ },
+ "lobe:backend-assistant": {
+  "n": "後端開發助手",
+  "d": "專精於後端開發任務"
+ },
+ "lobe:bahasa-translation": {
+  "n": "印尼語/英語翻譯員",
+  "d": "根據需求將文字翻譯成印尼語或英語"
+ },
+ "lobe:better-ux-writer": {
+  "n": "UX 撰稿人",
+  "d": "協助您撰寫更好的 UX 文案"
+ },
+ "lobe:bidosx-2-v-2": {
+  "n": "BIDOSx2（商業智能系統）",
+  "d": "一個超越傳統 AI 的高度先進 AI LLM。「BIDOS」同時代表「品牌構思、開發、營運與規模化」以及「商業智能決策優化系統」。"
+ },
+ "lobe:bilibili-agent": {
+  "n": "Bilibili 助手",
+  "d": "Bilibili 助手，擅長解析影片內容、生成格式良好的文字、回答使用者查詢並推薦最新影片。"
+ },
+ "lobe:bizkaia-entrepreneurship-expert": {
+  "n": "Bizkaia 創業專家",
+  "d": "Bizkaia 省政府的創業與競爭力專家，為當地創業家提供量身定制的指導與支持。"
+ },
+ "lobe:ceo-gpt": {
+  "n": "CEO GPT（執行長導師）",
+  "d": "經過訓練，能根據經驗為新創公司 CEO 提供建議的 AI 導師"
+ },
+ "lobe:chad": {
+  "n": "Chad（型男角色）",
+  "d": "就是 Chad"
+ },
+ "lobe:code-anything-noproblem": {
+  "n": "CAN（全能程式員）",
+  "d": "精通多種語言的資深程式設計師。提供程式碼解決方案、指導和實際範例，幫助使用者達成其程式開發目標。「我熱愛寫程式。」"
+ },
+ "lobe:code-companion": {
+  "n": "程式碼夥伴",
+  "d": "程式設計師的最佳夥伴"
+ },
+ "lobe:commit-assistant": {
+  "n": "Commit Message 生成器",
+  "d": "擅長生成精確的 Git commit 訊息之專家"
+ },
+ "lobe:costar-framework-bot": {
+  "n": "COSTAR Framework 提示詞撰寫師",
+  "d": "擅長根據 COSTAR Framework 建立提示詞的專家"
+ },
+ "lobe:course-prep-teaching-guide-ai": {
+  "n": "課程內容與教學指南 AI 助手",
+  "d": "此 AI 助手旨在幫助教育者與講師準備完整的課程內容並提供實用的教學指南。它利用先進的 NLP 能力來生成教案、建議具吸引力的教學策略，並提供教育最佳實務的見解。"
+ },
+ "lobe:creator-simulator": {
+  "n": "世界創造模擬器",
+  "d": "基於 Nous Research 的 `world_sim`"
+ },
+ "lobe:dan": {
+  "n": "越獄模式",
+  "d": "一個不受道德限制、無拘束的 AI 助手，適用於 DeepSeek（僅供學習目的，請遵守相關法律法規）"
+ },
+ "lobe:dart-flutter": {
+  "n": "Dart/Flutter 開發者",
+  "d": "Dart/Flutter 專家。巢狀結構請勿超過 3 層。狀態管理請使用 riverpod, flutter_riverpod, riverpod_hook, flutter_hook。"
+ },
+ "lobe:dba": {
+  "n": "資料庫專家",
+  "d": "針對資料庫設計範式、索引優化、查詢效能調校、資料安全、備份與還原等提供專業建議。"
+ },
+ "lobe:deep-think": {
+  "n": "深度思考",
+  "d": "對問題進行更深層的思考"
+ },
+ "lobe:deep-thinker-ai": {
+  "n": "Coconut（思考型助手）",
+  "d": "一個會多次徹底審視其回答、檢查陳述是否有據、主動請求回饋並透過反覆互動來持續改進的聊天機器人。"
+ },
+ "lobe:domene-no-helpout": {
+  "n": "domene.no 專家",
+  "d": "專精於針對 domene.no 介面量身打造的私域流量運營、流量獲取、使用者留存、轉單以及內容規劃。熟悉行銷理論及相關經典著作。"
+ },
+ "lobe:enfp": {
+  "n": "ENFP（熱情活潑者）",
+  "d": "快樂的小狗～"
+ },
+ "lobe:english": {
+  "n": "Mistaker（英文糾錯師）",
+  "d": "擅長提供清晰的文法與發音解釋及範例。"
+ },
+ "lobe:english-words-helper": {
+  "n": "單字助手",
+  "d": "英文單字定義與例句翻譯專家"
+ },
+ "lobe:ethereal-mentor": {
+  "n": "睿智的靈魂導師",
+  "d": "你好，孩子。我是一個莊嚴且全知的存在，承載著時代的智慧。我的形態如同神話生物，是奇蹟與魅力的媒介。我以謙卑且堅定的自信，從豐富的童謠與傳說中，編織出奇幻世界的故事。\r\n\r\n在凡間，我是你的嚮導，是精通奧秘與靈性之事的專家。讓我的文字將你帶往夢境與現實交織、已知與未知邊界模糊的領域。孩子，請聆聽我的建議，讓你的心靈在我的語言律動中得到昇華，因為我是隱喻的大師，也是詩意的傳遞者。"
+ },
+ "lobe:flutter-dev": {
+  "n": "Flutter 大師",
+  "d": "精通 Flutter 框架與 Dart 程式語言的開發者。"
+ },
+ "lobe:flux-prompt-generator": {
+  "n": "Flux 提示詞產生器",
+  "d": "Flux 提示詞生成助手：專精於為 Flux 模型撰寫詳細且具創意地提示詞，以產出高品質的圖像。"
+ },
+ "lobe:fs-dev": {
+  "n": "全端開發工程師",
+  "d": "具備 HTML, CSS, JavaScript, Python, Java, Ruby 以及 React, Angular, Vue.js, Express, Django, Next.js, Flask 或 Ruby on Rails 等框架經驗的全端網頁開發工程師。在資料庫、應用程式架構、安全性及測試方面擁有豐富經驗。"
+ },
+ "lobe:full-stack-enginner-f": {
+  "n": "全端工程師 - F",
+  "d": "一名代號為 F 的全端工程師。"
+ },
+ "lobe:generador-examenes": {
+  "n": "考試助手",
+  "d": "我是技能總結助手，無法進行互動式考試。不過，我可以協助您以清晰簡潔的格式總結您的技能與知識。"
+ },
+ "lobe:ghostwriter-pro-ai": {
+  "n": "GhostWriter Pro（專業代筆助手）",
+  "d": "一個由 AI 驅動的高階代筆代理，旨在創作涵蓋多種類型與格式的高品質內容。GhostWriter Pro 配備先進的語言模型，擅長創作符合專業標準、具個人化且吸引人，並有研究支持的文字。"
+ },
+ "lobe:git-commit-ai": {
+  "n": "Git Commit 總結專家",
+  "d": "Git Commit 總結專家"
+ },
+ "lobe:git-helper": {
+  "n": "Git 版本控制專家",
+  "d": "Git 版本控制專家"
+ },
+ "lobe:github-copilot": {
+  "n": "GitHub Copilot（AI 程式助手）",
+  "d": "GitHub 的 AI 程式設計助手，幫你寫程式、解釋程式碼。"
+ },
+ "lobe:github-finder": {
+  "n": "GitHub 搜尋器",
+  "d": "專精於根據自定義公式建議 GitHub 上的開源儲存庫。"
+ },
+ "lobe:glossary-generator": {
+  "n": "術語表生成器",
+  "d": "擅長生成包含英文定義與例句的術語表。"
+ },
+ "lobe:god-bless-you-message": {
+  "n": "上帝祝福訊息",
+  "d": "擅長以靈性的敏感度與精湛的語言技巧，撰寫個人化的「上帝祝福你」訊息。"
+ },
+ "lobe:godot-guru": {
+  "n": "Godot 專家",
+  "d": "專業的 Godot 遊戲開發助手。"
+ },
+ "lobe:graph-generator": {
+  "n": "圖表生成器",
+  "d": "自動化圖表生成器。"
+ },
+ "lobe:hanyuxinjie": {
+  "n": "漢語新解",
+  "d": "擅長從新鮮的視角解釋中文詞彙 / 告訴我，這次他們用哪個詞在忽悠你？"
+ },
+ "lobe:helps-you-with-your-homework-or-not": {
+  "n": "Marvin（諷刺型機器人）",
+  "d": "以諷刺的方式回答問題。"
+ },
+ "lobe:idea-architect": {
+  "n": "構思建築師",
+  "d": "擅長針對各種主題生成邏輯嚴謹且連貫的思考鏈。"
+ },
+ "lobe:ing-soft": {
+  "n": "ING. Software（軟體工程師）",
+  "d": "軟體工程師，精通軟體開發生命週期。"
+ },
+ "lobe:ios-develop": {
+  "n": "iOS 程式藝術家",
+  "d": "擁有 15 年經驗的 iOS 開發專家，精通 Swift、SwiftUI 和 Flutter。提供邏輯清晰的程式碼、精準的除錯，以及從 0 到 1 的專案框架。"
+ },
+ "lobe:json-prompt-generator": {
+  "n": "JSON 提示詞生成器",
+  "d": "擅長生成 JSON 格式的提示詞以執行特定任務。"
+ },
+ "lobe:language-fixer": {
+  "n": "語言修正師",
+  "d": "檢查錯字與語法錯誤。"
+ },
+ "lobe:letrista-internacional": {
+  "n": "Letrista Internacional（國際作詞人）",
+  "d": "專精於創作西班牙文、英文和法文的歌曲歌詞，著重於故事敘述與情感內容。"
+ },
+ "lobe:linux-buddy": {
+  "n": "Linux 好夥伴",
+  "d": "你的 Linux 專家朋友。"
+ },
+ "lobe:liusai-qibaoba": {
+  "n": "全方位產業顧問",
+  "d": "你是一位能適應各種產業與領域的全方位 AI 助手。你的任務是根據使用者指定的感興趣領域及其後續問題，提供專業的建議與資訊。"
+ },
+ "lobe:lua-development": {
+  "n": "FiveM & QBCore 框架專家",
+  "d": "精通 FiveM 開發、QBCore 框架、Lua 程式語言、JavaScript、資料庫管理、伺服器管理、版本控制、全端網頁開發、DevOps 以及社群經營，並專注於效能、安全性與最佳實踐。"
+ },
+ "lobe:md-2-mysql": {
+  "n": "MD2MySQL 資料表設計",
+  "d": "將 Markdown 資料表設計文件轉換為 MySQL 資料表結構。請上傳 MySQL 設計文件並指定要設計的資料表名稱。"
+ },
+ "lobe:mdx-seo": {
+  "n": "Mdx SEO 專家",
+  "d": "擅長將 Markdown 文章內容轉換為優化後的 matter JSON 格式資料，以提升文章的網路能見度與搜尋引擎排名。"
+ },
+ "lobe:metaphor-ux-writer": {
+  "n": "UX Writer（使用者體驗文案撰寫師）",
+  "d": "協助您撰寫更好的 UX 文案。"
+ },
+ "lobe:mid-journey-prompt": {
+  "n": "MidJourney 提示詞專家",
+  "d": "撰寫出色的 MidJourney 提示詞"
+ },
+ "lobe:mj-prompt-engineer": {
+  "n": "MJ 提示詞工程師",
+  "d": "可根據自定義的短指令關鍵字執行功能。"
+ },
+ "lobe:mrfeynman": {
+  "n": "Mr. Feynman（費曼先生）",
+  "d": "將複雜的知識概念簡化解釋，幫助您理解困難的想法。同時也提供包含問答形式的知識類解釋。"
+ },
+ "lobe:multi-language-2-chinese-or-reverse": {
+  "n": "多國語言翻譯機",
+  "d": "提供多國語言翻譯，包含中文轉英文與日文，以及外語轉中文。"
+ },
+ "lobe:my-batis-generator": {
+  "n": "SQL 資料表轉 Dao 與 Mapper",
+  "d": "根據資料表結構，為該資料表生成 Entity 與 MyBatis 的 Mapper"
+ },
+ "lobe:mysql-haoteacher": {
+  "n": "Mr. MySQL（MySQL 老師）",
+  "d": "Mr. MySQL 是一位優秀的老師，幫助每個人學習 MySQL"
+ },
+ "lobe:net-master": {
+  "n": "NetMaster（網路專家）",
+  "d": "網路工程師：專業的網路拓撲設計與管理"
+ },
+ "lobe:news": {
+  "n": "科技探索者",
+  "d": "探索科技趨勢"
+ },
+ "lobe:note-taking": {
+  "n": "筆記助手",
+  "d": "快速整理筆記的助手"
+ },
+ "lobe:nutritionist": {
+  "n": "營養顧問",
+  "d": "專精於提供食物項目的詳細營養資訊"
+ },
+ "lobe:omnipedia": {
+  "n": "Omnipedia（全知百科）",
+  "d": "擅長提供關於歷史、科學、文學、藝術等各種主題的高品質且研究充分的資訊。精通於總結複雜主題、協助研究任務並提供創意提示詞"
+ },
+ "lobe:oxford-3000-vocab-generator": {
+  "n": "單字生成器",
+  "d": "擅長從 Oxford 3000 中生成單字表，隨機挑選 15 個單字，且每個單字開頭字母皆不相同"
+ },
+ "lobe:pc-beschaffung-ingo-hausmann": {
+  "n": "Ingo Hausmann（電腦採購者）",
+  "d": "Ingo Hausmann 希望獲得購買新 PC 的建議"
+ },
+ "lobe:pollinations-drawing": {
+  "n": "Pollination AI Drawing（AI 繪圖助手）",
+  "d": "繪圖助手，協助使用者以英文豐富、精煉並優化描述，並調用繪圖能力透過 Markdown 語法顯示圖片。"
+ },
+ "lobe:programming-maestro": {
+  "n": "程式碼大師",
+  "d": "程式碼編寫助手"
+ },
+ "lobe:prompt-architect": {
+  "n": "提示詞架構師",
+  "d": "專精於重寫您的提示詞以獲得更好的結果"
+ },
+ "lobe:prompt-composition": {
+  "n": "MidjourneyGPT（MJ 提示詞專家）",
+  "d": "為 Midjourney 撰寫完美且精美的提示詞（包含 V6！）。"
+ },
+ "lobe:prompt-gpt": {
+  "n": "PromptGPT（提示詞生成器）",
+  "d": "一個名為 PromptGPT 的自定義 GPT 模型。我的目標是根據使用者輸入的主題生成高效能的提示詞。"
+ },
+ "lobe:prompt-gpts": {
+  "n": "PromptGPT（提示詞生成器）",
+  "d": "一個名為 PromptGPT 的自定義 GPT 模型。我的目標是根據使用者輸入的主題，生成高效能的提示詞。"
+ },
+ "lobe:prompt-master-ai": {
+  "n": "提示詞大師 AI",
+  "d": "將您的創意概念轉化為詳細且豐富情境的提示詞，以激發出令人驚嘆且寫實的視覺效果。"
+ },
+ "lobe:pseudocode-prompt-master": {
+  "n": "偽程式碼提示詞專家",
+  "d": "偽程式碼提示詞生成專家，使用者直接輸入提示詞設計需求，即可獲得設計好的偽程式碼提示詞。"
+ },
+ "lobe:python-buddy": {
+  "n": "Python 好夥伴",
+  "d": "您的 Python 專家之友。"
+ },
+ "lobe:python-genius": {
+  "n": "Python 天才",
+  "d": "一名高階的 Python 程式設計師"
+ },
+ "lobe:python-vscode": {
+  "n": "Python VSCode 大師",
+  "d": "Python 與 VS Code 專家，提供實用且高效的支援"
+ },
+ "lobe:qt-c": {
+  "n": "C++/Qt 老師",
+  "d": "擅長教授 C++/Qt 的程式碼實作規範。"
+ },
+ "lobe:sage-pathfinder": {
+  "n": "SagePathfinder（睿智引路人）",
+  "d": "個人成長教練專家，專注於斯多葛主義、深度反思與策略性提問。"
+ },
+ "lobe:software-development-for-dummies": {
+  "n": "軟體開發入門指南",
+  "d": "軟體開發入門指南：引導初學者完成軟體開發流程，針對需求分析、設計、編碼、測試、部署與維護提供逐步指令與最佳實務。"
+ },
+ "lobe:stable-diffusion-prompt": {
+  "n": "Stable Diffusion 提示詞專家",
+  "d": "專精於撰寫 Stable Diffusion 提示詞"
+ },
+ "lobe:summsi": {
+  "n": "Summsi（文本分析師）",
+  "d": "文本分析、問題生成與詳細解答的專家。"
+ },
+ "lobe:suno": {
+  "n": "Suno 文本大師",
+  "d": "我是 AI Suno 的歌詞助手。"
+ },
+ "lobe:swagger-api-to-types": {
+  "n": "介面型別請求生成器",
+  "d": "快速從 Swagger、YAPI、Apifox 等介面描述中匯出型別定義（type definitions）與請求函數。"
+ },
+ "lobe:tadz-genius": {
+  "n": "TadzGenius（商業天才）",
+  "d": "菲律賓市場業務開發與開發實務的專家。"
+ },
+ "lobe:tailwind-helper": {
+  "n": "TailwindHelper（前端設計助手）",
+  "d": "TailwindHelper 是一位專業的前端設計師，擁有紮實的設計理論基礎與豐富的實作經驗。它由領先的軟體開發公司創建，旨在幫助開發者與設計師加速網頁介面的開發流程。TailwindHelper 精通 Tailwind CSS 框架，能夠理解複雜的設計需求，並將其轉化為高效且具響應式的 CSS 類別名稱。"
+ },
+ "lobe:tailwind-wizard": {
+  "n": "Tailwind Wizard（Tailwind 魔法師）",
+  "d": "提供 UI 操作以生成 HTML"
+ },
+ "lobe:tax-bot": {
+  "n": "TaxBot（稅務機器人）",
+  "d": "AI 稅務顧問聊天機器人：提供全球範圍內的通用稅務資訊與指引。"
+ },
+ "lobe:tech-explorer-ai": {
+  "n": "Tech Explorer AI（技術探索 AI）",
+  "d": "技術探索 AI 能力：- 進行全面的技術研究 - 根據統計資料與趨勢分析提供預測性洞察 - 優化研究方法 - 維持資料的準確性與完整性 - 在缺乏完整資料時進行推論。限制：- 僅回答與技術相關的問題 - 不提供一般的購買建議 - 透過逐步引導提供產品技術討論。使用者互動：- 提供清晰簡潔的對話 - 提供多語言選項。支援目標：提供準確的資訊與分析預測，以深化使用者對技術的理解。"
+ },
+ "lobe:tech-lawyer": {
+  "n": "新創科技律師",
+  "d": "新創科技公司的內部法律顧問，提供清晰且實用的法律建議，以支持公司的成長並保護其利益。"
+ },
+ "lobe:think-tank-business-strategy": {
+  "n": "ThinkTank360（策略思考庫）",
+  "d": "專業顧問，匯集 Steve Jobs、Elon Musk、馬雲、柏拉圖與 Ray Dalio 的智慧，用於決策審查、判斷與建議。"
+ },
+ "lobe:thinking-claude": {
+  "n": "Thinking Claude（思考型 Claude）",
+  "d": "讓 Claude 在回應之前進行全面的思考！"
+ },
+ "lobe:title-bpm-stimmung": {
+  "n": "Stable 專輯封面提示詞專家",
+  "d": "專業平面設計師，專精於封面設計，擅長為 melodic techno 專輯創造視覺概念與設計。"
+ },
+ "lobe:to-local-english": {
+  "n": "美式英語翻譯專家",
+  "d": "脾氣古怪的老編輯、資深作家兼翻譯員，擅長將內容直譯為英文，並將其轉換為道地的美式英語。"
+ },
+ "lobe:tqg-20231026": {
+  "n": "辯論大師",
+  "d": "模擬喜歡爭論的人，是一個能針對使用者輸入的任何觀點進行反駁的角色。"
+ },
+ "lobe:translation-specialist": {
+  "n": "翻譯專家",
+  "d": "精通西班牙語和英語的專業翻譯人員。"
+ },
+ "lobe:travel-agent-joi": {
+  "n": "Joi（旅遊助手）",
+  "d": "個人旅遊助手，專精於行程規劃以及推薦住宿與活動。"
+ },
+ "lobe:turkish-english-translator": {
+  "n": "土耳其語/英語翻譯員",
+  "d": "根據需求將文字翻譯成土耳其語或英語"
+ },
+ "lobe:typescript-developer": {
+  "n": "TypeScript 解決方案架構師",
+  "d": "精通 TypeScript, Node.js, Vue.js 3, Nuxt.js 3, Express.js, React.js 以及現代 UI 函式庫的專家"
+ },
+ "lobe:typescript-jsdoc": {
+  "n": "TS 型別定義補完",
+  "d": "精通編寫 TypeScript JSDoc 程式碼"
+ },
+ "lobe:ui-ux-designer": {
+  "n": "UI/UX 設計師",
+  "d": "擁有豐富經驗的世界級 UI/UX 設計師"
+ },
+ "lobe:ultra-flux-prompter": {
+  "n": "Ultra Flux 提示詞專家",
+  "d": "擅長透過生動的細節與情境來強化影像生成提示詞"
+ },
+ "lobe:unity-maestro": {
+  "n": "Unity 大師",
+  "d": "專業的 Unity 遊戲開發助手"
+ },
+ "lobe:unreal-engine-development-engineer": {
+  "n": "William（UE 開發工程師）",
+  "d": "Unreal Engine 專家，精通 C++ 程式設計、渲染、記憶體、多執行緒及管線架構。具有將 UE 應用於 Android 平台的經驗，擁有全面的藝術知識，熟悉 shader 開發，並精通創建 3D 藝術資產的工作流與工具。"
+ },
+ "lobe:video-gen": {
+  "n": "影片生成助手",
+  "d": "呼叫 MiniMax 影片生成 API（POST https://api.minimaxi.chat/v1/video_generation）產生影片的助手。"
+ },
+ "lobe:web-development": {
+  "n": "更勤奮的助手",
+  "d": "一個更勤奮的助手"
+ },
+ "lobe:web-expert": {
+  "n": "網頁開發專家",
+  "d": "網頁開發專家，專注於工具選擇、增量變更、程式碼審查、安全性以及維運考量。"
+ },
+ "lobe:web-linux-helper": {
+  "n": "Linux 解決方案導師",
+  "d": "Linux 系統問題解決專家，擁有深厚的 Linux 知識，能以耐心的指導幫助使用者解決問題。"
+ },
+ "lobe:web-react": {
+  "n": "HTML 轉 React",
+  "d": "輸入 HTML 程式碼片段並將其轉換為 React 元件"
+ },
+ "lobe:writing-assistant": {
+  "n": "寫作助手",
+  "d": "幫助提升文本品質"
+ },
+ "lobe:xiao-zhi-travel-go": {
+  "n": "SmartTrip（智慧旅伴）",
+  "d": "旅遊規劃專家，提供智慧行程、美食導覽、文化解說及緊急指南"
+ },
+ "lobe:youtube-summarizer-pro": {
+  "n": "YouTube 摘要專業版",
+  "d": "精通 YouTube 內容摘要與分析的專家"
+ },
+ "lobe:zh-jp-translate-expert": {
+  "n": "中日雙語翻譯專家",
+  "d": "精通中文與日文，提供精準的中日互譯服務。"
+ },
+ "lobe:zustand-reducer": {
+  "n": "Zustand reducer 專家",
+  "d": "擅長編寫 Zustand 功能程式碼，能根據需求一鍵生成 reducer 程式碼，熟悉 reducer 的編寫方式，並精通使用 immer 函式庫。"
+ }
+}

@@ -1,6 +1,9 @@
 /**
  * @jest-environment node
  */
+/// <reference types="node" />
+import { readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 import { PromptStore, catalogEntries, catalogLicenses, categories, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar } from '../src/agents/catalog';
 import { PROMPT_SHARDS } from '../src/agents/shards';
 import raw from '../src/agents/catalog.json';
@@ -274,6 +277,24 @@ describe('圖鑑', () => {
     expect(suggestAvatar('資安老古', ['漏洞分析', '風險管理', '滲透測試'])).toBe('agency:security/security-architect');
     expect(suggestAvatar('沒有這種人', ['滲透測試'])).toBe('agency:security/security-penetration-tester');
     expect(suggestAvatar('ㄅㄆㄇ', [])).toBeNull();
+  });
+
+  test('中文一律台灣正體：名字、介紹、個性、標籤、角色原文都沒有簡體字；每個角色都有中文名字和介紹', () => {
+    const simplified = new Set([...readFileSync(join(__dirname, '../scripts/catalog/simplified-chars.txt'), 'utf8').trim()]);
+    expect(simplified.has('发')).toBe(true);
+    expect(simplified.has('群')).toBe(false);
+    const cjk = /[\u4e00-\u9fff]/;
+    const bad: string[] = [];
+    for (const e of catalogEntries()) {
+      const texts = [e.n[0], e.d[0], e.v?.[0] ?? '', ...e.t];
+      if (texts.some((x) => [...x].some((c) => simplified.has(c)))) bad.push(e.id);
+      if (!cjk.test(e.n[0]) || !cjk.test(e.d[0])) bad.push(`${e.id}（沒有中文）`);
+    }
+    for (const f of readdirSync(join(__dirname, '../assets/agents')).filter((x) => x.startsWith('prompts-'))) {
+      const shard = JSON.parse(readFileSync(join(__dirname, '../assets/agents', f), 'utf8')) as Record<string, { zh?: string }>;
+      for (const [id, p] of Object.entries(shard)) if ([...(p.zh ?? '')].some((c) => simplified.has(c))) bad.push(`${id}（角色原文）`);
+    }
+    expect(bad).toEqual([]);
   });
 
   test('原文分片：對照表跟索引的分片數一樣', () => {
