@@ -153,7 +153,9 @@ export function ActionListCard({
           placeholder={t('要改成怎樣？（可以不填）')}
           placeholderTextColor={C.placeholder}
           style={styles.input}
-          autoFocus
+          // 不自動跳鍵盤（大多數人不寫原因，直接按送出）；鍵盤上的按鍵就是送出
+          returnKeyType="send"
+          onSubmitEditing={() => !busy && void declineAll()}
           accessibilityLabel={t('要改成怎樣？（可以不填）')}
         />
       ) : null}
@@ -355,7 +357,9 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
           placeholder={t('要改成怎樣？（可以不填）')}
           placeholderTextColor={C.placeholder}
           style={styles.input}
-          autoFocus
+          // 不自動跳鍵盤（大多數人不寫原因，直接按送出）；鍵盤上的按鍵就是送出
+          returnKeyType="send"
+          onSubmitEditing={() => !busy && void run(() => onDecline(action.id, reason))}
           accessibilityLabel={t('要改成怎樣？（可以不填）')}
         />
       ) : null}

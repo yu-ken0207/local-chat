@@ -398,6 +398,19 @@ describe('畫面', () => {
     expect(cal.created[0].title).toBe('看牙醫');
   });
 
+  test('按不要：原因框不自動跳鍵盤；打完按鍵盤上的送出就送出', async () => {
+    const { cal, net } = await screenWithCard();
+    await fireEvent.press(screen.getByText('不要'));
+    const box = screen.getByLabelText('要改成怎樣？（可以不填）');
+    expect(box.props.autoFocus).toBeFalsy();
+    expect(box.props.returnKeyType).toBe('send');
+    await fireEvent.changeText(box, '改成週四');
+    await fireEvent(box, 'submitEditing');
+    expect(await screen.findByText('沒有做：加行程「帶小孩看牙醫」')).toBeTruthy();
+    expect(cal.created).toEqual([]);
+    await waitFor(() => expect(JSON.parse(net.chatBodies()[1].messages.at(-2).content).reason).toBe('改成週四'));
+  });
+
   test('按不要可以說要改成怎樣', async () => {
     const { cal, net } = await screenWithCard();
     await fireEvent.press(screen.getByText('不要'));
