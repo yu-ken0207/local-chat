@@ -196,8 +196,9 @@ describe('接上 App', () => {
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '11/20 戶外教學');
     await fireEvent.press(screen.getByLabelText('送出'));
     await fireEvent.press(await screen.findByText('修改'));
-    expect(screen.getByLabelText('開始').props.accessibilityHint).toBe('date');
-    await fireEvent(screen.getByLabelText('開始'), 'valueChange', new Date(2026, 10, 27, 13, 45));
+    expect(screen.getByLabelText('開始日期').props.accessibilityHint).toBe('date');
+    expect(screen.queryByLabelText('開始時間')).toBeNull();
+    await fireEvent(screen.getByLabelText('開始日期'), 'valueChange', new Date(2026, 10, 27, 13, 45));
     await fireEvent.press(screen.getByText('加入'));
     await waitFor(() => expect(api.created).toHaveLength(1));
     expect(api.created[0].event).toMatchObject({ title: '戶外教學', allDay: true, start: at(2026, 11, 27) });

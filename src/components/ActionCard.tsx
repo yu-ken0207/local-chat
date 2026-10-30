@@ -194,24 +194,28 @@ function shown(tool: PhoneTool | undefined, key: string, v: unknown): string {
 
 /**
  * 時間欄位：iPhone 內建的時間選擇器（跟「行事曆」App 一樣，點日期跳出月曆、點時間跳出滾輪）。
+ * 日期、時間分成兩個，排在同一行：iPhone 量日期的寬度比字寬約 40pt（多的是左邊的空白，字靠右），
+ * 所以只讓日期那個可以縮（縮掉的是空白），放不下時不會換行、也不會擠出畫面。
  * 值一樣是當地時間的文字（2026-11-04T15:00，只要日期的是 2026-11-04）。
  */
 function TimeField({ value, dateOnly, label, onChange }: { value: string; dateOnly: boolean; label: string; onChange: (value: string) => void }) {
-  const d = parseLocal(value);
+  const parsed = parseLocal(value);
+  const current = isNaN(parsed.getTime()) ? new Date() : parsed;
+  const locale = getLanguage() === 'en' ? 'en-US' : 'zh-TW';
+  const pick = (part: 'date' | 'time', picked: Date) => {
+    const next = new Date(current);
+    if (part === 'date') next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+    else next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+    if (dateOnly) next.setHours(0, 0, 0, 0);
+    onChange(toLocalText(next));
+  };
   return (
-    <DateTimePicker
-      value={isNaN(d.getTime()) ? new Date() : d}
-      mode={dateOnly ? 'date' : 'datetime'}
-      display="compact"
-      minuteInterval={5}
-      locale={getLanguage() === 'en' ? 'en-US' : 'zh-TW'}
-      accessibilityLabel={label}
-      onValueChange={(_, next) => {
-        if (!dateOnly) return onChange(toLocalText(next));
-        next.setHours(0, 0, 0, 0);
-        onChange(toLocalText(next));
-      }}
-    />
+    <>
+      <DateTimePicker style={styles.shrink} value={current} mode="date" display="compact" locale={locale} accessibilityLabel={t('{p0}日期', { p0: label })} onValueChange={(_, d) => pick('date', d)} />
+      {dateOnly ? null : (
+        <DateTimePicker value={current} mode="time" display="compact" minuteInterval={5} locale={locale} accessibilityLabel={t('{p0}時間', { p0: label })} onValueChange={(_, d) => pick('time', d)} />
+      )}
+    </>
   );
 }
 
@@ -251,11 +255,17 @@ function FieldEditor({ tool, input, done, onDone, onCancel }: { tool: PhoneTool;
           const text = String(v);
           return (
             <View key={key} style={styles.field}>
-              <Text style={[styles.small, styles.dim]}>{label}</Text>
+              <View style={styles.labelRow}>
+                <Text style={[styles.small, styles.dim]}>{label}</Text>
+                {text && !required.has(key) ? (
+                  <Pressable onPress={() => set('')} accessibilityRole="button" accessibilityLabel={t('拿掉{p0}', { p0: label })} hitSlop={8}>
+                    <Text style={[styles.small, styles.link]}>{t('拿掉')}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
               <View style={styles.timeRow}>
                 {text ? <TimeField value={text} dateOnly={format === 'date' || ('allDay' in values ? values.allDay : input.allDay) === true} label={label} onChange={set} /> : null}
                 {!text ? <ActionButton text={t('加上')} onPress={() => set(defaultTime(values))} /> : null}
-                {text && !required.has(key) ? <ActionButton text={t('拿掉')} onPress={() => set('')} /> : null}
               </View>
             </View>
           );
@@ -414,7 +424,10 @@ const styles = StyleSheet.create({
   red: { color: C.red },
   flex: { flex: 1 },
   field: { gap: 2 },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  link: { color: C.accent },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  shrink: { flexShrink: 1 },
   editor: { gap: 6, paddingLeft: 24 },
   input: { ...TEXT.body, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },

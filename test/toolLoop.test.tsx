@@ -262,14 +262,19 @@ describe('畫面', () => {
   test('修改時間用時間選擇器：選了就照選的做；選填的結束時間可以拿掉再加上', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));
-    expect(screen.getByLabelText('開始').props.accessibilityHint).toBe('datetime');
-    await fireEvent(screen.getByLabelText('開始'), 'valueChange', new Date(2026, 10, 5, 16, 0));
+    // 日期、時間分開選（合成一個時 iPhone 量的寬度太寬，會擠出畫面）
+    expect(screen.getByLabelText('開始日期').props.accessibilityHint).toBe('date');
+    expect(screen.getByLabelText('開始時間').props.accessibilityHint).toBe('time');
+    await fireEvent(screen.getByLabelText('開始日期'), 'valueChange', new Date(2026, 10, 5, 9, 0));
+    await fireEvent(screen.getByLabelText('開始時間'), 'valueChange', new Date(2000, 0, 1, 16, 0));
     // 開始是必填，不能拿掉；結束可以
     expect(screen.getAllByText('拿掉')).toHaveLength(1);
-    await fireEvent.press(screen.getByText('拿掉'));
-    expect(screen.queryByLabelText('結束')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('拿掉結束'));
+    expect(screen.queryByLabelText('結束日期')).toBeNull();
+    // 加上：接在開始後一小時
     await fireEvent.press(screen.getByText('加上'));
-    await fireEvent(screen.getByLabelText('結束'), 'valueChange', new Date(2026, 10, 5, 18, 30));
+    expect(screen.getByLabelText('結束時間').props.accessibilityHint).toBe('time');
+    await fireEvent(screen.getByLabelText('結束時間'), 'valueChange', new Date(2000, 0, 1, 18, 30));
     await fireEvent.press(screen.getByText('加入'));
     await waitFor(() => expect(cal.created).toHaveLength(1));
     expect(cal.created[0]).toMatchObject({ start: '2026-11-05T16:00', end: '2026-11-05T18:30' });
