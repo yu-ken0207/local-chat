@@ -6,7 +6,7 @@ import { fmtElapsed } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
 import { dataUri } from '../lib/photos';
 import type { Streaming } from '../state/chatStore';
-import type { Attachment, Message } from '../store/repo';
+import { isRecordNote, type Attachment, type Message } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { Markdown } from './Markdown';
 import { t } from '../i18n';
@@ -141,7 +141,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
             {m.content}
           </Text>
           {h.isLast && m.role === 'error' ? <ErrorActions detail={m.detail} onRetry={h.onRetry} onHelp={h.onHelp} /> : null}
-          {h.isLast && m.role === 'note' && h.onRetry ? (
+          {h.isLast && m.role === 'note' && !isRecordNote(m) && h.onRetry ? (
             <View style={styles.actions}>
               <ActionButton text={t('重新回答')} onPress={h.onRetry} />
             </View>

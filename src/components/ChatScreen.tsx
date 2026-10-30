@@ -10,7 +10,7 @@ import type { NewPhoto } from '../lib/photos';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
-import type { Attachment, Message } from '../store/repo';
+import { isRecordNote, type Attachment, type Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Composer';
@@ -164,6 +164,9 @@ export function ChatScreen(p: ChatScreenProps) {
     lastMeta = meta;
   }
 
+  // 「你按了復原」那種紀錄行不算最後一則：上面 AI 的回答照樣有複製、重新產生
+  const lastIndex = state.messages.findLastIndex((m) => !isRecordNote(m));
+
   const session = state.session;
   const model = store.currentModel();
   const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect;
@@ -313,7 +316,7 @@ export function ChatScreen(p: ChatScreenProps) {
                   key={m.id}
                   message={m}
                   streaming={state.streaming}
-                  isLast={i === state.messages.length - 1}
+                  isLast={i === lastIndex}
                   showMeta={metaShown.has(m.id)}
                   onOpenImage={(images, index) => setViewer({ images, index })}
                   onCopyCode={copy}

@@ -73,7 +73,7 @@ export type Message = {
   model: string | null;
   hostLabel: string | null;
   stats: MessageStats | null;
-  /** 錯誤的技術細節（畫面上預設收起來） */
+  /** 錯誤的技術細節（畫面上預設收起來）；工具結果給使用者看的一句話；提示行是 RECORD_NOTE 時表示只是紀錄 */
   detail: string;
   createdAt: number;
   attachments: Attachment[];
@@ -89,6 +89,10 @@ export type Message = {
   /** 這則 AI 訊息叫出來、要使用者確認的動作 */
   actions?: Action[];
 };
+
+/** 「你按了復原」這種只是紀錄的提示行：不能「重新回答」，也不算最後一則（上面 AI 的回答照樣有複製、重新產生） */
+export const RECORD_NOTE = 'record';
+export const isRecordNote = (m: Pick<Message, 'role' | 'detail'>) => m.role === 'note' && m.detail === RECORD_NOTE;
 
 
 // ---- 資料表 ----

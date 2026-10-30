@@ -7,7 +7,7 @@ import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
-import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
+import { RECORD_NOTE, isRecordNote, type Action, type Attachment, type Host, type Message, type Repo, type Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
 
@@ -1129,14 +1129,16 @@ export class ChatStore {
     await this.send(text, images);
   }
 
-  /** 最後一則是錯誤或「已停止」時，拿掉它（停止的話連半截回答一起拿掉）再問一次 */
+  /** 最後一則是錯誤或「已停止」時，拿掉它（停止的話連半截回答一起拿掉）再問一次。「你按了復原」的紀錄行不算，看它上面那則 */
   async retry(): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
-    const msgs = this.state.messages;
+    const msgs = this.state.messages.filter((m) => !isRecordNote(m));
     const last = msgs.at(-1);
     if (!s || !last || this.state.streaming || (last.role !== 'error' && last.role !== 'note')) return;
     if (!msgs.some((m) => m.role === 'user')) return;
+    // 還有卡片等你按：先不問模型（跟 continueAfterTools 一樣）
+    if (msgs.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
     await repo.deleteMessage(last.id);
     const before = msgs.at(-2);
     if (last.role === 'note' && before?.role === 'assistant') await repo.deleteMessage(before.id);
@@ -1606,7 +1608,7 @@ export class ChatStore {
     await tool.undo(action.result);
     await repo.updateAction(id, { status: 'undone' });
     // 照時間順序在最下面記一行：上面 AI 說「已經加好了」的那件，後來被你復原了
-    await repo.addMessage(action.sessionId, { role: 'note', content: t('你按了復原：{p0}', { p0: action.summary || (tool.label ?? action.tool) }) });
+    await repo.addMessage(action.sessionId, { role: 'note', content: t('你按了復原：{p0}', { p0: action.summary || (tool.label ?? action.tool) }), detail: RECORD_NOTE });
     if (this.state.session?.id === action.sessionId) this.set({ messages: await repo.listMessages(action.sessionId) });
   }
 

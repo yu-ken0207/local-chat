@@ -340,6 +340,20 @@ describe('畫面', () => {
     expect(screen.getByText('–', { includeHiddenElements: true })).toBeTruthy();
   });
 
+  test('按復原後最下面那行只是紀錄：沒有「重新回答」，上面 AI 的回答照樣有重新產生', async () => {
+    const { store } = await screenWithCard();
+    await fireEvent.press(screen.getByText('加入'));
+    expect(await screen.findByText('好了')).toBeTruthy();
+    await fireEvent.press(screen.getByText('復原'));
+    expect(await screen.findByText('你按了復原：新增 1 個行程')).toBeTruthy();
+    expect(screen.queryByText('重新回答')).toBeNull();
+    expect(screen.getByText('重新產生')).toBeTruthy();
+    // 就算叫到 retry 也不會把紀錄行和 AI 的回答刪掉
+    await store.retry();
+    expect(screen.getByText('好了')).toBeTruthy();
+    expect(screen.getByText('你按了復原：新增 1 個行程')).toBeTruthy();
+  });
+
   test('修改時間用時間選擇器：選了就照選的做；選填的結束時間可以拿掉再加上', async () => {
     const { cal } = await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));
