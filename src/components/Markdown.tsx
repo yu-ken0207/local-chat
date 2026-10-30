@@ -165,7 +165,7 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
         <Text style={styles.codeLang}>{lang || 'code'}</Text>
         {onCopy && (
           <Pressable
-            hitSlop={10}
+            hitSlop={13}
             accessibilityRole="button"
             accessibilityLabel={t('複製程式碼')}
             onPress={() => {

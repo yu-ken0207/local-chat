@@ -142,13 +142,13 @@ function Versions({ versions, onSwitch }: { versions: { index: number; total: nu
   const last = versions.index >= versions.total;
   return (
     <View style={styles.versions} accessibilityLabel={t('第 {p0} 個回答，共 {p1} 個', { p0: versions.index, p1: versions.total })}>
-      <Pressable onPress={() => onSwitch(-1)} disabled={first} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('上一個回答')}>
+      <Pressable onPress={() => onSwitch(-1)} disabled={first} hitSlop={{ top: 14, bottom: 14, left: 16, right: 4 }} accessibilityRole="button" accessibilityLabel={t('上一個回答')}>
         <Text style={[styles.versionArrow, first && styles.versionOff]}>‹</Text>
       </Pressable>
       <Text style={styles.meta}>
         {versions.index} / {versions.total}
       </Text>
-      <Pressable onPress={() => onSwitch(1)} disabled={last} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('下一個回答')}>
+      <Pressable onPress={() => onSwitch(1)} disabled={last} hitSlop={{ top: 14, bottom: 14, left: 4, right: 16 }} accessibilityRole="button" accessibilityLabel={t('下一個回答')}>
         <Text style={[styles.versionArrow, last && styles.versionOff]}>›</Text>
       </Pressable>
     </View>
@@ -179,7 +179,7 @@ export function ActionButton({ text, onPress, primary, disabled }: { text: strin
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      hitSlop={6}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
       accessibilityRole="button"
       accessibilityState={disabled ? { disabled: true } : undefined}
       style={({ pressed }) => [styles.actionButton, primary && styles.actionPrimary, disabled && styles.actionDisabled, pressed && styles.pressed]}>
@@ -222,7 +222,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={open ? t('收起思考過程') : t('展開思考過程')}
-        hitSlop={6}>
+        hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}>
         <Text style={styles.thinkingHeader}>
           {live ? t('✻ 思考中') : t('✻ 思考過程')}
           <Text style={styles.dim}>{t('（{n} 字）', { n: text.length })}{open ? ' ▾' : ' ▸'}</Text>

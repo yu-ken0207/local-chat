@@ -432,7 +432,7 @@ function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 
         </Pressable>
       ) : null}
       {onClose ? (
-        <Pressable onPress={onClose} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('關閉提示')}>
+        <Pressable onPress={onClose} hitSlop={16} accessibilityRole="button" accessibilityLabel={t('關閉提示')}>
           <SymbolView name="xmark" size={12} tintColor={C.secondary} />
         </Pressable>
       ) : null}

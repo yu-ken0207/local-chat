@@ -164,7 +164,7 @@ export function Composer(p: Props) {
                 <Image source={{ uri: dataUri(ph.base64) }} style={styles.attachmentImage} />
                 <Pressable
                   onPress={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                  hitSlop={8}
+                  hitSlop={12}
                   style={styles.remove}
                   accessibilityRole="button"
                   accessibilityLabel={t('移除照片 {p0}', { p0: i + 1 })}>
