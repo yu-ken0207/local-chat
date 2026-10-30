@@ -409,6 +409,8 @@ export function ChatScreen(p: ChatScreenProps) {
               updateNearBottom(e);
               userScrolling.current = false;
             }}
+            // 點狀態列捲到最上面也是使用者自己捲的：不再跟著最新，出現「捲到最新」
+            onScrollToTop={updateNearBottom}
             onMomentumScrollBegin={() => (userScrolling.current = true)}
             onMomentumScrollEnd={(e) => {
               updateNearBottom(e);

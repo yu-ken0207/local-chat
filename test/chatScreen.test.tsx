@@ -399,6 +399,21 @@ describe('鍵盤與捲動', () => {
     expect(toEnd).not.toHaveBeenCalled();
   });
 
+  test('點狀態列捲到最上面：不再跟著最新，出現「捲到最新」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    const list = screen.getByTestId('transcript');
+    await act(async () => {});
+    toEnd.mockClear();
+    await fireEvent(list, 'scrollToTop', scrollAt(0));
+    expect(screen.getByLabelText('捲到最新')).toBeTruthy();
+    await fireEvent(list, 'contentSizeChange', 390, 2100);
+    expect(toEnd.mock.calls.filter((c: any[]) => c[0]?.animated)).toHaveLength(0);
+    store.stop();
+  });
+
   test('程式自己跟著捲的時候不會冒出「捲到最新」', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
