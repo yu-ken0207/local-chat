@@ -20,12 +20,13 @@ describe('手勢判斷', () => {
   });
 
   test('關著時只認明確往右的水平滑動；上下捲動不算', () => {
-    expect(claimSwipe(false, 20, 3)).toBe(true);
-    expect(claimSwipe(false, -20, 3)).toBe(false);
-    expect(claimSwipe(false, 8, 0)).toBe(false); // 還沒超過 10 點，可能只是點一下
-    expect(claimSwipe(false, 20, 18)).toBe(false); // 斜的，比較像在捲動
-    expect(claimSwipe(true, -20, 3)).toBe(true);
-    expect(claimSwipe(true, 20, 3)).toBe(true); // 開著時往右拉也接住（有阻力）
+    expect(claimSwipe(false, 20, 3, 10)).toBe(true);
+    expect(claimSwipe(false, -20, 3, 10)).toBe(false);
+    expect(claimSwipe(false, 8, 0, 10)).toBe(false); // 還沒超過 10 點，可能只是點一下
+    expect(claimSwipe(false, 20, 18, 10)).toBe(false); // 斜的，比較像在捲動
+    expect(claimSwipe(false, 20, 3, 120)).toBe(false); // 從畫面中間往右滑：留給程式碼、表格往回捲
+    expect(claimSwipe(true, -20, 3, 300)).toBe(true);
+    expect(claimSwipe(true, 20, 3, 300)).toBe(true); // 開著時往右拉也接住（有阻力）
   });
 
   test('放開時用速度推算落點：輕輕一撥也會打開，慢慢拉不到一半會彈回去', () => {
@@ -44,7 +45,7 @@ describe('手勢判斷', () => {
 });
 
 /** 模擬一根手指水平滑動：每 16ms 移動一次 */
-async function swipe(dx: number, { steps = 8, startX = 150 } = {}) {
+async function swipe(dx: number, { steps = 8, startX = 10, expectGranted = true } = {}) {
   const el = screen.getByTestId('side-drawer');
   const y = 400;
   let prevX = startX;
@@ -78,8 +79,8 @@ async function swipe(dx: number, { steps = 8, startX = 150 } = {}) {
       prevX = m.x;
       prevTs = m.ts;
     }
-    expect(granted).toBe(true);
-    el.props.onResponderRelease(ev(moves.at(-1)!.x, moves.at(-1)!.ts + 1));
+    expect(granted).toBe(expectGranted);
+    if (granted) el.props.onResponderRelease(ev(moves.at(-1)!.x, moves.at(-1)!.ts + 1));
   });
 }
 
@@ -100,8 +101,14 @@ test('往右滑打開對話清單，往左滑關上', async () => {
   expect(screen.queryByLabelText('搜尋對話')).toBeNull();
   await swipe(220);
   expect(await screen.findByLabelText('搜尋對話')).toBeTruthy();
-  await swipe(-220);
+  await swipe(-220, { startX: 300 });
   await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
+});
+
+test('從畫面中間往右滑不會拉出側邊欄（留給程式碼、表格往回捲）', async () => {
+  await setup();
+  await swipe(220, { startX: 150, expectGranted: false });
+  expect(screen.queryByLabelText('搜尋對話')).toBeNull();
 });
 
 test('往右滑一點點就放開，會彈回去不打開', async () => {

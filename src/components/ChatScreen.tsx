@@ -196,6 +196,7 @@ export function ChatScreen(p: ChatScreenProps) {
       <SideDrawer
         open={listOpen}
         onOpenChange={setListOpen}
+        swipeEnabled={listOpen || (!anySheetOpen && !viewer)}
         closeLabel={t('關閉對話清單')}
         renderDrawer={() => (
           <SessionList
