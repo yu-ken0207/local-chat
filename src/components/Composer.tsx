@@ -79,10 +79,13 @@ export function Composer(p: Props) {
       setHint(t('目前的模型看不懂圖片，已移除附上的照片。'));
     }
   }, [modelKnown, p.canAttach, photos.length]);
-  // 換成看得懂圖的模型了：「看不懂圖片」那句不用再留著
+  // 按「＋」時說的原因（還沒選模型／讀不到模型資訊／看不懂圖片）：原因變了就收掉，不留著舊的說法
+  const attachHintShown = useRef(false);
   useEffect(() => {
-    if (p.canAttach) setHint('');
-  }, [p.canAttach]);
+    if (!attachHintShown.current) return;
+    attachHintShown.current = false;
+    setHint('');
+  }, [p.modelLabel, modelKnown, p.canAttach]);
   // 「＋」灰掉的原因：還沒選模型、讀不到模型資訊、模型看不懂圖，各說各的
   const attachBlocked =
     p.modelLabel === null
@@ -202,7 +205,14 @@ export function Composer(p: Props) {
             name="plus"
             label={p.canAttach ? t('附加照片') : attachBlocked.label}
             // 不能附照片：灰的但按得到，按了說原因（不然按了沒反應，不知道為什麼）
-            onPress={p.canAttach ? openAttach : () => setHint(attachBlocked.hint)}
+            onPress={
+              p.canAttach
+                ? openAttach
+                : () => {
+                    attachHintShown.current = true;
+                    setHint(attachBlocked.hint);
+                  }
+            }
             dimmed={!p.canAttach}
             disabled={p.busy || photos.length >= MAX_PHOTOS}
           />

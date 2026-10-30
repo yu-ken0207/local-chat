@@ -182,6 +182,23 @@ describe('輸入列', () => {
     expect(disabled('附加照片')).toBe(false);
   });
 
+  test('「＋」說的原因變了就收掉：讀不到模型資訊時按了，讀到之後（看不懂圖）不再說「還沒讀到」', async () => {
+    const { store, net } = await setup({ model: 'llama3:latest' });
+    const host = net.hosts.get(A)!;
+    net.hosts.delete(A);
+    await act(async () => {
+      await store.loadModels(A);
+    });
+    await fireEvent.press(screen.getByLabelText('附加照片（還沒讀到模型的資訊）'));
+    expect(screen.getByText(/還沒讀到這個模型的資訊/)).toBeTruthy();
+    net.hosts.set(A, host);
+    await act(async () => {
+      await store.loadModels(A);
+    });
+    expect(screen.getByLabelText('附加照片（目前的模型看不懂圖片）')).toBeTruthy();
+    expect(screen.queryByText(/還沒讀到這個模型的資訊/)).toBeNull();
+  });
+
   test('讀不到模型資訊時：編輯並重送照樣放回照片；送出時不說成「看不懂圖片」', async () => {
     const { store, net } = await setup();
     pickActionSheet(1);
