@@ -438,7 +438,7 @@ describe('問使用者選擇題', () => {
     const { store } = await asked();
     await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
     expect(screen.getByText('明天幾點提醒你？')).toBeTruthy();
-    await fireEvent.press(screen.getByText('其他…'));
+    await fireEvent.press(screen.getByText('自己輸入…'));
     await fireEvent.changeText(screen.getByLabelText('你的回答'), '中午');
     await fireEvent.press(screen.getByText('送出'));
     expect(await screen.findByText('你回答：中午')).toBeTruthy();

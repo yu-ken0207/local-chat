@@ -377,7 +377,7 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
   );
 }
 
-/** AI 問的選擇題：選項按鈕，最後一個「其他…」可以自己打字 */
+/** AI 問的選擇題：選項按鈕，「自己輸入…」可以自己打字；「不回答」是不顯眼的文字按鈕，跟選項分開 */
 function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Handlers) {
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState('');
@@ -418,8 +418,10 @@ function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Han
           {options.map((o) => (
             <ActionButton key={o} text={o} onPress={() => void answer(o)} />
           ))}
-          <ActionButton text={t('其他…')} onPress={() => setTyping(true)} />
-          <ActionButton text={t('不回答')} onPress={() => !busy && void onDecline(action.id, '')} />
+          <ActionButton text={t('自己輸入…')} onPress={() => setTyping(true)} />
+          <Pressable onPress={() => !busy && void onDecline(action.id, '')} accessibilityRole="button" hitSlop={12} style={styles.skip}>
+            <Text style={[styles.small, styles.dim]}>{t('不回答')}</Text>
+          </Pressable>
         </View>
       )}
     </View>
@@ -439,6 +441,7 @@ const styles = StyleSheet.create({
   field: { gap: 2 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   link: { color: C.accent },
+  skip: { justifyContent: 'center', paddingHorizontal: 6 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   shrink: { flexShrink: 1 },
   editor: { gap: 6, paddingLeft: 24 },
