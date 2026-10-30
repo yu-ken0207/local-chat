@@ -426,6 +426,7 @@ export const en: Record<string, string> = {
   "以下是討論串": "Thread starts here",
   "回到對話": "Back to chat",
   "刪除這個討論串": "Delete this thread",
+  "關閉討論串": "Close thread",
   "討論串，點一下可以刪除": "Thread. Tap to delete it",
   "要改成怎樣？（可以不填）": "What should be different? (optional)",
   "不要": "No",

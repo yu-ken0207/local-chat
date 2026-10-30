@@ -59,8 +59,9 @@ test('長按回答選「開討論串」：只帶這一題；問一題再回到�
   expect(await screen.findByText('回答：牛肉湯哪家好')).toBeTruthy();
   await waitFor(() => expect(store.getState().streaming).toBeNull());
 
-  await fireEvent.press(screen.getByLabelText('回到對話'));
-  expect(await screen.findByText('討論串（1 則）')).toBeTruthy();
+  // 點卡片外面模糊的地方：卡片縮回去，回到原對話
+  await fireEvent.press(screen.getByTestId('thread-backdrop', { includeHiddenElements: true }));
+  expect(await screen.findByText('討論串（1 則）', {}, { timeout: 3000 })).toBeTruthy();
   expect(screen.getByText('Go 怎麼裝')).toBeTruthy();
   expect(screen.queryByText('回答：牛肉湯哪家好')).toBeNull();
 
@@ -94,8 +95,8 @@ test('已經有討論串的那一題：長按寫「打開討論串」', async ()
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '牛肉湯哪家好');
   await fireEvent.press(screen.getByLabelText('送出'));
   await waitFor(() => expect(store.getState().streaming).toBeNull());
-  await fireEvent.press(screen.getByLabelText('回到對話'));
-  await screen.findByText('討論串（1 則）');
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('討論串（1 則）', {}, { timeout: 3000 });
   const seen = menu(null);
   await longPress(answer.id);
   expect(seen[0]).toContain('打開討論串');
@@ -113,8 +114,28 @@ test('從討論串回到對話：回到剛才看的位置，不是捲到最底',
   await longPress(store.getState().messages[1].id);
   await screen.findByText('以下是討論串');
   const to = jest.spyOn(ScrollView.prototype as any, 'scrollTo').mockImplementation(() => {});
-  await fireEvent.press(screen.getByLabelText('回到對話'));
-  await screen.findByText('Go 怎麼裝');
+  await fireEvent.press(screen.getByLabelText('關閉討論串'));
+  await screen.findByText('Go 怎麼裝', {}, { timeout: 3000 });
   await act(async () => await new Promise((r) => requestAnimationFrame(r)));
   expect(to).toHaveBeenCalledWith({ y: 300, animated: false });
+});
+
+test('討論串浮在原對話上：後面墊著剛才原對話的截圖；讀螢幕只在卡片裡，兩指畫 Z 也能回去', async () => {
+  const { store } = await setup();
+  const capture = jest.requireMock('react-native-view-shot').captureScreen as jest.Mock;
+  capture.mockClear();
+  menu('開討論串');
+  await longPress(store.getState().messages[1].id);
+  await screen.findByText('以下是討論串');
+  expect(capture).toHaveBeenCalledTimes(1);
+  // 原對話的標題列不在了（在模糊的截圖裡），卡片上方是「討論串」和 ✕
+  expect(screen.queryByLabelText('對話清單')).toBeNull();
+  expect(screen.getByLabelText('關閉討論串')).toBeTruthy();
+  // 卡片是讀螢幕的範圍：後面點不到；VoiceOver 兩指畫 Z 回到原對話
+  const card = screen.getByLabelText('關閉討論串').parent;
+  let modal: any = card;
+  while (modal && !modal.props?.accessibilityViewIsModal) modal = modal.parent;
+  expect(modal).toBeTruthy();
+  await fireEvent(modal, 'accessibilityEscape');
+  expect(await screen.findByText('Go 怎麼裝', {}, { timeout: 3000 })).toBeTruthy();
 });

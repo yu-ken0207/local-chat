@@ -16,7 +16,8 @@ type Handlers = {
   showMeta?: boolean;
   onOpenImage: (images: Attachment[], index: number) => void;
   onCopyCode: (code: string) => void;
-  onLongPress?: (message: Message) => void;
+  /** 長按訊息（pageY：手指按在螢幕的哪裡，討論串的卡片從這裡長出來；讀螢幕的「更多動作」沒有） */
+  onLongPress?: (message: Message, pageY?: number) => void;
   /** 最後一則是錯誤時的「重試」「連線說明」 */
   onRetry?: () => void;
   onHelp?: () => void;
@@ -63,14 +64,14 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     () => ({
       onPress: () => Keyboard.dismiss(),
       // 長按：選單開不開、要不要輕震由外面決定（AI 回答中不開）
-      onLongPress: () => latest.current.onLongPress?.(latest.current.m),
+      onLongPress: (e?: { nativeEvent?: { pageY?: number } }) => latest.current.onLongPress?.(latest.current.m, e?.nativeEvent?.pageY),
     }),
     [],
   );
   const copyCode = useMemo(() => (code: string) => latest.current.onCopyCode(code), []);
   if (m.role === 'user') {
     return (
-      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={(e) => h.onLongPress?.(m, e?.nativeEvent?.pageY)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.userBlock}>
           <Text style={styles.userMark} {...decorative}>›</Text>
           <View style={styles.body}>
@@ -141,7 +142,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   return (
-    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={(e) => h.onLongPress?.(m, e?.nativeEvent?.pageY)} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]} {...decorative}>■</Text>
         <View style={styles.body}>
@@ -213,12 +214,12 @@ export function ActionButton({ text, onPress, primary, disabled }: { text: strin
 }
 
 /** 那一題的討論串入口「討論串（3 則）›」：跟 AI 的回答對齊，放在那一輪最後面 */
-export function ThreadLink({ count, onPress }: { count: number; onPress: () => void }) {
+export function ThreadLink({ count, onPress }: { count: number; onPress: (pageY?: number) => void }) {
   return (
     <View style={styles.aiBlock}>
       <Text style={[styles.aiMark, styles.invisible]} {...decorative}>•</Text>
       <Pressable
-        onPress={onPress}
+        onPress={(e) => onPress(e?.nativeEvent?.pageY)}
         hitSlop={{ top: 10, bottom: 10, left: 4, right: 12 }}
         accessibilityRole="button"
         accessibilityLabel={t('討論串，問了 {n} 次，點一下打開', { n: count })}
@@ -266,7 +267,7 @@ export function Thumbnails({ images, onOpen }: { images: Attachment[]; onOpen: (
 }
 
 /** 思考過程：預設收起來，只顯示一行；點了展開 */
-function Thinking({ text, live, press, onCopyCode }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: () => void }; onCopyCode: (code: string) => void }) {
+function Thinking({ text, live, press, onCopyCode }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: (e?: { nativeEvent?: { pageY?: number } }) => void }; onCopyCode: (code: string) => void }) {
   const [open, setOpen] = useState(false);
   const lastLine = text.trim().split('\n').filter(Boolean).at(-1) ?? '';
   return (

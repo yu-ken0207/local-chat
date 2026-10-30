@@ -1,9 +1,11 @@
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
-import { AccessibilityInfo, Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { AccessibilityInfo, Alert, Animated, Image, Keyboard, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { captureScreen } from 'react-native-view-shot';
 
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
@@ -21,7 +23,7 @@ import { ActionListCard, ActionView, RevealContext, type CardField } from './Act
 import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
-import { SideDrawer } from './SideDrawer';
+import { SideDrawer, project, rubberband } from './SideDrawer';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
@@ -139,7 +141,7 @@ export function ChatScreen(p: ChatScreenProps) {
   }
 
   /** 長按訊息的選單：真的要開才輕震一下（跟 iPhone 長按一樣的手感）；AI 回答中先不開，說一聲 */
-  function messageMenu(m: Message) {
+  function messageMenu(m: Message, pageY?: number) {
     if (state.streaming) {
       const busy = t('AI 正在回答，答完再試一次。');
       // 「復原」提示還在時一般提示排不上（會等它消失才跳，那時可能已經答完了）：改成輕震＋讀螢幕播報
@@ -159,7 +161,7 @@ export function ChatScreen(p: ChatScreenProps) {
       return;
     }
     // 討論串（只有一層：討論串裡不能再開）
-    const thread: [string, () => void][] = session?.parentId ? [] : [[state.threads[threadQuestionId(m)]?.count ? t('打開討論串') : t('開討論串'), () => openThread(m.id)]];
+    const thread: [string, () => void][] = session?.parentId ? [] : [[state.threads[threadQuestionId(m)]?.count ? t('打開討論串') : t('開討論串'), () => void openThread(m.id, pageY, true)]];
     if (m.role === 'user') {
       menu(t('你的訊息'), [[t('複製'), () => copy(m.content)], [t('編輯並重送'), () => startEdit(m)], ...thread, [t('刪除'), () => confirmDeleteMessage(m)]]);
     } else if (m.role === 'assistant') {
@@ -187,8 +189,11 @@ export function ChatScreen(p: ChatScreenProps) {
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
   // 輸入列底部固定留給 Home 鍵橫條的空間；鍵盤打開時（橫條被鍵盤蓋住）用 keyboardOffset 把多的扣回來，
   // 只剩 8pt。用位移不用改留白，跟著鍵盤一格一格動，收鍵盤時不會跳
-  const bottomInset = Math.max(insets.bottom, 8);
-  const keyboardOffset = bottomInset - 8;
+  // 討論串的卡片：底邊停在 Home 鍵橫條上方，輸入列在卡片裡只留 8pt；鍵盤打開時輸入列要往上推到鍵盤上緣
+  const cardBottom = Math.max(insets.bottom, 12);
+  const cardMode = !!state.session?.parentId;
+  const bottomInset = cardMode ? 8 : Math.max(insets.bottom, 8);
+  const keyboardOffset = cardMode ? cardBottom : bottomInset - 8;
   // 輸入列（含上面的提示）在鍵盤上方露出的高度：往下拖收鍵盤時，手指一碰到輸入列上緣鍵盤就開始跟（像 iMessage），
   // 不用先越過整個輸入列
   const [stickyHeight, setStickyHeight] = useState(0);
@@ -231,6 +236,79 @@ export function ChatScreen(p: ChatScreenProps) {
 
   // 換對話時捲到最下面；從討論串回到原對話時回到剛才看的位置
   const savedScroll = useRef<{ sessionId: string; y: number; following: boolean } | null>(null);
+  // 討論串卡片：從哪裡長出來／縮回哪裡（手指按的位置）、後面墊的原對話截圖、動畫的值
+  const threadAnchor = useRef<number | null>(null);
+  const [threadShot, setThreadShot] = useState<string | null>(null);
+  const threadAnim = useRef(new Animated.Value(0)).current;
+  const threadBlur = useRef(new Animated.Value(0)).current;
+  const threadDrag = useRef(new Animated.Value(0)).current;
+  const threadClosing = useRef(false);
+  const screenHRef = useRef(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const [reduceTransparency, setReduceTransparency] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(setReduceMotion)
+      .catch(() => {});
+    AccessibilityInfo.isReduceTransparencyEnabled()
+      .then(setReduceTransparency)
+      .catch(() => {});
+    const a = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    const b = AccessibilityInfo.addEventListener('reduceTransparencyChanged', setReduceTransparency);
+    return () => {
+      a.remove();
+      b.remove();
+    };
+  }, []);
+  // 進到討論串：卡片長出來、後面慢慢模糊；回到原對話後歸零
+  useEffect(() => {
+    threadClosing.current = false;
+    if (!cardMode) {
+      threadAnim.setValue(0);
+      threadBlur.setValue(0);
+      threadDrag.setValue(0);
+      setThreadShot(null);
+      return;
+    }
+    const open = (v: Animated.Value) =>
+      reduceMotion ? Animated.timing(v, { toValue: 1, duration: 200, useNativeDriver: true }) : Animated.spring(v, { toValue: 1, ...CARD_SPRING });
+    Animated.parallel([open(threadAnim), open(threadBlur)]).start();
+  }, [cardMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 回到原對話：卡片縮回那則訊息（slideDown：往下拉放手時順著手指往下滑走），模糊退掉後才真的換回去 */
+  function closeThread(slideDown = false, velocity = 0) {
+    if (threadClosing.current) return;
+    threadClosing.current = true;
+    Keyboard.dismiss();
+    const leave = () => void store.leaveThread();
+    if (reduceMotion) {
+      const out = (v: Animated.Value) => Animated.timing(v, { toValue: 0, duration: 180, useNativeDriver: true });
+      Animated.parallel([out(threadAnim), out(threadBlur)]).start(leave);
+    } else if (slideDown) {
+      Animated.parallel([
+        Animated.spring(threadDrag, { toValue: screenHRef.current, velocity, ...CARD_SPRING, restDisplacementThreshold: 1, restSpeedThreshold: 1 }),
+        Animated.spring(threadBlur, { toValue: 0, ...CARD_SPRING }),
+      ]).start(leave);
+    } else {
+      Animated.parallel([Animated.spring(threadAnim, { toValue: 0, ...CARD_SPRING }), Animated.spring(threadBlur, { toValue: 0, ...CARD_SPRING })]).start(leave);
+    }
+  }
+  const closeRef = useRef(closeThread);
+  closeRef.current = closeThread;
+  // 抓著卡片上方往下拉：1:1 跟手指，往上拉有阻力；放手時看推算的落點，夠遠就關掉（接著手指的速度），不然彈回去
+  const threadPan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+        onPanResponderMove: (_e, g) => threadDrag.setValue(g.dy > 0 ? g.dy : rubberband(g.dy, 200)),
+        onPanResponderRelease: (_e, g) => {
+          if (g.dy + project(g.vy * 1000) > 160) closeRef.current(true, g.vy * 1000);
+          else Animated.spring(threadDrag, { toValue: 0, velocity: g.vy * 1000, ...CARD_SPRING }).start();
+        },
+        onPanResponderTerminate: () => Animated.spring(threadDrag, { toValue: 0, ...CARD_SPRING }).start(),
+      }),
+    [] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   useEffect(() => {
     const saved = savedScroll.current;
     if (saved && saved.sessionId === state.session?.id) {
@@ -243,12 +321,19 @@ export function ChatScreen(p: ChatScreenProps) {
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
   }, [state.session?.id]);
 
-  /** 開某一題的討論串（開過就回到那一個）；先記住現在看到哪 */
-  function openThread(messageId: string) {
+  /**
+   * 開某一題的討論串（開過就回到那一個）：先記住現在看到哪、手指按在哪（卡片從那裡長出來），
+   * 再拍下現在的原對話墊在卡片後面（蓋上模糊）。fromMenu：剛從長按選單選的，等選單收好再拍
+   */
+  async function openThread(messageId: string, pageY?: number, fromMenu = false) {
     if (!state.session) return;
+    const keyboardOpen = Keyboard.isVisible();
     Keyboard.dismiss();
     savedScroll.current = { sessionId: state.session.id, y: scrollY.current, following: nearBottom.current };
-    void store.openThread(messageId);
+    threadAnchor.current = pageY ?? null;
+    if (fromMenu || keyboardOpen) await new Promise((r) => setTimeout(r, keyboardOpen ? 400 : 250));
+    setThreadShot(await captureScreen({ format: 'jpg', quality: 0.9, result: 'tmpfile' }).catch(() => null));
+    await store.openThread(messageId);
   }
 
   // 空白畫面要講的那台電腦：這段對話用的；還沒綁電腦時（例如剛配對、電腦上沒有模型）看最近加入的那台
@@ -342,12 +427,259 @@ export function ChatScreen(p: ChatScreenProps) {
     }, 1);
   }
 
+  const header = (
+    <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <View style={styles.headerSide}>
+        <HeaderButton
+          name="list.bullet"
+          text={t('對話')}
+          label={t('對話清單')}
+          onPress={() => {
+            // 跟用手勢打開一樣先收鍵盤
+            Keyboard.dismiss();
+            setListOpen(true);
+          }}
+        />
+      </View>
+      <Pressable
+        style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
+        onPress={sessionMenu}
+        disabled={!hasChat}
+        accessibilityRole="button"
+        accessibilityLabel={hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
+        <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
+          {title}
+        </Text>
+        {hasChat ? <SymbolView name="chevron.down" size={11} tintColor={C.secondary} /> : null}
+      </Pressable>
+      <View style={[styles.headerSide, styles.headerRight]}>
+        <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
+      </View>
+    </View>
+  );
+
+  const conversation = (
+    <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
+    {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
+    <RevealContext.Provider value={revealField}>
+    <KeyboardChatScrollView
+      ref={scrollRef}
+      testID="transcript"
+      keyboardLiftBehavior="whenAtEnd"
+      offset={keyboardOffset}
+      style={styles.flex}
+      contentContainerStyle={styles.transcript}
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+      scrollEventThrottle={100}
+      // 「跟著最新」只看使用者自己的捲動：程式捲動的動畫不算，手指在拖或放手後還在滑時也不自動捲到底
+      // （不然 AI 回答中往下拖收鍵盤，內容會被拉回最底，跟手指打架）
+      onScrollBeginDrag={() => (userScrolling.current = true)}
+      onScroll={(e) => {
+        scrollY.current = e.nativeEvent.contentOffset.y;
+        if (userScrolling.current) updateNearBottom(e);
+      }}
+      onScrollEndDrag={(e) => {
+        updateNearBottom(e);
+        userScrolling.current = false;
+      }}
+      // 點狀態列捲到最上面也是使用者自己捲的：不再跟著最新，出現「捲到最新」
+      onScrollToTop={updateNearBottom}
+      onMomentumScrollBegin={() => (userScrolling.current = true)}
+      onMomentumScrollEnd={(e) => {
+        updateNearBottom(e);
+        userScrolling.current = false;
+      }}
+      onContentSizeChange={() => {
+        // 只在 AI 正在回答（含剛答完）、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
+        const grew = state.messages.length !== messageCount.current;
+        messageCount.current = state.messages.length;
+        if (nearBottom.current && !userScrolling.current && (grew || streamingNow || answerEnded.current)) scrollRef.current?.scrollToEnd({ animated: true });
+      }}>
+      {state.messages.length === 0 ? (
+        <EmptyState
+          phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
+          scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
+          modelLabel={modelLabel}
+          hostState={statusHost ? state.hostStatus[statusHost]?.state : undefined}
+          downloading={statusHost ? state.downloads[statusHost]?.find((j) => j.status === 'downloading') : undefined}
+          noModels={!!statusHost && state.models[statusHost]?.loading === false && state.models[statusHost]?.list.length === 0 && !state.models[statusHost]?.error}
+          onConnect={() => setConnect({ help: false })}
+          onHelp={() => setConnect({ help: true })}
+          onPickModel={() => setSheetOpen(true)}
+        />
+      ) : (
+        state.messages.map((m, i) => (
+          <Fragment key={m.id}>
+          <MessageView
+            message={m}
+            streaming={state.streaming}
+            isLast={i === lastIndex}
+            showMeta={metaShown.has(m.id)}
+            onOpenImage={(images, index) => setViewer({ images, index })}
+            onCopyCode={copy}
+            onLongPress={messageMenu}
+            onRetry={() => void store.retry()}
+            onHelp={() => setConnect({ help: true })}
+            onCopy={() => copy(m.content)}
+            onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
+            onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+            extra={actionsOf(m)}
+          />
+          {threadAfter.has(i) ? <ThreadLink count={threadAfter.get(i)!.count} onPress={(pageY) => void openThread(threadAfter.get(i)!.questionId, pageY)} /> : null}
+          {isThreadRoot(m) && !(state.messages[i + 1] && isThreadRoot(state.messages[i + 1])) ? <ThreadDivider /> : null}
+          </Fragment>
+        ))
+      )}
+    </KeyboardChatScrollView>
+    </RevealContext.Provider>
+
+    {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
+    <KeyboardStickyView
+      testID="composer-area"
+      offset={{ closed: 0, opened: keyboardOffset }}
+      onLayout={(e) => {
+        const height = e.nativeEvent.layout.height;
+        // 輸入框長高、出現提示、附了照片：訊息區變矮，最下面幾行會被蓋住；跟著最新時補捲（不加動畫，跟輸入列同一格動）
+        if (height > stickyHeight && nearBottom.current && !userScrolling.current) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+        setStickyHeight(height);
+      }}>
+    {!following && !cardTyping && state.messages.length > 0 ? (
+      <Pressable
+        onPress={() => {
+          follow(true);
+          scrollRef.current?.scrollToEnd({ animated: true });
+        }}
+        hitSlop={4}
+        accessibilityRole="button"
+        accessibilityLabel={t('捲到最新')}
+        style={({ pressed }) => [styles.toLatest, pressed && styles.pressed]}>
+        <SymbolView name="arrow.down" size={16} tintColor={C.label} />
+      </Pressable>
+    ) : null}
+    {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
+    {state.context && state.context.level !== 'ok' ? (
+      <Banner
+        tone={state.context.level === 'full' ? 'error' : 'warn'}
+        text={
+          state.context.level === 'full'
+            ? t('這段對話太長了，AI 已經記不住最前面的內容。')
+            : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
+        }
+        action={{ text: t('開新對話'), onPress: () => store.newSession() }}
+      />
+    ) : null}
+
+    <View style={styles.toastAnchor} pointerEvents="box-none">
+      {/* 面板開著時，復原提示由面板自己顯示 */}
+      {state.undo ? anySheetOpen ? null : <UndoToast store={store} /> : <Toast toast={toast} onDone={() => setToast(null)} />}
+    </View>
+    <Composer
+      modelLabel={modelLabel}
+      canAttach={!!model?.vision}
+      modelKnown={!!model}
+      think={model?.think ?? null}
+      thinkValue={session?.think ?? null}
+      busy={!!state.streaming}
+      bottomInset={bottomInset}
+      onInputFocus={() => setCardTyping(false)}
+      onSend={async (text, photos) => {
+        follow(true);
+        // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）
+        Keyboard.dismiss();
+        if (editing) {
+          const saved = editing;
+          setEditing(null);
+          try {
+            await store.editAndResend(saved.id, text, photos);
+          } catch (e) {
+            // 沒送出去：字和照片會放回輸入框，「編輯中」也要回來，不然再按送出會變成多加一則
+            setEditing(saved);
+            throw e;
+          }
+        } else {
+          await store.send(text, photos);
+        }
+      }}
+      onStop={() => store.stop()}
+      onOpenModels={() => setSheetOpen(true)}
+      onThink={(v) => store.setThink(v)}
+      pickPhotos={p.pickPhotos}
+      injected={injected}
+      accessory={
+        editing ? (
+          <Banner
+            tone="info"
+            text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
+            action={{ text: t('取消編輯'), onPress: cancelEdit }}
+          />
+        ) : null
+      }
+      notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
+    />
+    </KeyboardStickyView>
+    </KeyboardGestureArea>
+  );
+
+  // ---- 討論串：浮在原對話上的卡片（apple-design：從來源長出來、怎麼出來就怎麼回去、可以抓住往下拉）----
+  // 後面是開討論串前拍下的原對話，蓋上模糊；點模糊的地方、按 ✕ 回去時卡片縮回那則訊息，往下拉放手時順著往下滑走
+  const { height: screenH } = useWindowDimensions();
+  screenHRef.current = screenH;
+  // 上方多留一截看得到模糊的原對話，一眼看出卡片是浮在上面、點那裡就回去
+  const cardTop = insets.top + 36;
+  const cardCenter = (cardTop + screenH - cardBottom) / 2;
+  const from = (threadAnchor.current ?? cardCenter) - cardCenter;
+  const cardMotion = reduceMotion
+    ? { opacity: threadAnim, transform: [{ translateY: threadDrag }] }
+    : {
+        opacity: threadAnim.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 1, 1] }),
+        transform: [
+          { translateY: Animated.add(threadAnim.interpolate({ inputRange: [0, 1], outputRange: [from, 0] }), threadDrag) },
+          { scale: threadAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) },
+        ],
+      };
+  const threadLayer = (
+    <>
+      {threadShot ? <Image source={{ uri: threadShot }} style={StyleSheet.absoluteFill} /> : null}
+      <Animated.View style={[StyleSheet.absoluteFill, { opacity: threadBlur }]} pointerEvents="none">
+        {reduceTransparency ? <View style={[StyleSheet.absoluteFill, styles.threadDim]} /> : <BlurView intensity={40} tint="systemThinMaterial" style={StyleSheet.absoluteFill} />}
+      </Animated.View>
+      <Pressable style={StyleSheet.absoluteFill} onPress={() => closeThread()} accessibilityRole="button" accessibilityLabel={t('回到對話')} testID="thread-backdrop" />
+      <Animated.View style={[styles.threadCard, { top: cardTop, bottom: cardBottom }, cardMotion]} accessibilityViewIsModal onAccessibilityEscape={() => closeThread()}>
+        <View style={styles.threadCardInner}>
+          <View style={styles.threadHeader} {...threadPan.panHandlers}>
+            <View style={styles.grabber} />
+            <View style={styles.threadHeaderRow}>
+              <View style={styles.threadSide} />
+              <Pressable
+                style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
+                onPress={sessionMenu}
+                accessibilityRole="button"
+                accessibilityLabel={t('討論串，點一下可以刪除')}>
+                <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
+                  {t('討論串')}
+                </Text>
+                <SymbolView name="chevron.down" size={11} tintColor={C.secondary} />
+              </Pressable>
+              <View style={[styles.threadSide, styles.headerRight]}>
+                <Pressable onPress={() => closeThread()} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('關閉討論串')} style={({ pressed }) => pressed && styles.pressed}>
+                  <SymbolView name="xmark.circle.fill" size={28} tintColor={C.tertiary} />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+          {conversation}
+        </View>
+      </Animated.View>
+    </>
+  );
+
   return (
     <>
       <SideDrawer
         open={listOpen}
         onOpenChange={setListOpen}
-        swipeEnabled={listOpen || (!anySheetOpen && !viewer)}
+        swipeEnabled={listOpen || (!anySheetOpen && !viewer && !cardMode)}
         closeLabel={t('關閉對話清單')}
         renderDrawer={() => (
           <SessionList
@@ -359,208 +691,12 @@ export function ChatScreen(p: ChatScreenProps) {
           />
         )}>
         <View style={styles.root}>
-          <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
-            <View style={styles.headerSide}>
-              {inThread ? (
-                // 討論串：左上角回到原本那段對話（回到剛才看的位置）
-                <HeaderButton
-                  name="chevron.left"
-                  text={t('對話')}
-                  label={t('回到對話')}
-                  onPress={() => {
-                    Keyboard.dismiss();
-                    void store.leaveThread();
-                  }}
-                />
-              ) : (
-                <HeaderButton
-                  name="list.bullet"
-                  text={t('對話')}
-                  label={t('對話清單')}
-                  onPress={() => {
-                    // 跟用手勢打開一樣先收鍵盤
-                    Keyboard.dismiss();
-                    setListOpen(true);
-                  }}
-                />
-              )}
-            </View>
-            <Pressable
-              style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
-              onPress={sessionMenu}
-              disabled={!hasChat}
-              accessibilityRole="button"
-              accessibilityLabel={inThread ? t('討論串，點一下可以刪除') : hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
-              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
-                {title}
-              </Text>
-              {hasChat ? <SymbolView name="chevron.down" size={11} tintColor={C.secondary} /> : null}
-            </Pressable>
-            <View style={[styles.headerSide, styles.headerRight]}>
-              <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
-            </View>
-          </View>
-
-          <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
-          {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
-          <RevealContext.Provider value={revealField}>
-          <KeyboardChatScrollView
-            ref={scrollRef}
-            testID="transcript"
-            keyboardLiftBehavior="whenAtEnd"
-            offset={keyboardOffset}
-            style={styles.flex}
-            contentContainerStyle={styles.transcript}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            scrollEventThrottle={100}
-            // 「跟著最新」只看使用者自己的捲動：程式捲動的動畫不算，手指在拖或放手後還在滑時也不自動捲到底
-            // （不然 AI 回答中往下拖收鍵盤，內容會被拉回最底，跟手指打架）
-            onScrollBeginDrag={() => (userScrolling.current = true)}
-            onScroll={(e) => {
-              scrollY.current = e.nativeEvent.contentOffset.y;
-              if (userScrolling.current) updateNearBottom(e);
-            }}
-            onScrollEndDrag={(e) => {
-              updateNearBottom(e);
-              userScrolling.current = false;
-            }}
-            // 點狀態列捲到最上面也是使用者自己捲的：不再跟著最新，出現「捲到最新」
-            onScrollToTop={updateNearBottom}
-            onMomentumScrollBegin={() => (userScrolling.current = true)}
-            onMomentumScrollEnd={(e) => {
-              updateNearBottom(e);
-              userScrolling.current = false;
-            }}
-            onContentSizeChange={() => {
-              // 只在 AI 正在回答（含剛答完）、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
-              const grew = state.messages.length !== messageCount.current;
-              messageCount.current = state.messages.length;
-              if (nearBottom.current && !userScrolling.current && (grew || streamingNow || answerEnded.current)) scrollRef.current?.scrollToEnd({ animated: true });
-            }}>
-            {state.messages.length === 0 ? (
-              <EmptyState
-                phase={state.hosts.length === 0 ? 'noComputer' : !session?.model ? 'noModel' : 'ready'}
-                scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
-                modelLabel={modelLabel}
-                hostState={statusHost ? state.hostStatus[statusHost]?.state : undefined}
-                downloading={statusHost ? state.downloads[statusHost]?.find((j) => j.status === 'downloading') : undefined}
-                noModels={!!statusHost && state.models[statusHost]?.loading === false && state.models[statusHost]?.list.length === 0 && !state.models[statusHost]?.error}
-                onConnect={() => setConnect({ help: false })}
-                onHelp={() => setConnect({ help: true })}
-                onPickModel={() => setSheetOpen(true)}
-              />
-            ) : (
-              state.messages.map((m, i) => (
-                <Fragment key={m.id}>
-                <MessageView
-                  message={m}
-                  streaming={state.streaming}
-                  isLast={i === lastIndex}
-                  showMeta={metaShown.has(m.id)}
-                  onOpenImage={(images, index) => setViewer({ images, index })}
-                  onCopyCode={copy}
-                  onLongPress={messageMenu}
-                  onRetry={() => void store.retry()}
-                  onHelp={() => setConnect({ help: true })}
-                  onCopy={() => copy(m.content)}
-                  onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
-                  onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
-                  extra={actionsOf(m)}
-                />
-                {threadAfter.has(i) ? <ThreadLink count={threadAfter.get(i)!.count} onPress={() => openThread(threadAfter.get(i)!.questionId)} /> : null}
-                {isThreadRoot(m) && !(state.messages[i + 1] && isThreadRoot(state.messages[i + 1])) ? <ThreadDivider /> : null}
-                </Fragment>
-              ))
-            )}
-          </KeyboardChatScrollView>
-          </RevealContext.Provider>
-
-          {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
-          <KeyboardStickyView
-            testID="composer-area"
-            offset={{ closed: 0, opened: keyboardOffset }}
-            onLayout={(e) => {
-              const height = e.nativeEvent.layout.height;
-              // 輸入框長高、出現提示、附了照片：訊息區變矮，最下面幾行會被蓋住；跟著最新時補捲（不加動畫，跟輸入列同一格動）
-              if (height > stickyHeight && nearBottom.current && !userScrolling.current) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
-              setStickyHeight(height);
-            }}>
-          {!following && !cardTyping && state.messages.length > 0 ? (
-            <Pressable
-              onPress={() => {
-                follow(true);
-                scrollRef.current?.scrollToEnd({ animated: true });
-              }}
-              hitSlop={4}
-              accessibilityRole="button"
-              accessibilityLabel={t('捲到最新')}
-              style={({ pressed }) => [styles.toLatest, pressed && styles.pressed]}>
-              <SymbolView name="arrow.down" size={16} tintColor={C.label} />
-            </Pressable>
-          ) : null}
-          {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
-          {state.context && state.context.level !== 'ok' ? (
-            <Banner
-              tone={state.context.level === 'full' ? 'error' : 'warn'}
-              text={
-                state.context.level === 'full'
-                  ? t('這段對話太長了，AI 已經記不住最前面的內容。')
-                  : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
-              }
-              action={{ text: t('開新對話'), onPress: () => store.newSession() }}
-            />
-          ) : null}
-
-          <View style={styles.toastAnchor} pointerEvents="box-none">
-            {/* 面板開著時，復原提示由面板自己顯示 */}
-            {state.undo ? anySheetOpen ? null : <UndoToast store={store} /> : <Toast toast={toast} onDone={() => setToast(null)} />}
-          </View>
-          <Composer
-            modelLabel={modelLabel}
-            canAttach={!!model?.vision}
-            modelKnown={!!model}
-            think={model?.think ?? null}
-            thinkValue={session?.think ?? null}
-            busy={!!state.streaming}
-            bottomInset={bottomInset}
-            onInputFocus={() => setCardTyping(false)}
-            onSend={async (text, photos) => {
-              follow(true);
-              // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）
-              Keyboard.dismiss();
-              if (editing) {
-                const saved = editing;
-                setEditing(null);
-                try {
-                  await store.editAndResend(saved.id, text, photos);
-                } catch (e) {
-                  // 沒送出去：字和照片會放回輸入框，「編輯中」也要回來，不然再按送出會變成多加一則
-                  setEditing(saved);
-                  throw e;
-                }
-              } else {
-                await store.send(text, photos);
-              }
-            }}
-            onStop={() => store.stop()}
-            onOpenModels={() => setSheetOpen(true)}
-            onThink={(v) => store.setThink(v)}
-            pickPhotos={p.pickPhotos}
-            injected={injected}
-            accessory={
-              editing ? (
-                <Banner
-                  tone="info"
-                  text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
-                  action={{ text: t('取消編輯'), onPress: cancelEdit }}
-                />
-              ) : null
-            }
-            notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
-          />
-          </KeyboardStickyView>
-          </KeyboardGestureArea>
+          {cardMode ? threadLayer : (
+            <>
+              {header}
+              {conversation}
+            </>
+          )}
 
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
             <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
@@ -719,12 +855,27 @@ export function HeaderButton({ name, text, label, onPress, disabled }: { name: S
   );
 }
 
+/**
+ * 討論串卡片的彈簧：不回彈（阻尼比 1），大約 0.35 秒到位（apple-design：一般介面用臨界阻尼）。
+ * stiffness = (2π / 0.35)² ≈ 320、damping = 2√320 ≈ 36
+ */
+const CARD_SPRING = { stiffness: 320, damping: 36, mass: 1, useNativeDriver: true } as const;
+
 /** 輸入框被鍵盤或輸入列擋住多少 pt（沒擋到是 0）：都是螢幕座標；輸入列上緣再留一點空 */
 export function coveredBy(fieldBottom: number, keyboardTop: number, composerAboveKeyboard: number, gap = 12): number {
   return Math.max(0, fieldBottom + gap - (keyboardTop - composerAboveKeyboard));
 }
 
 const styles = StyleSheet.create({
+  // 討論串卡片：外層帶陰影（不能 overflow hidden，不然陰影被切掉），裡層圓角裁切內容
+  threadCard: { position: 'absolute', left: 12, right: 12, borderRadius: 22, backgroundColor: C.bg, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: 8 } },
+  threadCardInner: { flex: 1, borderRadius: 22, overflow: 'hidden' },
+  threadHeader: { paddingTop: 6, paddingHorizontal: 12, paddingBottom: 2 },
+  grabber: { alignSelf: 'center', width: 36, height: 5, borderRadius: 3, backgroundColor: C.separator },
+  threadHeaderRow: { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
+  threadSide: { width: 44 },
+  // 「降低透明度」打開時不用模糊，改成一層夠深的遮罩
+  threadDim: { backgroundColor: 'rgba(0,0,0,0.45)' },
   root: { flex: 1, backgroundColor: C.bg },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8 },
