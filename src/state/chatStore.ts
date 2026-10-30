@@ -6,7 +6,7 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
+import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import { RECORD_NOTE, isRecordNote, type Action, type Attachment, type Host, type Message, type Repo, type Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
@@ -1554,9 +1554,12 @@ export class ChatStore {
     if (messages[messages.length - 1]?.role === 'tool') {
       const round = [...messages].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
       const actions = round?.actions ?? [];
-      const declined = actions.filter((a) => a.status === 'declined').map(name);
+      // 選擇題按「不回答」也記成 declined，但不是「沒做」：另外一句
+      const isQuestion = (a: Action) => this.toolFor(a.tool)?.kind === 'question';
+      const declined = actions.filter((a) => a.status === 'declined' && !isQuestion(a)).map(name);
+      const unanswered = actions.filter((a) => a.status === 'declined' && isQuestion(a)).map((a) => String(a.input.question ?? ''));
       const edited = actions.filter((a) => a.status === 'done' && a.note).map((a) => ({ item: name(a), changes: a.note }));
-      notes.push(declined.length > 0 ? declinedPrompt(declined) : '', edited.length > 0 ? editedPrompt(edited) : '');
+      notes.push(declined.length > 0 ? declinedPrompt(declined) : '', unanswered.length > 0 ? unansweredPrompt(unanswered) : '', edited.length > 0 ? editedPrompt(edited) : '');
     }
     return notes.filter(Boolean).join('\n');
   }

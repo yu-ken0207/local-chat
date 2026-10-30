@@ -87,6 +87,14 @@ export function declinedPrompt(items: string[]): string {
 }
 
 /**
+ * 選擇題按了「不回答」：不能用上面那句（會要模型說「『問你一個問題』沒有做」），
+ * 改成說使用者沒回答、不要自己假設答案
+ */
+export function unansweredPrompt(questions: string[]): string {
+  return `The user chose not to answer your question ${questions.map((q) => `「${q}」`).join(', ')}. Do not assume an answer; go on without it, or ask again in plain words only if you really need it.`;
+}
+
+/**
  * 這段對話裡做了又按「復原」的：只在中間的工具結果加註，31B 還是當作行程還在（實測 3/3），
  * 每次回答都在最後提醒；跟它無關的問題它不會硬提（實測 2/2）
  */

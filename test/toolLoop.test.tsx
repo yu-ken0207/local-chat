@@ -482,6 +482,15 @@ describe('問使用者選擇題', () => {
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0]).toMatchObject({ status: 'done', summary: '你回答：晚上 8:00' });
   });
 
+  test('按不回答：最後提醒模型使用者沒回答、不要自己假設（不是要它說「沒做」）', async () => {
+    const { store, net } = await asked();
+    await store.declineAction(pending(store)[0].id, '');
+    await waitFor(() => expect(net.chatBodies()).toHaveLength(2));
+    const last = net.chatBodies()[1].messages.at(-1);
+    expect(last).toEqual({ role: 'system', content: expect.stringContaining('chose not to answer your question 「明天幾點提醒你？」') });
+    expect(last.content).not.toContain('NOT done');
+  });
+
   test('選項少於 2 個：退回模型重問', async () => {
     const { net, store } = await asked(['只有一個']);
     await waitFor(() => expect(net.chatBodies()).toHaveLength(2));
