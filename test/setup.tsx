@@ -6,6 +6,9 @@ jest.mock('expo-symbols', () => {
 
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 
+// 鍵盤跟手的元件：測試裡換成一般的 ScrollView／View（套件附的替身）
+jest.mock('react-native-keyboard-controller', () => require('react-native-keyboard-controller/jest'));
+
 jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(),
   notificationAsync: jest.fn(),

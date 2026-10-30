@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ChatScreen } from './src/components/ChatScreen';
@@ -70,6 +71,8 @@ export default function App() {
   }, []);
 
   return (
+    // KeyboardProvider：每一格畫面都拿得到鍵盤位置（輸入列跟著鍵盤走，拖著收鍵盤時也跟手）
+    <KeyboardProvider>
     <SafeAreaProvider>
       <StatusBar style="auto" />
       {store ? (
@@ -80,6 +83,7 @@ export default function App() {
         </View>
       )}
     </SafeAreaProvider>
+    </KeyboardProvider>
   );
 }
 

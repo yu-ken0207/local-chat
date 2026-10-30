@@ -1,6 +1,7 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
+import { KeyboardChatScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fmtElapsed, fmtTokPerSec } from '../lib/format';
@@ -124,16 +125,10 @@ export function ChatScreen(p: ChatScreenProps) {
     }
   }
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
-  const [keyboardUp, setKeyboardUp] = useState(false);
-
-  useEffect(() => {
-    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
-    return () => {
-      show.remove();
-      hide.remove();
-    };
-  }, []);
+  // 輸入列底部固定留給 Home 鍵橫條的空間；鍵盤打開時（橫條被鍵盤蓋住）用 keyboardOffset 把多的扣回來，
+  // 只剩 8pt。用位移不用改留白，跟著鍵盤一格一格動，收鍵盤時不會跳
+  const bottomInset = Math.max(insets.bottom, 8);
+  const keyboardOffset = bottomInset - 8;
 
   // 換對話時捲到最下面
   useEffect(() => {
@@ -206,7 +201,7 @@ export function ChatScreen(p: ChatScreenProps) {
             showUndo={!appSettingsOpen}
           />
         )}>
-        <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.root}>
           <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
             <View style={styles.headerSide}>
               <HeaderButton
@@ -236,9 +231,12 @@ export function ChatScreen(p: ChatScreenProps) {
             </View>
           </View>
 
-          <ScrollView
+          {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
+          <KeyboardChatScrollView
             ref={scrollRef}
             testID="transcript"
+            keyboardLiftBehavior="whenAtEnd"
+            offset={keyboardOffset}
             style={styles.flex}
             contentContainerStyle={styles.transcript}
             keyboardDismissMode="interactive"
@@ -287,8 +285,10 @@ export function ChatScreen(p: ChatScreenProps) {
                 />
               ))
             )}
-          </ScrollView>
+          </KeyboardChatScrollView>
 
+          {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
+          <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }}>
           {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
           {state.context && state.context.level !== 'ok' ? (
             <Banner
@@ -312,7 +312,7 @@ export function ChatScreen(p: ChatScreenProps) {
             think={model?.think ?? null}
             thinkValue={session?.think ?? null}
             busy={!!state.streaming}
-            bottomInset={keyboardUp ? 8 : Math.max(insets.bottom, 8)}
+            bottomInset={bottomInset}
             onSend={async (text, photos) => {
               nearBottom.current = true;
               if (editing) {
@@ -339,6 +339,7 @@ export function ChatScreen(p: ChatScreenProps) {
             }
             notReadyHint={state.hosts.length === 0 ? t('先連接你的電腦') : t('先在下方選一個模型')}
           />
+          </KeyboardStickyView>
 
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
             <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
@@ -347,7 +348,7 @@ export function ChatScreen(p: ChatScreenProps) {
             <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
           </Modal>
           <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
-        </KeyboardAvoidingView>
+        </View>
       </SideDrawer>
       {/* 設定從側邊欄打開，放在主畫面外面（側邊欄開著時主畫面對輔助使用是隱藏的） */}
       <Modal visible={appSettingsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setAppSettingsOpen(false)}>
