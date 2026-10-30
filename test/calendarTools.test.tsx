@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { ActionSheetIOS, Linking } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { SettingsView } from '../src/components/SettingsSheet';
@@ -187,6 +187,31 @@ describe('接上 App', () => {
     await fireEvent.press(screen.getByText('打開設定'));
     expect(open).toHaveBeenCalled();
     open.mockRestore();
+  });
+
+  test('修改裡的行事曆、提前幾分鐘提醒用選的', async () => {
+    const { host, store, api } = await setup();
+    let n = 0;
+    host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '開會', start: '2026-11-05T10:00' }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '下週四十點開會');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await fireEvent.press(await screen.findByText('修改'));
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions');
+    // 行事曆：只列可以寫入的（「節日」不行），第一個是預設
+    sheet.mockImplementationOnce((opts, cb) => {
+      expect(opts.options).toEqual(['預設的行事曆', '家庭', 'Work', '取消']);
+      cb(2);
+    });
+    await fireEvent.press(await screen.findByLabelText('行事曆：預設的行事曆，點一下選'));
+    sheet.mockImplementationOnce((opts, cb) => {
+      expect(opts.options.slice(0, 3)).toEqual(['不提醒', '5 分鐘前', '10 分鐘前']);
+      cb(2);
+    });
+    await fireEvent.press(screen.getByLabelText('提前幾分鐘提醒：不提醒，點一下選'));
+    await fireEvent.press(screen.getByText('加入'));
+    await waitFor(() => expect(api.created).toHaveLength(1));
+    expect(api.created[0]).toMatchObject({ calendarId: 'work', event: { alertMinutes: 10 } });
   });
 
   test('AI 填的備註會顯示在卡片上，修改裡也能拿掉', async () => {

@@ -159,6 +159,17 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
       // 備註也列出來：AI 填的每一個會寫進行事曆的欄位，卡片上都要看得到、改得到（照片裡藏的字也可能被寫進備註）
       return { title: t('標題'), start: t('開始'), end: t('結束'), location: t('地點'), calendar: t('行事曆'), alertMinutesBefore: t('提前幾分鐘提醒'), notes: t('備註') };
     },
+    // 行事曆要打得一字不差、分鐘數的鍵盤沒有完成鍵：改成用選的
+    choices: {
+      calendar: async () => [
+        { value: '', label: t('預設的行事曆') },
+        ...(await api.calendars()).filter((c) => c.canWrite).map((c) => ({ value: c.title, label: c.title })),
+      ],
+      alertMinutesBefore: async () => [
+        { value: '', label: t('不提醒') },
+        ...[5, 10, 15, 30, 60].map((n) => ({ value: String(n), label: t('{n} 分鐘前', { n }) })),
+      ],
+    },
     fillDefaults: (input) => {
       if (input.allDay || input.end) return { input, guessed: [] };
       return { input: { ...input, end: toLocalText(new Date(parseLocal(str(input.start)).getTime() + 60 * 60 * 1000)) }, guessed: ['end'] };

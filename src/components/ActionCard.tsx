@@ -1,11 +1,13 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
+import { SymbolView } from 'expo-symbols';
+import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { fmtEventTime } from '../lib/format';
 import { parseLocal, toLocalText, type PhoneTool, type ToolInput } from '../lib/tools';
 import type { Action } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
+import { chooseOption } from './Composer';
 import { ActionButton } from './Messages';
 import { getLanguage, t } from '../i18n';
 
@@ -233,6 +235,35 @@ function TimeField({ value, dateOnly, label, onChange }: { value: string; dateOn
   );
 }
 
+/**
+ * 用選的欄位（行事曆、提前幾分鐘提醒）：點一下跳出選項。
+ * 選項拿不到（例如還沒給行事曆權限）就退回文字框。
+ */
+function ChoiceField({ label, value, load, onChange }: { label: string; value: string; load: () => Promise<{ value: string; label: string }[]>; onChange: (value: string) => void }) {
+  const [options, setOptions] = useState<{ value: string; label: string }[] | null>(null);
+  useEffect(() => {
+    load()
+      .then(setOptions)
+      .catch(() => setOptions([]));
+  }, [load]);
+  if (options && options.length === 0) {
+    return <TextInput value={value} onChangeText={onChange} style={styles.input} accessibilityLabel={label} />;
+  }
+  const shown = options?.find((o) => o.value === value)?.label ?? value;
+  return (
+    <Pressable
+      onPress={() => options && chooseOption(label, options.map((o) => o.label), (i) => onChange(options[i].value))}
+      accessibilityRole="button"
+      accessibilityLabel={t('{p0}：{p1}，點一下選', { p0: label, p1: shown })}
+      style={({ pressed }) => [styles.input, styles.choice, pressed && { backgroundColor: C.pressed }]}>
+      <Text style={styles.text} numberOfLines={1}>
+        {shown}
+      </Text>
+      <SymbolView name="chevron.up.chevron.down" size={11} tintColor={C.secondary} />
+    </Pressable>
+  );
+}
+
 /** 還沒填的時間要加上時：結束接在開始後 1 小時，其他用下一個整點 */
 function defaultTime(values: Record<string, string | boolean>): string {
   const start = typeof values.start === 'string' ? parseLocal(values.start) : new Date(NaN);
@@ -297,10 +328,13 @@ function FieldEditor({ tool, input, done, onDone, onCancel, indent }: { tool: Ph
             </View>
           );
         }
+        const load = tool.choices?.[key];
         return (
           <View key={key} style={styles.field}>
             <Text style={[styles.small, styles.dim]}>{label}</Text>
-            {type === 'boolean' ? (
+            {load && typeof v === 'string' ? (
+              <ChoiceField label={label} value={v} load={load} onChange={set} />
+            ) : type === 'boolean' ? (
               <Switch value={!!v} onValueChange={(next) => setValues((s) => ({ ...s, [key]: next }))} accessibilityLabel={label} />
             ) : (
               <TextInput
@@ -471,6 +505,7 @@ const styles = StyleSheet.create({
   input: { fontFamily: TEXT.body.fontFamily, fontSize: TEXT.body.fontSize, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   mark: { width: 14, textAlign: 'center' },
+  choice: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   item: { gap: 6 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

@@ -39,6 +39,8 @@ export type PhoneTool = {
   verb?: string;
   /** 確認卡上各欄位的名稱，例如 { title: '標題' }；沒列的欄位不給改 */
   fields?: Record<string, string>;
+  /** 「修改」裡要用選的欄位：回傳可以選的值（value 是存進去的值、label 是畫面上的字；value 空字串＝不指定） */
+  choices?: Record<string, () => Promise<{ value: string; label: string }[]>>;
   /** 確認卡上的一句白話 */
   describe?(input: ToolInput): string;
   /** 補上使用者沒說的欄位，回傳哪些是補的（確認卡上標淡色） */
