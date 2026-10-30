@@ -16,15 +16,18 @@ type Props = {
   onCopyCode?: (code: string) => void;
   /** 整段文字用淡色（例如思考過程） */
   dim?: boolean;
+  /** 點一下、長按左右捲的區塊（程式碼、表格）時要做的事，跟外面整則訊息一樣；原因見 HScroll */
+  onPress?: () => void;
+  onLongPress?: () => void;
 };
 
-export const Markdown = memo(function Markdown({ text, onCopyCode, dim }: Props) {
+export const Markdown = memo(function Markdown({ text, onCopyCode, dim, onPress, onLongPress }: Props) {
   const tokens = useMemo(() => Lexer.lex(text), [text]);
   const base: TextStyle = { ...TEXT.body, color: dim ? C.secondary : C.label };
-  return <View style={styles.blocks}>{blocks(tokens, { base, onCopyCode })}</View>;
+  return <View style={styles.blocks}>{blocks(tokens, { base, onCopyCode, onPress, onLongPress })}</View>;
 });
 
-type Ctx = { base: TextStyle; onCopyCode?: (code: string) => void };
+type Ctx = { base: TextStyle; onCopyCode?: (code: string) => void; onPress?: () => void; onLongPress?: () => void };
 
 function blocks(tokens: Token[], ctx: Ctx, keyPrefix = 'b'): ReactNode[] {
   return tokens.map((t, i) => block(t, ctx, `${keyPrefix}${i}`)).filter((n) => n !== null);
@@ -54,7 +57,7 @@ function block(token: Token, ctx: Ctx, key: string): ReactNode {
       );
     }
     case 'code':
-      return <CodeBlock key={key} code={(token as Tokens.Code).text} lang={(token as Tokens.Code).lang ?? ''} onCopy={ctx.onCopyCode} />;
+      return <CodeBlock key={key} code={(token as Tokens.Code).text} lang={(token as Tokens.Code).lang ?? ''} ctx={ctx} />;
     case 'blockquote':
       return (
         <View key={key} style={styles.quote}>
@@ -152,7 +155,8 @@ function inline(tokens: Token[], ctx: Ctx): ReactNode[] {
   });
 }
 
-function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?: (code: string) => void }) {
+function CodeBlock({ code, lang, ctx }: { code: string; lang: string; ctx: Ctx }) {
+  const onCopy = ctx.onCopyCode;
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -177,13 +181,10 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
           </Pressable>
         )}
       </View>
-      {/* 左右捲裡的字不能設 selectable：RN 0.88 會在字上加長按手勢，左右滑全被外層上下捲接走
-          （iPhone 實測：可選取 0/11 次滑得動、不可選取 4/4）。要複製用右上角的「複製」 */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text style={styles.codeText}>
-          {code}
-        </Text>
-      </ScrollView>
+      {/* 字不設 selectable：iOS 會在字上加長按選取，跟長按訊息的選單打架；要複製用右上角的「複製」 */}
+      <HScroll ctx={ctx}>
+        <Text style={styles.codeText}>{code}</Text>
+      </HScroll>
     </View>
   );
 }
@@ -191,14 +192,14 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
 function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
   const cell = (c: Tokens.TableCell, header: boolean, key: string) => (
     <View key={key} style={[styles.cell, header && styles.headerCell]}>
-      {/* 表格在左右捲裡：不設 selectable（原因同程式碼區塊）；要複製就長按訊息選「複製」 */}
+      {/* 不設 selectable（原因同程式碼區塊）；要複製就長按訊息選「複製」 */}
       <Text style={[ctx.base, header && styles.strong, { textAlign: c.align ?? 'left' }]}>
         {inline(c.tokens, ctx)}
       </Text>
     </View>
   );
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    <HScroll ctx={ctx}>
       <View style={styles.table}>
         <View style={styles.row}>{table.header.map((c, i) => cell(c, true, `h${i}`))}</View>
         {table.rows.map((r, ri) => (
@@ -207,6 +208,22 @@ function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
           </View>
         ))}
       </View>
+    </HScroll>
+  );
+}
+
+/**
+ * 左右捲的區塊。裡面要有自己的 Pressable 先接住手指：外面整則訊息是 Pressable，
+ * 手指一按下它就成了 JS responder，而 iOS 的 RN 只要看到捲動的「祖先」是 responder，
+ * 就不讓這個捲動動（RCTScrollViewComponentView 的 _shouldDisableScrollInteraction），左右滑全被外層上下捲接走。
+ * 改由捲動「裡面」的 Pressable 接手，祖先就不是 responder；點一下、長按照樣做訊息那邊的事。
+ */
+function HScroll({ ctx, children }: { ctx: Ctx; children: ReactNode }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <Pressable accessible={false} onPress={ctx.onPress} onLongPress={ctx.onLongPress} delayLongPress={350}>
+        {children}
+      </Pressable>
     </ScrollView>
   );
 }

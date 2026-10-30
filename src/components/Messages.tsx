@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
 import { fmtElapsed } from '../lib/format';
@@ -59,6 +59,21 @@ function longPress(open: () => void) {
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
   const screenReader = useScreenReader();
+  const live = streaming?.messageId === m.id ? streaming : null;
+  // 程式碼、表格的左右捲裡面要自己接手指（見 Markdown 的 HScroll），點一下、長按做的事跟整則訊息一樣。
+  // 函式要固定同一個（Markdown 有 memo，每次換新函式整段都要重畫），內容從 ref 拿最新的
+  const latest = useRef({ m, live, onLongPress: h.onLongPress });
+  latest.current = { m, live, onLongPress: h.onLongPress };
+  const press = useMemo(
+    () => ({
+      onPress: () => Keyboard.dismiss(),
+      onLongPress: () => {
+        const { m, live, onLongPress } = latest.current;
+        if (!live) longPress(() => onLongPress?.(m));
+      },
+    }),
+    [],
+  );
   if (m.role === 'user') {
     return (
       <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
@@ -94,19 +109,18 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   if (m.role === 'assistant') {
-    const live = streaming?.messageId === m.id ? streaming : null;
     const content = live ? live.content : m.content;
     const thinking = live ? live.thinking : m.thinking;
     // 只是叫工具、沒有說話的那一輪：不顯示電腦和模型名稱，也不給複製、重新產生
     const toolTurn = !live && !content && !!m.toolCalls?.length;
     if (toolTurn && !thinking && !h.extra) return null;
     return (
-      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => !live && longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} {...press} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.aiBlock}>
           <Text style={styles.aiMark} {...decorative}>•</Text>
           <View style={styles.body}>
-            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
-            {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
+            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} /> : null}
+            {content ? <Markdown text={content} onCopyCode={h.onCopyCode} {...press} /> : null}
             {/* 模型回了空白（不是只叫工具）：說清楚，最後一則還可以重新產生 */}
             {!live && !content && !toolTurn ? <Text style={styles.emptyAnswer}>{t('AI 沒有回答。')}</Text> : null}
             {h.extra}
@@ -228,7 +242,7 @@ export function Thumbnails({ images, onOpen }: { images: Attachment[]; onOpen: (
 }
 
 /** 思考過程：預設收起來，只顯示一行；點了展開 */
-function Thinking({ text, live }: { text: string; live: boolean }) {
+function Thinking({ text, live, press }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: () => void } }) {
   const [open, setOpen] = useState(false);
   const lastLine = text.trim().split('\n').filter(Boolean).at(-1) ?? '';
   return (
@@ -245,7 +259,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         </Text>
       </Pressable>
       {open ? (
-        <Markdown text={text} dim />
+        <Markdown text={text} dim {...press} />
       ) : live ? (
         <Text style={[styles.small, styles.dim]} numberOfLines={2}>
           {lastLine}

@@ -252,6 +252,15 @@ describe('選單', () => {
     store.stop();
   });
 
+  test('長按回答裡的程式碼：一樣出 AI 回答的選單', async () => {
+    const { store, net } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '```js\nconst x = 1\n```' }, done: false }, { message: { content: '' }, done: true }] });
+    await send(store, '寫一行程式');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+    await fireEvent(await screen.findByText('const x = 1'), 'longPress');
+    expect(sheet.mock.calls[0][0].options).toContain('重新產生');
+  });
+
   test('長按訊息：選單裡的「刪除」顯示成紅色（危險選項）', async () => {
     const { store } = await setup();
     await send(store, 'hi');

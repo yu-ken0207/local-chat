@@ -57,10 +57,22 @@ describe('Markdown', () => {
   });
 });
 
-test('左右捲的程式碼、表格不設「可以選取」（設了會讓左右滑被外層上下捲接走）；一般段落照舊可以選', async () => {
+test('左右捲的程式碼、表格不設「可以選取」（iOS 的長按選取會跟長按訊息的選單打架）；一般段落照舊可以選', async () => {
   await render(<Markdown text={'一般段落\n\n```python\nprint(1)\n```\n\n| 欄 | 值 |\n|---|---|\n| a | b |'} />);
   expect(screen.getByText('一般段落').props.selectable).toBe(true);
   expect(screen.getByText('print(1)').props.selectable).toBeFalsy();
   expect(screen.getByText('b').props.selectable).toBeFalsy();
 });
 
+
+test('左右捲的程式碼、表格裡面自己接手指：點一下、長按做的事跟整則訊息一樣', async () => {
+  // 外面整則訊息的 Pressable 一當 JS responder，iOS 就把它裡面的左右捲關掉（左右滑被外層上下捲接走、要滑很多次才成功）；
+  // 改由捲動裡面的 Pressable 接手，外面那層就不是 responder
+  const onPress = jest.fn();
+  const onLongPress = jest.fn();
+  await render(<Markdown text={'```python\nprint(1)\n```\n\n| 欄 | 值 |\n|---|---|\n| a | b |'} onPress={onPress} onLongPress={onLongPress} />);
+  await fireEvent(screen.getByText('print(1)'), 'longPress');
+  expect(onLongPress).toHaveBeenCalledTimes(1);
+  await fireEvent.press(screen.getByText('b'));
+  expect(onPress).toHaveBeenCalledTimes(1);
+});
