@@ -182,6 +182,39 @@ describe('輸入列', () => {
     expect(disabled('附加照片')).toBe(false);
   });
 
+  test('讀不到模型資訊時：編輯並重送照樣放回照片；送出時不說成「看不懂圖片」', async () => {
+    const { store, net } = await setup();
+    pickActionSheet(1);
+    await fireEvent.press(screen.getByLabelText('附加照片'));
+    await send(store, '看圖');
+    net.hosts.delete(A);
+    await act(async () => {
+      await store.loadModels(A);
+    });
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => cb(o.options.indexOf('編輯並重送')));
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
+    expect(await screen.findByLabelText('移除照片 1')).toBeTruthy();
+    // 送得出去（連不到電腦時照常出現連線錯誤），不會被「看不懂圖片」擋下
+    await expect(store.send('再看一次', [PHOTO])).resolves.toBeUndefined();
+    expect(store.getState().messages.some((m) => m.content.includes('看不懂圖片'))).toBe(false);
+  });
+
+  test('編輯並重送沒送出去：字放回輸入框，「編輯中」也還在（再按送出才會取代原訊息）', async () => {
+    const { store } = await setup();
+    await send(store, '原本');
+    jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => cb(o.options.indexOf('編輯並重送')));
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
+    jest.spyOn(store, 'editAndResend').mockRejectedValueOnce(new Error('暫時失敗'));
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改過');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('沒有送出', '暫時失敗'));
+    expect(screen.getByLabelText('訊息輸入框').props.value).toBe('改過');
+    expect(screen.getByText(/編輯中/)).toBeTruthy();
+  });
+
   test('讀不到模型資訊（電腦沒連上）：＋按了說讀不到，不說成模型看不懂圖；已附的照片不拿掉', async () => {
     const { store, net } = await setup();
     pickActionSheet(0);

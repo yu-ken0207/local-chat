@@ -511,9 +511,15 @@ export function ChatScreen(p: ChatScreenProps) {
               // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）
               Keyboard.dismiss();
               if (editing) {
-                const id = editing.id;
+                const saved = editing;
                 setEditing(null);
-                await store.editAndResend(id, text, photos);
+                try {
+                  await store.editAndResend(saved.id, text, photos);
+                } catch (e) {
+                  // 沒送出去：字和照片會放回輸入框，「編輯中」也要回來，不然再按送出會變成多加一則
+                  setEditing(saved);
+                  throw e;
+                }
               } else {
                 await store.send(text, photos);
               }

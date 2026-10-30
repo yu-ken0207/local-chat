@@ -94,7 +94,8 @@ export function Composer(p: Props) {
   useEffect(() => {
     if (!p.injected) return;
     replaceDraft(p.injected.text);
-    if (p.injected.photos) setPhotos(p.canAttach ? p.injected.photos : []);
+    // 確定模型看不懂圖片才不放回照片；讀不到模型資訊時照樣放回（之後送出時才會知道）
+    if (p.injected.photos) setPhotos(modelKnown && !p.canAttach ? [] : p.injected.photos);
   }, [p.injected?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const canSend = !p.busy && !sending && !!p.modelLabel && (draft.trim().length > 0 || photos.length > 0);

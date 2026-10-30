@@ -1117,12 +1117,18 @@ export class ChatStore {
     return !!this.currentModel()?.vision;
   }
 
+  /** 確定目前的模型看不懂圖片（讀不到模型資訊時不下結論：可能只是電腦一時連不上，照常送，原因交給連線錯誤說） */
+  private refusesImages(): boolean {
+    const info = this.currentModel();
+    return !!info && !info.vision;
+  }
+
   /** 送出一則訊息並開始串流回答。照片只有模型看得懂圖時才能附 */
   async send(text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
     const s = this.state.session;
     if (!s || this.state.streaming) return;
     if (!s.hostUrl || !s.model) throw new Error(t('請先選一個模型'));
-    if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
+    if (images.length > 0 && this.refusesImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     const content = text.trim() || (images.length > 0 ? defaultImageQuestion() : '');
     if (!content) return;
     await this.declinePending(s.id);
@@ -1177,7 +1183,7 @@ export class ChatStore {
     const s = this.state.session;
     const target = this.state.messages.find((m) => m.id === userId && m.role === 'user' && !isThreadRoot(m));
     if (!s || !target || this.state.streaming) return;
-    if (images.length > 0 && !this.canAttachImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
+    if (images.length > 0 && this.refusesImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     if (!text.trim() && images.length === 0) return;
     const before = new Set((await repo.listMessages(s.id)).map((m) => m.id));
     const old = await repo.softDeleteFrom(s.id, target.seq);
