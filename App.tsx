@@ -6,8 +6,9 @@ import * as Haptics from 'expo-haptics';
 import { getLocales } from 'expo-localization';
 import * as SecureStore from 'expo-secure-store';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -63,6 +64,13 @@ function copyText(text: string) {
 export default function App() {
   const [store, setStore] = useState<ChatStore | null>(null);
   const [error, setError] = useState('');
+  const scheme = useColorScheme();
+
+  // 最底層的背景跟著深淺色（跟 C.bg 一樣：systemBackground）：打開面板時上方露出的那一條，
+  // 深色模式下才不會是白的（沒設的話是白底）
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(scheme === 'dark' ? '#000000' : '#ffffff');
+  }, [scheme]);
 
   useEffect(() => {
     (async () => {
