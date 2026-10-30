@@ -177,8 +177,10 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
           </Pressable>
         )}
       </View>
+      {/* 左右捲裡的字不能設 selectable：RN 0.88 會在字上加長按手勢，左右滑全被外層上下捲接走
+          （iPhone 實測：可選取 0/11 次滑得動、不可選取 4/4）。要複製用右上角的「複製」 */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <Text style={styles.codeText} selectable>
+        <Text style={styles.codeText}>
           {code}
         </Text>
       </ScrollView>
@@ -189,7 +191,8 @@ function CodeBlock({ code, lang, onCopy }: { code: string; lang: string; onCopy?
 function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
   const cell = (c: Tokens.TableCell, header: boolean, key: string) => (
     <View key={key} style={[styles.cell, header && styles.headerCell]}>
-      <Text style={[ctx.base, header && styles.strong, { textAlign: c.align ?? 'left' }]} selectable>
+      {/* 表格在左右捲裡：不設 selectable（原因同程式碼區塊）；要複製就長按訊息選「複製」 */}
+      <Text style={[ctx.base, header && styles.strong, { textAlign: c.align ?? 'left' }]}>
         {inline(c.tokens, ctx)}
       </Text>
     </View>

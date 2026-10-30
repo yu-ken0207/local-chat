@@ -56,3 +56,11 @@ describe('Markdown', () => {
     expect(screen.getByText('下一段')).toBeTruthy();
   });
 });
+
+test('左右捲的程式碼、表格不設「可以選取」（設了會讓左右滑被外層上下捲接走）；一般段落照舊可以選', async () => {
+  await render(<Markdown text={'一般段落\n\n```python\nprint(1)\n```\n\n| 欄 | 值 |\n|---|---|\n| a | b |'} />);
+  expect(screen.getByText('一般段落').props.selectable).toBe(true);
+  expect(screen.getByText('print(1)').props.selectable).toBeFalsy();
+  expect(screen.getByText('b').props.selectable).toBeFalsy();
+});
+
