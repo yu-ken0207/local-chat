@@ -242,6 +242,8 @@ function details(tool: PhoneTool | undefined, a: Action, input: ToolInput): stri
   return Object.entries(tool.fields)
     .filter(([key]) => input[key] !== undefined && input[key] !== '' && (!inBrief.has(key) || guessed.has(key)))
     .map(([key, label]) => {
+      // 短句裡已經有值（例如結束時間）：只標是猜的，不再寫一次
+      if (inBrief.has(key)) return t('{p0}（AI 猜的）', { p0: label });
       const value = clip(shown(tool, key, input[key], input.allDay === true));
       return guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: value }) : t('{p0}：{p1}', { p0: label, p1: value });
     })
