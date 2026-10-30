@@ -25,6 +25,8 @@ export const C = {
   accent: dynamic('#c96442', '#e0896b'),
   /** 強調色當實心底、上面放白字時用：深淺色都用 #c96442（深色模式的 #e0896b 配白字只有 2.6:1） */
   accentFill: '#c96442',
+  /** 反白提示框（底色是 label：淺色黑、深色白）上的強調色：兩邊都要夠清楚 */
+  accentOnInverse: dynamic('#e0896b', '#c96442'),
   /** 當文字用的橘、紅：Apple 高對比版本，小字也夠清楚（系統橘當字只有 2.2:1、系統紅 3.6:1） */
   warnText: dynamic('#C93400', '#FF9F0A'),
   errorText: dynamic('#D70015', '#FF6961'),

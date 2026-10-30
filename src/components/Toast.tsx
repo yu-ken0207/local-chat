@@ -60,5 +60,5 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
   },
   text: { ...TEXT.small, color: C.bg },
-  action: { ...TEXT.small, color: C.accent, fontWeight: '700' },
+  action: { ...TEXT.small, color: C.accentOnInverse, fontWeight: '700' },
 });

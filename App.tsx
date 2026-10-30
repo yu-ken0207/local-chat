@@ -92,5 +92,5 @@ export default function App() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 24 },
-  error: { ...TEXT.small, color: C.red },
+  error: { ...TEXT.small, color: C.errorText },
 });
