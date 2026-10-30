@@ -632,10 +632,11 @@ export function ChatScreen(p: ChatScreenProps) {
   const cardMotion = reduceMotion
     ? { opacity: threadAnim, transform: [{ translateY: threadDrag }] }
     : {
-        opacity: threadAnim.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 1, 1] }),
+        // 縮到很小才消失（使用者要「縮到更小再隱藏」）：最後一小段才變透明
+        opacity: threadAnim.interpolate({ inputRange: [0, 0.12, 1], outputRange: [0, 1, 1] }),
         transform: [
           { translateY: Animated.add(threadAnim.interpolate({ inputRange: [0, 1], outputRange: [from, 0] }), threadDrag) },
-          { scale: threadAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }) },
+          { scale: threadAnim.interpolate({ inputRange: [0, 1], outputRange: [0.08, 1] }) },
         ],
       };
   const threadLayer = (
@@ -856,10 +857,10 @@ export function HeaderButton({ name, text, label, onPress, disabled }: { name: S
 }
 
 /**
- * 討論串卡片的彈簧：不回彈（阻尼比 1），大約 0.35 秒到位（apple-design：一般介面用臨界阻尼）。
- * stiffness = (2π / 0.35)² ≈ 320、damping = 2√320 ≈ 36
+ * 討論串卡片的彈簧：不回彈（阻尼比 1），大約 0.28 秒到位（apple-design：一般介面用臨界阻尼；使用者要再快一點）。
+ * stiffness = (2π / 0.28)² ≈ 500、damping = 2√500 ≈ 45
  */
-const CARD_SPRING = { stiffness: 320, damping: 36, mass: 1, useNativeDriver: true } as const;
+const CARD_SPRING = { stiffness: 500, damping: 45, mass: 1, useNativeDriver: true } as const;
 
 /** 輸入框被鍵盤或輸入列擋住多少 pt（沒擋到是 0）：都是螢幕座標；輸入列上緣再留一點空 */
 export function coveredBy(fieldBottom: number, keyboardTop: number, composerAboveKeyboard: number, gap = 12): number {
