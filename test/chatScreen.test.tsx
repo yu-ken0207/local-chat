@@ -296,6 +296,8 @@ describe('對話', () => {
     net.hosts.get(A)!.titleReply = () => ({ lines: [{ message: { content: '' }, done: false }], hang: true });
     await send(store, '中午吃什麼');
     expect(screen.getByTestId('chat-title').props.children).toBe('中午吃什麼');
+    // 大字時標題列最多放大 1.3 倍，不會擠爆
+    expect(screen.getByTestId('chat-title').props.maxFontSizeMultiplier).toBe(1.3);
   });
 
   test('回答下的「模型 · 電腦」只在換了模型或電腦時才顯示', async () => {

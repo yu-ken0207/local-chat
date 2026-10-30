@@ -243,7 +243,7 @@ export function ChatScreen(p: ChatScreenProps) {
               disabled={!hasChat}
               accessibilityRole="button"
               accessibilityLabel={hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
-              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title">
+              <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
                 {title}
               </Text>
               {hasChat ? <SymbolView name="chevron.down" size={11} tintColor={C.secondary} /> : null}
@@ -475,6 +475,9 @@ function Banner({ text, tone, onClose, action }: { text: string; tone: 'info' | 
 }
 
 /** 標題列按鈕：圖示加文字，一看就知道是什麼 */
+/** 標題列的字最多放大到 1.3 倍：大字時標題列還放得下（訊息內容照樣跟著放大） */
+const HEADER_MAX_SCALE = 1.3;
+
 export function HeaderButton({ name, text, label, onPress, disabled }: { name: SFSymbol; text?: string; label: string; onPress: () => void; disabled?: boolean }) {
   return (
     <Pressable
@@ -486,7 +489,11 @@ export function HeaderButton({ name, text, label, onPress, disabled }: { name: S
       accessibilityState={{ disabled: !!disabled }}
       style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
       <SymbolView name={name} size={18} tintColor={disabled ? C.tertiary : C.accent} />
-      {text ? <Text style={[styles.headerButtonText, disabled && { color: C.tertiary }]}>{text}</Text> : null}
+      {text ? (
+        <Text style={[styles.headerButtonText, disabled && { color: C.tertiary }]} maxFontSizeMultiplier={HEADER_MAX_SCALE}>
+          {text}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -495,7 +502,8 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   flex: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingBottom: 8 },
-  headerSide: { width: 92, flexDirection: 'row' },
+  // 兩邊至少 92pt、內容長（英文、大字）時可以變寬，標題自己讓位截短，不會被按鈕蓋住
+  headerSide: { minWidth: 92, flexShrink: 0, flexDirection: 'row' },
   headerRight: { justifyContent: 'flex-end' },
   headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label, flexShrink: 1 },
   titleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
