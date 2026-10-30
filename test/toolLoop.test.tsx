@@ -368,6 +368,12 @@ describe('畫面', () => {
       await fireEvent(screen.getByLabelText('標題'), 'focus');
       await frame();
       expect(to).toHaveBeenCalledWith({ y: 112, animated: true });
+      // 在卡片欄位打字時「捲到最新」不出現（不然會蓋在欄位上）
+      await fireEvent(screen.getByTestId('transcript'), 'momentumScrollEnd', { nativeEvent: { contentOffset: { x: 0, y: 0 }, contentSize: { width: 390, height: 2000 }, layoutMeasurement: { width: 390, height: 600 } } });
+      expect(screen.queryByLabelText('捲到最新')).toBeNull();
+      // 換回輸入列打字就照常
+      await fireEvent(screen.getByLabelText('訊息輸入框'), 'focus');
+      expect(screen.getByLabelText('捲到最新')).toBeTruthy();
       // 在鍵盤上面：不捲
       to.mockClear();
       measure.mockImplementation((cb: (x: number, y: number, w: number, h: number) => void) => cb(16, 200, 300, 40));

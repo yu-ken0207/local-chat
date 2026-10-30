@@ -198,7 +198,14 @@ export function ChatScreen(p: ChatScreenProps) {
   // （keyboardLiftBehavior whenAtEnd），欄位會被鍵盤和輸入列擋住。鍵盤出來後量一下，擋住多少就往上捲多少
   const composerAboveKeyboard = useRef(0);
   composerAboveKeyboard.current = gestureOffset;
+  // 正在卡片欄位打字：「捲到最新」先不出現（捲上去露出欄位後會算成離開最底，按鈕會蓋在欄位上）
+  const [cardTyping, setCardTyping] = useState(false);
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidHide', () => setCardTyping(false));
+    return () => sub.remove();
+  }, []);
   const revealField = useCallback((field: CardField) => {
+    setCardTyping(true);
     let done = false;
     const reveal = () => {
       if (done) return;
@@ -479,7 +486,7 @@ export function ChatScreen(p: ChatScreenProps) {
               if (height > stickyHeight && nearBottom.current && !userScrolling.current) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
               setStickyHeight(height);
             }}>
-          {!following && state.messages.length > 0 ? (
+          {!following && !cardTyping && state.messages.length > 0 ? (
             <Pressable
               onPress={() => {
                 follow(true);
@@ -517,6 +524,7 @@ export function ChatScreen(p: ChatScreenProps) {
             thinkValue={session?.think ?? null}
             busy={!!state.streaming}
             bottomInset={bottomInset}
+            onInputFocus={() => setCardTyping(false)}
             onSend={async (text, photos) => {
               follow(true);
               // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）

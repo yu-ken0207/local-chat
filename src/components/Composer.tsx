@@ -22,6 +22,8 @@ type Props = {
   busy: boolean;
   bottomInset: number;
   onSend: (text: string, photos: NewPhoto[]) => Promise<void>;
+  /** 開始在輸入框打字 */
+  onInputFocus?: () => void;
   onStop: () => void;
   onOpenModels: () => void;
   onThink: (value: ThinkSetting) => void;
@@ -232,7 +234,10 @@ export function Composer(p: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            onFocus={() => (focused.current = true)}
+            onFocus={() => {
+              focused.current = true;
+              p.onInputFocus?.();
+            }}
             onBlur={() => (focused.current = false)}
             placeholder={p.modelLabel ? t('輸入訊息') : (p.notReadyHint ?? t('先在下方選一個模型'))}
             placeholderTextColor={C.placeholder}
