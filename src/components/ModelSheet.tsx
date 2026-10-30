@@ -18,6 +18,18 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
   const [viewing, setViewing] = useState<string | null>(state.session?.hostUrl ?? state.hosts[0]?.url ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  // 從這裡新增電腦：關掉連接面板後切到新加的那台（沒加就回到目前對話用的那台），不要停在舊電腦
+  const hostsBefore = useRef<string[]>([]);
+  const openConnect = () => {
+    hostsBefore.current = state.hosts.map((h) => h.url);
+    setConnectOpen(true);
+  };
+  const closeConnect = () => {
+    setConnectOpen(false);
+    const now = store.getState();
+    const added = now.hosts.find((h) => !hostsBefore.current.includes(h.url));
+    setViewing(added?.url ?? now.session?.hostUrl ?? viewing);
+  };
   const [downloadOpen, setDownloadOpen] = useState(false);
   /** 下載畫面關好之後要做的事（iOS 兩層畫面同時關會卡住，要等裡面那層關好） */
   const afterDownload = useRef<(() => void) | null>(null);
@@ -131,7 +143,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
               </Pressable>
             );
           })}
-          <Pressable onPress={() => setConnectOpen(true)} accessibilityRole="button" style={[styles.chip, styles.addChip]}>
+          <Pressable onPress={() => openConnect()} accessibilityRole="button" style={[styles.chip, styles.addChip]}>
             <SymbolView name="plus" size={12} tintColor={C.accent} />
             <Text style={[styles.chipText, { color: C.accent }]}>{state.hosts.length === 0 ? t('連接你的電腦') : t('新增電腦')}</Text>
           </Pressable>
@@ -158,7 +170,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
                   url={viewing}
                   message={models?.error}
                   onMoved={(url) => setViewing(url)}
-                  onHelp={() => setConnectOpen(true)}
+                  onHelp={() => openConnect()}
                 />
               ) : models && models.list.length === 0 && jobs.length === 0 ? (
                 <View style={styles.empty}>
@@ -268,8 +280,8 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
           />
         ) : null}
       </Modal>
-      <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnectOpen(false)}>
-        <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} showHelp={!!models?.error || status === 'offline'} />
+      <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={closeConnect}>
+        <ConnectSheet store={store} state={state} copyText={copyText} onClose={closeConnect} showHelp={!!models?.error || status === 'offline'} />
       </Modal>
     </View>
   );

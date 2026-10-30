@@ -168,6 +168,23 @@ describe('連接面板', () => {
     expect(await screen.findByRole('header', { name: '選擇模型' }, { timeout: 3000 })).toBeTruthy();
   });
 
+  test('從選模型面板新增電腦：配對回來後，面板切到新加的那台（不會停在舊電腦）', async () => {
+    const net = new FakeOllamaNet();
+    const OLD = 'http://192.168.1.20:11434';
+    net.addHost(OLD, { models: [{ name: 'llama3:latest' }] });
+    net.addHelper(H, { id: 'h1', name: '書房電腦', code: '123456' }, { models: [{ name: 'gemma4:12b', vision: true }] });
+    const { store } = await setup({ net });
+    await store.addHost('192.168.1.20');
+    await store.loadModels(OLD);
+    await store.selectModel(OLD, 'llama3:latest');
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByLabelText(/^模型：/));
+    await fireEvent.press(await screen.findByText(/新增電腦/));
+    await fireEvent.press(await screen.findByText('掃描 QR code'));
+    await fireEvent(await screen.findByTestId('qr-camera'), 'barcodeScanned', { data: payload('123456') });
+    await waitFor(() => expect(screen.getByLabelText('顯示 書房電腦 的模型').props.accessibilityState).toMatchObject({ selected: true }), { timeout: 3000 });
+  });
+
   test('掃到別的 QR code：留在掃描畫面，說明要掃哪一個', async () => {
     await openConnect();
     await fireEvent.press(await screen.findByText('掃描 QR code'));
