@@ -110,11 +110,15 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
+        {/* 說明緊跟著它在講的那一列：語言的說明以前排在「你的電腦」下面，看起來像在講電腦 */}
         <Section title={t('一般')}>
-          <Row icon="globe" label={t('語言')} value={languageName(prefs.language)} onPress={pickLanguage} />
-          <Row icon="desktopcomputer" label={t('你的電腦')} value={t('{p0} 台', { p0: state.hosts.length })} onPress={() => setConnectOpen(true)} last />
+          <Row icon="globe" label={t('語言')} value={languageName(prefs.language)} onPress={pickLanguage} last />
         </Section>
         <Text style={styles.footnote}>{t('AI 也會用這個語言回答。')}</Text>
+
+        <Section title={t('電腦')}>
+          <Row icon="desktopcomputer" label={t('你的電腦')} value={t('{p0} 台', { p0: state.hosts.length })} onPress={() => setConnectOpen(true)} last />
+        </Section>
 
         {groups.length > 0 ? (
           <>
@@ -124,20 +128,27 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
               ))}
               <Row icon="clock.arrow.circlepath" label={t('做過的事')} onPress={() => setDoneOpen(true)} last />
             </Section>
-            <Text style={styles.footnote}>{t('AI 改任何東西之前都會先問你，做完也可以復原。要用會叫工具的模型才有這些功能。')}</Text>
+            {/* 「會叫工具的模型」是術語：直接說目前的模型做不做得到 */}
+            <Text style={styles.footnote}>
+              {t('AI 改任何東西之前都會先問你，做完也可以復原。')}
+              {store.currentModel() ? (store.currentModel()!.tools ? t('目前的模型做得到這些事。') : t('目前的模型做不到這些事，要換一個做得到的模型。')) : ''}
+            </Text>
           </>
         ) : null}
 
         <Section title={t('資料')}>
           <Row icon="trash.slash" label={t('最近刪除')} value={info ? t('{p0} 段', { p0: info.trash }) : ''} onPress={onOpenTrash} accessibilityLabel={t('最近刪除，{p0} 段', { p0: info?.trash ?? 0 })} />
           <Row icon="square.and.arrow.up" label={t('備份所有對話')} onPress={backup} />
-          {pickBackup ? <Row icon="square.and.arrow.down" label={t('從備份還原')} onPress={restore} /> : null}
+          {pickBackup ? <Row icon="square.and.arrow.down" label={t('從備份還原')} onPress={restore} last /> : null}
+        </Section>
+        <Text style={styles.footnote}>{t('對話只存在這支手機。刪除的對話會在「最近刪除」保留 {n} 天。', { n: TRASH_DAYS })}</Text>
+
+        {/* 紅色的危險操作獨立一組，不跟備份、還原混在一起（iOS 設定的慣例） */}
+        <Section title={t('刪除')}>
           <Row icon="trash" label={t('刪除所有對話')} danger onPress={() => void store.deleteAllSessions()} />
           <Row icon="arrow.counterclockwise" label={t('清除全部資料')} danger onPress={resetAll} last />
         </Section>
-        <Text style={styles.footnote}>
-          {t('對話只存在這支手機。刪除的對話會在「最近刪除」保留 {n} 天。「清除全部資料」連電腦、設定一起刪，只有按下後幾秒內可以復原。', { n: TRASH_DAYS })}
-        </Text>
+        <Text style={styles.footnote}>{t('「清除全部資料」連電腦、設定一起刪，只有按下後幾秒內可以復原。')}</Text>
 
         <Section title={t('進階')}>
           <View style={styles.infoBox}>
