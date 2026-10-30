@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
@@ -50,33 +49,25 @@ function useScreenReader(): boolean {
   return on;
 }
 
-/** 長按訊息：先輕震一下（跟 iPhone 長按一樣的手感），再開選單 */
-function longPress(open: () => void) {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  open();
-}
-
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
   const screenReader = useScreenReader();
   const live = streaming?.messageId === m.id ? streaming : null;
   // 程式碼、表格的左右捲裡面要自己接手指（見 Markdown 的 HScroll），點一下、長按做的事跟整則訊息一樣。
   // 函式要固定同一個（Markdown 有 memo，每次換新函式整段都要重畫），內容從 ref 拿最新的
-  const latest = useRef({ m, live, onLongPress: h.onLongPress });
-  latest.current = { m, live, onLongPress: h.onLongPress };
+  const latest = useRef({ m, onLongPress: h.onLongPress });
+  latest.current = { m, onLongPress: h.onLongPress };
   const press = useMemo(
     () => ({
       onPress: () => Keyboard.dismiss(),
-      onLongPress: () => {
-        const { m, live, onLongPress } = latest.current;
-        if (!live) longPress(() => onLongPress?.(m));
-      },
+      // 長按：選單開不開、要不要輕震由外面決定（AI 回答中不開）
+      onLongPress: () => latest.current.onLongPress?.(latest.current.m),
     }),
     [],
   );
   if (m.role === 'user') {
     return (
-      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.userBlock}>
           <Text style={styles.userMark} {...decorative}>›</Text>
           <View style={styles.body}>
@@ -147,7 +138,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   return (
-    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
+    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]} {...decorative}>■</Text>
         <View style={styles.body}>

@@ -266,11 +266,30 @@ describe('選單', () => {
     await send(store, 'hi');
     const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
     const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    // 前面別的測試也會叫到輕震（例如下載），先清掉
+    const impact = jest.requireMock('expo-haptics').impactAsync;
+    impact.mockClear();
     await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
     const opts = sheet.mock.calls[0][0];
     expect(opts.options[opts.destructiveButtonIndex as number]).toBe('刪除');
-    // 長按時輕震一下
-    expect(jest.requireMock('expo-haptics').impactAsync).toHaveBeenCalled();
+    // 長按開選單時輕震一下
+    expect(impact).toHaveBeenCalledWith('medium');
+  });
+
+  test('AI 回答中長按訊息：不開選單、不震，說答完再試', async () => {
+    const { net, store } = await setup();
+    await send(store, 'hi');
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+    const impact = jest.requireMock('expo-haptics').impactAsync;
+    impact.mockClear();
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
+    expect(sheet).not.toHaveBeenCalled();
+    expect(impact).not.toHaveBeenCalled();
+    expect(await screen.findByText('AI 正在回答，答完再試一次。')).toBeTruthy();
+    store.stop();
   });
 });
 

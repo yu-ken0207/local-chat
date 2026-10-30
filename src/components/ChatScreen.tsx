@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
@@ -127,9 +128,13 @@ export function ChatScreen(p: ChatScreenProps) {
     void store.deleteMessage(m.id);
   }
 
-  /** 長按訊息的選單 */
+  /** 長按訊息的選單：真的要開才輕震一下（跟 iPhone 長按一樣的手感）；AI 回答中先不開，說一聲 */
   function messageMenu(m: Message) {
-    if (state.streaming) return;
+    if (state.streaming) {
+      showToast(t('AI 正在回答，答完再試一次。'));
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (m.role === 'user') {
       chooseOption(t('你的訊息'), [t('複製'), t('編輯並重送'), t('刪除')], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i](), 2);
     } else if (m.role === 'assistant') {

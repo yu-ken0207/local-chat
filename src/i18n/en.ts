@@ -8,6 +8,7 @@ export const en: Record<string, string> = {
   "花費時間：{p0}": "Time taken: {p0}",
   "用掉的上下文：{p0} tokens": "Context used: {p0} tokens",
   "詳細資訊": "Details",
+  "AI 正在回答，答完再試一次。": "The AI is still answering. Try again when it's done.",
   "你的訊息": "Your message",
   "複製": "Copy",
   "編輯並重送": "Edit and resend",
