@@ -50,7 +50,7 @@ const ZH_WEEKDAYS = ['週日', '週一', '週二', '週三', '週四', '週五',
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /**
- * 行程時間的白話：中文「11/4（週三）15:00–16:00」，英文「Wed 11/4 15:00–16:00」；整天的只寫日期。
+ * 行程時間的白話：中文「11/4（週三）15:00–16:00」，英文「Wed 11/4 15:00–16:00」；整天的寫「11/20（週五）整天」。
  * 跨天時結束也寫日期。
  */
 export function fmtEventTime(start: Date, end: Date | null, allDay: boolean, lang: 'zh-Hant' | 'en'): string {
@@ -64,7 +64,11 @@ export function fmtEventTime(start: Date, end: Date | null, allDay: boolean, lan
   const time = (d: Date) => `${p(d.getHours())}:${p(d.getMinutes())}`;
   // 中文的括號後面不空格；英文要空格
   const sep = lang === 'en' ? ' ' : '';
-  if (allDay) return end && end.toDateString() !== start.toDateString() ? `${day(start)}–${day(end)}` : day(start);
+  // 整天的行程明寫「整天」，不然只看到日期，看不出是整天還是忘了寫時間
+  if (allDay) {
+    const days = end && end.toDateString() !== start.toDateString() ? `${day(start)}–${day(end)}` : day(start);
+    return lang === 'en' ? `${days}, all day` : `${days}整天`; // i18n-ignore：跟著 lang 參數切換，不走 t()
+  }
   if (!end) return `${day(start)}${sep}${time(start)}`;
   const sameDay = end.toDateString() === start.toDateString();
   return `${day(start)}${sep}${time(start)}–${sameDay ? '' : day(end) + sep}${time(end)}`;

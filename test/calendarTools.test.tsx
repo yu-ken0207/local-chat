@@ -60,7 +60,8 @@ describe('時間的白話', () => {
   test('中文、英文、整天、跨天', () => {
     expect(fmtEventTime(at(2026, 11, 4, 15), at(2026, 11, 4, 16), false, 'zh-Hant')).toBe('11/4（週三）15:00–16:00');
     expect(fmtEventTime(at(2026, 11, 4, 15), at(2026, 11, 4, 16), false, 'en')).toBe('Wed 11/4 15:00–16:00');
-    expect(fmtEventTime(at(2026, 11, 20), null, true, 'zh-Hant')).toBe('11/20（週五）');
+    expect(fmtEventTime(at(2026, 11, 20), null, true, 'zh-Hant')).toBe('11/20（週五）整天');
+    expect(fmtEventTime(at(2026, 11, 20), null, true, 'en')).toBe('Fri 11/20, all day');
     expect(fmtEventTime(at(2026, 11, 4, 22), at(2026, 11, 5, 1), false, 'zh-Hant')).toBe('11/4（週三）22:00–11/5（週四）01:00');
   });
 });
