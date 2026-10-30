@@ -13,6 +13,7 @@ import type { Db } from '../store/db';
 import { TRASH_DAYS, type Action } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
+import { AgentsView } from './AgentsSheet';
 import { chooseOption } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { UndoToast } from './UndoToast';
@@ -39,11 +40,16 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
   const [info, setInfo] = useState<{ path: string | null; bytes: number; sessions: number; trash: number } | null>(null);
   const [connectOpen, setConnectOpen] = useState(false);
   const [doneOpen, setDoneOpen] = useState(false);
+  const [agentsOpen, setAgentsOpen] = useState(false);
   const groups = store.toolGroups();
 
   useEffect(() => {
     store.dataInfo().then(setInfo).catch(() => setInfo(null));
   }, [store, state.undo?.id, state.session?.id, state.messages.length]);
+
+  useEffect(() => {
+    void store.loadMyAgents();
+  }, [store]);
 
   function pickLanguage() {
     const keys = ['system', 'zh-Hant', 'en'] as const;
@@ -120,6 +126,11 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
           <Row icon="desktopcomputer" label={t('你的電腦')} value={t('{p0} 台', { p0: state.hosts.length })} onPress={() => setConnectOpen(true)} last />
         </Section>
 
+        <Section title={t('多 AI 討論')}>
+          <Row icon="person.3" label={t('Agent')} value={t('{p0} 個', { p0: state.myAgents.length })} onPress={() => setAgentsOpen(true)} last />
+        </Section>
+        <Text style={styles.footnote}>{t('在一段對話裡加好幾個 Agent，他們會自己搶話討論，你也是其中一員。')}</Text>
+
         {groups.length > 0 ? (
           <>
             <Section title={t('AI 可以做的事')}>
@@ -176,6 +187,9 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
       </Modal>
       <Modal visible={doneOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDoneOpen(false)}>
         <DoneActions store={store} onClose={() => setDoneOpen(false)} />
+      </Modal>
+      <Modal visible={agentsOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setAgentsOpen(false)}>
+        <AgentsView store={store} onClose={() => setAgentsOpen(false)} />
       </Modal>
     </View>
   );
