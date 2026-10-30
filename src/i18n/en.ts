@@ -408,6 +408,7 @@ export const en: Record<string, string> = {
   "確定": "OK",
   "等你確認：{p0}": "Waiting for you: {p0}",
   "{p0}：{p1}（AI 猜的）": "{p0}: {p1} (guessed by the AI)",
+  "{p0}：{p1}": "{p0}: {p1}",
   "要改成怎樣？（可以不填）": "What should be different? (optional)",
   "不要": "No",
   "修改": "Edit",

@@ -244,6 +244,30 @@ describe('接上 App', () => {
     expect(api.created[0].event.notes).toBeUndefined();
   });
 
+  test('清單卡（一次加好幾個）：每件下面寫出地點、備註和 AI 猜的欄位，太長的截掉', async () => {
+    const { host, store, api } = await setup();
+    let n = 0;
+    const calls = [
+      { id: 'c1', function: { name: 'create_event', arguments: { title: '戶外教學', start: '2026-11-20', allDay: true, notes: '報名請至 http://example.com/form\n截止 11/10，逾期不受理，請家長務必於期限內完成線上報名' } } },
+      { id: 'c2', function: { name: 'create_event', arguments: { title: '親師座談會', start: '2026-11-21T19:00', location: '三年二班教室' } } },
+    ];
+    host.reply = () => ({ lines: n++ === 0 ? [{ message: { role: 'assistant', content: '', tool_calls: calls }, done: false }, done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '幫我加進行事曆');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('行事曆：家庭（AI 猜的） · 備註：報名請至 http://example.com/form 截止 11/10，逾期…')).toBeTruthy();
+    expect(screen.getByText('結束：11/21（週六）20:00（AI 猜的） · 地點：三年二班教室 · 行事曆：家庭（AI 猜的）')).toBeTruthy();
+    // 讀螢幕唸完整那句，也唸這行
+    expect(screen.getByRole('checkbox', { name: /三年二班教室/ })).toBeTruthy();
+    // 改過的就不再標猜的
+    await fireEvent.press(screen.getAllByText('修改')[1]);
+    await fireEvent.changeText(screen.getByLabelText('地點'), '禮堂');
+    await fireEvent.press(screen.getByText('好'));
+    expect(screen.getByText('結束：11/21（週六）20:00（AI 猜的） · 地點：禮堂 · 行事曆：家庭（AI 猜的）')).toBeTruthy();
+    await fireEvent.press(screen.getByText('加入 2 個'));
+    await waitFor(() => expect(api.created).toHaveLength(2));
+  });
+
   test('提醒按修改、拿掉時間：設成沒有時間的提醒（不會用回 AI 原本的時間）', async () => {
     const { host, store, api } = await setup();
     let n = 0;

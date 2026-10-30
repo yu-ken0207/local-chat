@@ -125,6 +125,7 @@ export function ActionListCard({
         const tool = toolFor(a.tool);
         const input = { ...a.input, ...edits[a.id] };
         const on = !!checked[a.id];
+        const extra = details(tool, a, input);
         return (
           <View key={a.id} style={styles.item}>
             <View style={styles.itemRow}>
@@ -133,10 +134,13 @@ export function ActionListCard({
                 hitSlop={8}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: on }}
-                accessibilityLabel={tool?.describe?.(input) ?? tool?.label ?? a.tool}
+                accessibilityLabel={[tool?.describe?.(input) ?? tool?.label ?? a.tool, extra].filter(Boolean).join('\n')}
                 style={styles.itemMain}>
                 <Text style={[styles.check, on && { color: C.accent }]}>{on ? '☑' : '☐'}</Text>
-                <Text style={[styles.text, styles.flex, !on && styles.off]}>{tool?.brief?.(input) ?? tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
+                <View style={styles.flex}>
+                  <Text style={[styles.text, !on && styles.off]}>{tool?.brief?.(input) ?? tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
+                  {extra ? <Text style={[styles.small, styles.dim, !on && styles.off]}>{extra}</Text> : null}
+                </View>
               </Pressable>
               {/* 另一件改到一半時先按不了：直接換過去，前一件還沒按「好」的修改會不見 */}
               {tool?.fields && editing !== a.id ? <ActionButton text={t('修改')} disabled={editing !== null} onPress={() => setEditing(a.id)} /> : null}
@@ -199,6 +203,28 @@ export function ActionListCard({
 }
 
 const toText = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+
+/**
+ * 清單卡每件下面那行小字：一句話（brief）沒寫到的欄位、AI 猜的欄位都列出來，
+ * 要寫進去的每個值都看得到（例如照片上的字被寫進備註、App 補上的結束時間）。太長的截到 40 字
+ */
+function details(tool: PhoneTool | undefined, a: Action, input: ToolInput): string {
+  if (!tool?.fields) return '';
+  const inBrief = new Set(tool.briefKeys ?? []);
+  // 自己改過的就不算猜的
+  const guessed = new Set(a.guessed.filter((k) => input[k] === a.input[k]));
+  const clip = (s: string) => {
+    const line = s.replace(/\s+/g, ' ').trim();
+    return line.length > 40 ? `${line.slice(0, 40)}…` : line;
+  };
+  return Object.entries(tool.fields)
+    .filter(([key]) => input[key] !== undefined && input[key] !== '' && (!inBrief.has(key) || guessed.has(key)))
+    .map(([key, label]) => {
+      const value = clip(shown(tool, key, input[key], input.allDay === true));
+      return guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: value }) : t('{p0}：{p1}', { p0: label, p1: value });
+    })
+    .join(' · ');
+}
 
 /**
  * 確認卡上顯示的值：時間改成白話（11/4（週三）15:00），其他照原樣。

@@ -199,6 +199,7 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
       return checkWhen(str(input.start), ctx, 'start time');
     },
     brief: (input) => `${str(input.title)} · ${fmtEventTime(parseLocal(str(input.start)), input.end ? parseLocal(str(input.end)) : null, !!input.allDay, getLanguage())}`,
+    briefKeys: ['title', 'start', 'end'],
     describe: (input) => {
       const when = fmtEventTime(parseLocal(str(input.start)), input.end ? parseLocal(str(input.end)) : null, !!input.allDay, getLanguage());
       const text = input.calendar
@@ -252,6 +253,7 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
     },
     check: (input, ctx) => (input.due ? checkWhen(str(input.due), ctx, 'reminder time') : null),
     brief: (input) => (input.due ? `${str(input.title)} · ${fmtEventTime(parseLocal(str(input.due)), null, false, getLanguage())}` : str(input.title)),
+    briefKeys: ['title', 'due'],
     describe: (input) =>
       input.due
         ? t('{p0} 提醒你「{p1}」', { p0: fmtEventTime(parseLocal(str(input.due)), null, false, getLanguage()), p1: str(input.title) })
