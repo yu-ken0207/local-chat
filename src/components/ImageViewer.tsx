@@ -45,10 +45,11 @@ export function ImageViewer({ images, index, onClose }: { images: Attachment[] |
             </ScrollView>
           ))}
         </ScrollView>
+        {/* 深色半透明底配白字（跟「照片」App 一樣）：放大後背後是亮的照片時也看得到 */}
         <View style={[styles.top, { top: insets.top + 8 }]}>
-          <Text style={styles.counter}>{images.length > 1 ? `${page + 1} / ${images.length}` : ''}</Text>
-          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('關閉')}>
-            <SymbolView name="xmark.circle.fill" size={30} tintColor="rgba(255,255,255,0.85)" />
+          {images.length > 1 ? <Text style={styles.counter}>{`${page + 1} / ${images.length}`}</Text> : <View />}
+          <Pressable onPress={onClose} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('關閉')} style={({ pressed }) => [styles.close, pressed && styles.pressed]}>
+            <SymbolView name="xmark" size={14} weight="semibold" tintColor="#ffffff" />
           </Pressable>
         </View>
       </View>
@@ -59,5 +60,7 @@ export function ImageViewer({ images, index, onClose }: { images: Attachment[] |
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'black' },
   top: { position: 'absolute', left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  counter: { fontFamily: MONO, fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+  counter: { fontFamily: MONO, fontSize: 13, color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 11, overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 3 },
+  close: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },
+  pressed: { opacity: 0.6 },
 });
