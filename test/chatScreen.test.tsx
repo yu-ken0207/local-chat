@@ -294,6 +294,29 @@ describe('鍵盤與捲動', () => {
     store.stop();
   });
 
+  test('輸入列變高（多打幾行、出現提示、附照片）：在最底時補捲，捲上去看舊訊息時不動', async () => {
+    const { store } = await setup();
+    await send(store, 'hi');
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    const area = screen.getByTestId('composer-area');
+    const layout = (height: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: 390, height } } });
+    await fireEvent(area, 'layout', layout(60));
+    await act(async () => await new Promise((r) => requestAnimationFrame(r)));
+    toEnd.mockClear();
+    await fireEvent(area, 'layout', layout(81));
+    await act(async () => await new Promise((r) => requestAnimationFrame(r)));
+    expect(toEnd).toHaveBeenCalledWith({ animated: false });
+    // 變矮不用捲；捲上去看舊訊息時變高也不動
+    toEnd.mockClear();
+    await fireEvent(area, 'layout', layout(60));
+    const list = screen.getByTestId('transcript');
+    await fireEvent(list, 'scrollBeginDrag', scrollAt(200));
+    await fireEvent(list, 'scrollEndDrag', scrollAt(200));
+    await fireEvent(area, 'layout', layout(81));
+    await act(async () => await new Promise((r) => requestAnimationFrame(r)));
+    expect(toEnd).not.toHaveBeenCalled();
+  });
+
   test('程式自己跟著捲的時候不會冒出「捲到最新」', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });

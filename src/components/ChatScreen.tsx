@@ -350,7 +350,15 @@ export function ChatScreen(p: ChatScreenProps) {
           </KeyboardChatScrollView>
 
           {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
-          <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }} onLayout={(e) => setStickyHeight(e.nativeEvent.layout.height)}>
+          <KeyboardStickyView
+            testID="composer-area"
+            offset={{ closed: 0, opened: keyboardOffset }}
+            onLayout={(e) => {
+              const height = e.nativeEvent.layout.height;
+              // 輸入框長高、出現提示、附了照片：訊息區變矮，最下面幾行會被蓋住；跟著最新時補捲（不加動畫，跟輸入列同一格動）
+              if (height > stickyHeight && nearBottom.current && !userScrolling.current) requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
+              setStickyHeight(height);
+            }}>
           {!following && state.messages.length > 0 ? (
             <Pressable
               onPress={() => {
