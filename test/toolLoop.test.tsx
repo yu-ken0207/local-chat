@@ -154,7 +154,7 @@ describe('回答中換對話、按停止', () => {
     return gate;
   }
 
-  test('工具還在跑時換到別段對話：不接著回答，也不會把回答存進那段', async () => {
+  test('工具還在跑時換到別段對話：不接著回答，也不會把回答存進那段；那段留「已停止」可以重新回答', async () => {
     const { net, host, store, cal, repo } = await setup();
     script(host, [() => [text('第一段好了'), done]]);
     await store.send('第一段');
@@ -171,7 +171,17 @@ describe('回答中換對話、按停止', () => {
     expect(net.chatBodies()).toHaveLength(2);
     expect(store.getState().session?.id).toBe(first);
     expect(store.getState().messages.map((m) => m.content)).toEqual(['第一段', '第一段好了']);
-    expect((await repo.listMessages(second)).map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
+    expect((await repo.listMessages(second)).map((m) => [m.role, m.role === 'note' ? m.content : ''])).toEqual([
+      ['user', ''],
+      ['assistant', ''],
+      ['tool', ''],
+      ['note', '已停止'],
+    ]);
+    // 回去那段按「重新回答」：接著問模型
+    script(host, [() => [text('下週三有晨會'), done]]);
+    await store.openSession(second);
+    await store.retry();
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'assistant', content: '下週三有晨會' });
   });
 
   test('工具還在跑時按停止：不再接著問模型，寫一行「已停止」', async () => {

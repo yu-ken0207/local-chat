@@ -1310,13 +1310,18 @@ export class ChatStore {
       this.set({ ...(this.state.streaming?.messageId === placeholder.id ? { streaming: null } : {}), ...(here() ? { messages: latest } : {}) });
       void this.refreshLoaded(url);
     }
-    // 換到別段對話：不再接著做（不然會用那段的內容回答、存進那段）
-    if (!here()) return;
+    // 換到別段對話：不再接著做（不然會用那段的內容回答、存進那段）。
+    // 本來要接著問模型（工具剛做完、電腦換了位址要自動再問）的，在那段留一行「已停止」，回去時可以「重新回答」
+    if (!here()) {
+      if (next === 'continue' || retryMoved) await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
+      return;
+    }
     // 工具做完之前按了停止：不再接著問模型
     if (signal.aborted && !unreachable) {
       if (next === 'continue') {
         await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
-        this.set({ messages: await repo.listMessages(s.id) });
+        const msgs = await repo.listMessages(s.id);
+        if (here()) this.set({ messages: msgs });
         this.deps.onEvent?.('stopped');
       }
       return;
@@ -1446,7 +1451,8 @@ export class ChatStore {
     if (this.state.messages.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
     if (this.toolRounds() >= MAX_TOOL_ROUNDS) {
       await this.deps.repo.addMessage(s.id, { role: 'note', content: t('做到一半停下來了：AI 叫了太多次工具。已經做的事在上面，可以復原。') });
-      this.set({ messages: await this.deps.repo.listMessages(s.id) });
+      const msgs = await this.deps.repo.listMessages(s.id);
+      if (this.state.session?.id === s.id) this.set({ messages: msgs });
       return;
     }
     await this.answer();
