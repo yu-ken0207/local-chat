@@ -505,4 +505,6 @@ export const en: Record<string, string> = {
   "生活與健康": "Life & Health",
   "情感與心靈": "Emotions & Spirit",
   "娛樂與遊戲": "Fun & Games",
+  "{p0} 加入了討論": "{p0} joined the discussion",
+  "AI 沒有生成角色，換個說法再試一次。": "The AI didn't create a character. Try describing it another way.",
 };

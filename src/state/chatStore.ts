@@ -4,10 +4,34 @@ import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
-import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
-import { RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Attachment, type Host, type Message, type Repo, type Session } from '../store/repo';
+import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
+import { PromptStore, entryIntro, entryName, getEntry } from '../agents/catalog';
+import {
+  AGENT_DRAFT_SCHEMA,
+  agentDraftMessages,
+  BID_SCHEMA,
+  HOST_SCHEMA,
+  bidMessages,
+  cardPrompt,
+  chooseSpeaker,
+  cleanReply,
+  estimateTokens,
+  findMentions,
+  hostMessages,
+  idByName,
+  nextInRound,
+  parseBid,
+  speakMessages,
+  summaryMessages,
+  toLines,
+  wantsConclusion,
+  type Bid,
+  type Line,
+  type Speaker,
+} from '../agents/discussion';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
 
@@ -26,7 +50,15 @@ export type Streaming = {
   phase: 'waiting' | 'thinking' | 'answering';
   /** 模型還沒載入，電腦要先把它載入記憶體（第一次用要等比較久）；還不知道是 undefined */
   loading?: boolean;
+  /** 多 AI 討論：正在講的 Agent */
+  agentId?: string;
 };
+
+/** 多 AI 討論進行到哪：大家在舉手、主持人在點名、某人在講、在整理前情摘要、在收尾 */
+export type DiscussionPhase = { phase: 'bidding' | 'hosting' | 'speaking' | 'summarizing' | 'concluding'; agentId: string | null };
+
+/** 一則訊息的 detail：角色說明太長，這次截短了（畫面上註明） */
+export const ROLE_TRUNCATED = 'role-truncated';
 
 /** 連不到電腦的原因（白話說明在 diagnosisText） */
 export type Diagnosis =
@@ -137,9 +169,48 @@ export type ChatState = {
   running: Record<string, string | null>;
   /** 在背景答完、還沒打開看過的討論串 */
   fresh: string[];
+  /** 目前這段對話的成員（有成員就是多 AI 討論） */
+  members: Member[];
+  /** 目前這段對話用到的 Agent（成員，加上說過話但已經離開的） */
+  agents: Record<string, Agent>;
+  /** 目前這段對話的討論進行到哪（沒在討論是 null） */
+  discussion: DiscussionPhase | null;
+  /** AI 覺得可以收尾的對話（畫面出現「要收尾嗎？」） */
+  suggestConclude: string[];
+  /** 「我的 Agent」（設定頁、加成員用；打開時才讀） */
+  myAgents: Agent[];
 };
 
+/** 一句話生成、還沒存的角色卡 */
+export type AgentDraft = Pick<Agent, 'name' | 'intro' | 'emoji' | 'talk'> & { card: AgentCard };
+
 type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
+
+/** 一段對話正在跑的回答或討論 */
+type Run = {
+  abort: AbortController;
+  /** 正在串流的那一則（討論在舉手時沒有） */
+  streaming: Streaming | null;
+  parentId: string | null;
+  /** 多 AI 討論：進行到哪、你在中途插話了 */
+  phase?: DiscussionPhase | null;
+  interject?: boolean;
+};
+
+/** 討論為什麼停下來：沒人想講、到連續上限、按了暫停、出錯 */
+type StopReason = 'quiet' | 'cap' | 'stopped' | 'error';
+
+/** 舉手、主持人、摘要這種小呼叫：思考關掉（或用最低等級），才快 */
+function quickThink(info: ModelInfo | undefined): ThinkSetting | undefined {
+  if (!info?.think) return undefined;
+  if (info.think.kind === 'always') return true;
+  return info.think.kind === 'toggle' ? false : info.think.levels[0];
+}
+
+/** 模型還沒載入、查不到實際上下文時，當作只有這麼多（Ollama 預設常是 4096） */
+const ASSUMED_CONTEXT = 4096;
+/** 討論中一次最多幾個「我的 Agent」舉手要不要自己加入 */
+const MAX_OUTSIDERS = 6;
 
 export type AppLanguage = 'zh-Hant' | 'en';
 /** 使用者在設定裡可以改的偏好 */
@@ -183,6 +254,8 @@ export type ChatDeps = {
   tools?: PhoneTool[];
   /** 手機的時區（告訴模型現在幾點用） */
   timeZone?: () => string;
+  /** 圖鑑 Agent 的角色原文（沒給就只用名字與介紹，測試用） */
+  prompts?: PromptStore;
   onEvent?: (event: ChatEvent) => void;
 };
 
@@ -274,6 +347,11 @@ export class ChatStore {
     threads: {},
     running: {},
     fresh: [],
+    members: [],
+    agents: {},
+    discussion: null,
+    suggestConclude: [],
+    myAgents: [],
   };
   private pendingUndo: PendingUndo | null = null;
   private undoCounter = 0;
@@ -282,6 +360,8 @@ export class ChatStore {
   titleTask: Promise<void> | null = null;
   /** 開 App 時的檢查主機＋自動掃描（測試用來等它完成） */
   startupTask: Promise<void> | null = null;
+  /** 換對話後讀成員（測試用來等它完成） */
+  groupTask: Promise<void> | null = null;
   private scanAbort: AbortController | null = null;
   /** 正在問下載進度的電腦 */
   private polling = new Set<string>();
@@ -294,9 +374,12 @@ export class ChatStore {
   private readonly now: () => number;
   private readonly throttleMs: number;
 
+  private readonly prompts: PromptStore;
+
   constructor(private readonly deps: ChatDeps) {
     this.now = deps.now ?? Date.now;
     this.throttleMs = deps.throttleMs ?? 50;
+    this.prompts = deps.prompts ?? new PromptStore(async () => ({}));
   }
 
   // ---- 訂閱 ----
@@ -309,8 +392,15 @@ export class ChatStore {
   };
 
   private set(patch: Partial<ChatState>) {
+    const before = this.state.session?.id;
     this.state = { ...this.state, ...patch };
     this.listeners.forEach((l) => l());
+    // 換了一段對話：成員、討論進度跟著換
+    if ('session' in patch && patch.session?.id !== before) {
+      const run = patch.session ? this.runs.get(patch.session.id) : undefined;
+      this.set({ discussion: run?.phase ?? null, members: [], agents: {} });
+      this.groupTask = this.refreshGroup();
+    }
   }
 
   // ---- 偏好設定 ----
@@ -1138,16 +1228,27 @@ export class ChatStore {
 
   /** 送出一則訊息並開始串流回答。照片只有模型看得懂圖時才能附 */
   async send(text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
+    const { repo } = this.deps;
     const s = this.state.session;
-    if (!s || this.state.streaming) return;
+    if (!s) return;
+    // 多 AI 討論：大家在講的時候也可以插話
+    const group = (await repo.listMembers(s.id)).length > 0;
+    if (!group && this.state.streaming) return;
     if (!s.hostUrl || !s.model) throw new Error(t('請先選一個模型'));
     if (images.length > 0 && this.refusesImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     const content = text.trim() || (images.length > 0 ? defaultImageQuestion() : '');
     if (!content) return;
     await this.declinePending(s.id);
-    await this.deps.repo.addMessage(s.id, { role: 'user', content, attachments: images });
-    this.set({ messages: await this.deps.repo.listMessages(s.id), notice: '' });
-    await this.answer();
+    await repo.addMessage(s.id, { role: 'user', content, attachments: images });
+    this.set({ messages: await repo.listMessages(s.id), notice: '', suggestConclude: this.state.suggestConclude.filter((x) => x !== s.id) });
+    if (!group) return this.answer();
+    await this.joinMentioned(s.id, content);
+    const run = this.runs.get(s.id);
+    if (run) {
+      run.interject = true;
+      return;
+    }
+    await this.discuss(s.id, { mustReply: true });
   }
 
   /**
@@ -1158,7 +1259,7 @@ export class ChatStore {
     const { repo } = this.deps;
     const s = this.state.session;
     const target = this.state.messages.find((m) => m.id === assistantId && m.role === 'assistant' && !isThreadRoot(m));
-    if (!s || !target || this.state.streaming) return;
+    if (!s || !target || this.state.streaming || this.runs.has(s.id)) return;
     if (override) await this.selectModel(override.hostUrl, override.model);
     // 舊回答收成版本（可以用 ‹ › 切回來）；它後面的訊息先藏起來
     const later = await repo.softDeleteFrom(s.id, target.seq + 1);
@@ -1174,6 +1275,8 @@ export class ChatStore {
         if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
       });
     }
+    // 多 AI 討論裡某個 Agent 說的：請同一個人再講一次
+    if (target.agentId) return this.discuss(s.id, { only: { agentId: target.agentId, replyTo: target.replyTo, altGroup: group } });
     await this.answer({ altGroup: group });
   }
 
@@ -1221,10 +1324,14 @@ export class ChatStore {
     if (!msgs.some((m) => m.role === 'user')) return;
     // 還有卡片等你按：先不問模型（跟 continueAfterTools 一樣）
     if (msgs.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
+    if (this.runs.has(s.id)) return;
     await repo.deleteMessage(last.id);
     const before = msgs.at(-2);
-    if (last.role === 'note' && before?.role === 'assistant') await repo.deleteMessage(before.id);
+    const group = (await repo.listMembers(s.id)).length > 0;
+    // 多 AI 討論：停下來的那一則留著（是某個人說了一半），接著討論
+    if (last.role === 'note' && before?.role === 'assistant' && !group) await repo.deleteMessage(before.id);
     this.set({ messages: await repo.listMessages(s.id), notice: '' });
+    if (group) return this.discuss(s.id, { mustReply: true });
     await this.answer();
   }
 
@@ -1249,7 +1356,7 @@ export class ChatStore {
   }
 
   /** 每段對話正在跑的回答（同一段同時只有一個）；畫面用的 state.streaming 是目前這段的那一個 */
-  private runs = new Map<string, { abort: AbortController; streaming: Streaming; parentId: string | null }>();
+  private runs = new Map<string, Run>();
 
   /** 把正在跑的回答整理到畫面：哪幾段在回答、目前這段的串流 */
   private publishRuns(): void {
@@ -1443,6 +1550,551 @@ export class ChatStore {
     if (retryMoved) await this.answer({ ...options, retried: true, sessionId: s.id });
     // 工具都做完了（不用等使用者）：把結果交回模型，接著回答
     else if (next === 'continue') await this.continueAfterTools(s.id);
+  }
+
+  // ---- Agent（設定頁） ----
+
+  /** 讀「我的 Agent」 */
+  async loadMyAgents(): Promise<Agent[]> {
+    const list = await this.deps.repo.listMyAgents();
+    this.set({ myAgents: list });
+    return list;
+  }
+
+  /** 一句話生成角色卡（用目前對話的模型）；avoid 是上一個生成的名字（「再生一個」不要一樣） */
+  async generateAgent(idea: string, avoid?: string): Promise<AgentDraft> {
+    const s = this.state.session;
+    const m = s ? this.modelFor(null, s) : null;
+    if (!m) throw new Error(t('請先選一個模型'));
+    const text = await this.collect(m.url, m.model, agentDraftMessages(idea, avoid), {
+      think: quickThink(m.info),
+      format: AGENT_DRAFT_SCHEMA,
+      options: { temperature: avoid ? 0.9 : 0.6, num_predict: 600 },
+    });
+    let v: any = {};
+    try {
+      v = JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+    } catch {
+      // 不是 JSON：下面檢查
+    }
+    const str = (x: unknown) => (typeof x === 'string' ? x.trim() : '');
+    if (!str(v.name)) throw new Error(t('AI 沒有生成角色，換個說法再試一次。'));
+    return {
+      name: str(v.name).slice(0, 30),
+      intro: str(v.intro),
+      emoji: str(v.emoji) || '🙂',
+      talk: Math.max(0, Math.min(1, Number(v.talk) || 0.5)),
+      card: { expertise: str(v.expertise), stance: str(v.stance), style: str(v.style), blindSpot: str(v.blindSpot) },
+    };
+  }
+
+  /** 存自己建的 Agent（新的或改過的），放進「我的 Agent」 */
+  async saveAgent(draft: Partial<Omit<Agent, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>> & { name: string }, id?: string): Promise<Agent> {
+    const { repo } = this.deps;
+    let a: Agent;
+    if (id) {
+      await repo.updateAgent(id, { ...draft, mine: true });
+      a = (await repo.getAgent(id))!;
+    } else {
+      a = await repo.createAgent({ ...draft, mine: true });
+    }
+    await this.loadMyAgents();
+    if (this.state.agents[a.id] || this.state.members.some((m) => m.agent.id === a.id)) await this.refreshGroup();
+    return a;
+  }
+
+  /** 圖鑑的 Agent 加到「我的 Agent」（用過的沿用同一份，筆記接得上） */
+  async addCatalogToMine(catalogId: string): Promise<Agent | null> {
+    const e = getEntry(catalogId);
+    if (!e) return null;
+    const a = await this.deps.repo.agentFromCatalog(catalogId, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    await this.deps.repo.updateAgent(a.id, { mine: true });
+    await this.loadMyAgents();
+    return (await this.deps.repo.getAgent(a.id))!;
+  }
+
+  /** 刪掉 Agent（說過的話照樣看得到名字），幾秒內可以復原 */
+  async deleteAgent(id: string): Promise<void> {
+    const { repo } = this.deps;
+    const a = await repo.getAgent(id);
+    if (!a) return;
+    await repo.deleteAgent(id);
+    await this.loadMyAgents();
+    await this.offerUndo(t('已刪除「{p0}」', { p0: a.name }), async () => {
+      await repo.restoreAgent(id, a.mine);
+      await this.loadMyAgents();
+    });
+  }
+
+  /** 圖鑑某個 Agent 的角色原文（跟著 App 語言） */
+  catalogPrompt(catalogId: string): Promise<string> {
+    return this.prompts.get(catalogId);
+  }
+
+  /** Agent 實際用的角色說明（改過的原文、圖鑑原文或角色卡） */
+  agentRole(a: Agent): Promise<string> {
+    return this.roleFor(a);
+  }
+
+  listNotes(agentId: string): Promise<AgentNote[]> {
+    return this.deps.repo.listNotes(agentId);
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    await this.deps.repo.deleteNote(id);
+  }
+
+  async clearNotes(agentId: string): Promise<void> {
+    await this.deps.repo.clearNotes(agentId);
+  }
+
+  // ---- 多 AI 討論 ----
+
+  /** 把某個 Agent 加進目前這段對話 */
+  async addMember(agentId: string): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.deps.repo.addMember(s.id, agentId, 'user');
+    await this.refreshGroup();
+  }
+
+  /** 從圖鑑直接加進目前這段對話（沒有先加到「我的 Agent」） */
+  async addCatalogMember(catalogId: string, fields: Pick<Agent, 'name' | 'intro' | 'emoji'>): Promise<void> {
+    const a = await this.deps.repo.agentFromCatalog(catalogId, fields);
+    await this.addMember(a.id);
+  }
+
+  async removeMember(agentId: string): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.deps.repo.removeMember(s.id, agentId);
+    await this.refreshGroup();
+  }
+
+  /** 改目前這段對話的群組設定（發言方式、讓 AI 自己加入、連續上限、全自動） */
+  async setGroupSettings(patch: Partial<GroupSettings>): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    const group = { ...DEFAULT_GROUP, ...s.group, ...patch };
+    await this.deps.repo.updateSession(s.id, { group });
+    this.set({ session: { ...s, group } });
+  }
+
+  /** 沒人想講停下來之後，讓 AI 接著聊（你不用說話） */
+  async continueDiscussion(): Promise<void> {
+    const s = this.state.session;
+    if (!s || this.runs.has(s.id)) return;
+    this.set({ suggestConclude: this.state.suggestConclude.filter((x) => x !== s.id) });
+    await this.discuss(s.id, { mustReply: true });
+  }
+
+  /** 長按某個 Agent 的話「請他展開講」：他完整說明那一則，不限長度 */
+  async expandMessage(messageId: string): Promise<void> {
+    const s = this.state.session;
+    const m = this.state.messages.find((x) => x.id === messageId);
+    if (!s || !m?.agentId || this.runs.has(s.id)) return;
+    await this.discuss(s.id, { only: { agentId: m.agentId, replyTo: m.id, expand: true } });
+  }
+
+  /** 不收尾（關掉「要收尾嗎？」） */
+  dismissConclude(): void {
+    const s = this.state.session;
+    if (s) this.set({ suggestConclude: this.state.suggestConclude.filter((x) => x !== s.id) });
+  }
+
+  /** 目前這段對話的成員、訊息上要顯示的 Agent */
+  private async refreshGroup(): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    if (!s) return;
+    const members = await repo.listMembers(s.id);
+    const msgs = this.state.messages.length ? this.state.messages : await repo.listMessages(s.id);
+    const ids = new Set<string>([...members.map((m) => m.agent.id), ...msgs.flatMap((m) => (m.agentId ? [m.agentId] : []))]);
+    const agents: Record<string, Agent> = {};
+    for (const a of await repo.agentsByIds([...ids])) agents[a.id] = a;
+    if (this.state.session?.id !== s.id) return;
+    this.set({ members, agents });
+  }
+
+  /** 對話裡用的那一份 Agent（從圖鑑來的沿用同一份，筆記才接得上） */
+  private toSpeaker = (m: Member | Agent, position = 0): Speaker => {
+    const a = 'agent' in m ? m.agent : m;
+    return { id: a.id, name: a.name, intro: a.intro, talk: a.talk, position: 'agent' in m ? m.position : position };
+  };
+
+  /** Agent 的角色說明：改過的原文、圖鑑原文、角色卡，依序找 */
+  private async roleFor(a: Agent): Promise<string> {
+    if (a.prompt) return a.prompt;
+    if (a.catalogId) {
+      try {
+        const p = await this.prompts.get(a.catalogId);
+        if (p) return p;
+      } catch {
+        // 讀不到原文就用角色卡
+      }
+    }
+    return cardPrompt(a.name, a.intro, a.card);
+  }
+
+  /** Agent 用哪台電腦、哪個模型（沒指定就跟著對話） */
+  private modelFor(a: Agent | null, s: Session): { url: string; model: string; info: ModelInfo | undefined } | null {
+    const url = a?.hostUrl ?? s.hostUrl;
+    const model = a?.model ?? s.model;
+    if (!url || !model) return null;
+    return { url, model, info: this.state.models[url]?.list.find((m) => m.name === model) };
+  }
+
+  /** 模型實際能放的上下文：載入了就照實際的，還沒載入就保守估 */
+  private async runtimeContext(url: string, model: string): Promise<number> {
+    const limit = await this.contextLimit(url, model);
+    const loaded = this.state.loaded[url]?.find((m) => m.name === model)?.contextLength;
+    return loaded ?? Math.min(limit ?? ASSUMED_CONTEXT, ASSUMED_CONTEXT);
+  }
+
+  /** 不串流到畫面的小呼叫：把回答收成一段文字 */
+  private async collect(url: string, model: string, messages: ChatMessage[], opts: { think?: ThinkSetting; format?: unknown; options?: Record<string, unknown>; signal?: AbortSignal }): Promise<string> {
+    let text = '';
+    await this.clientFor(url).chat({ model, messages, think: opts.think, format: opts.format, options: opts.options }, (d) => (text += d.content ?? ''), opts.signal);
+    return text;
+  }
+
+  private setPhase(sessionId: string, run: Run, phase: DiscussionPhase | null): void {
+    run.phase = phase;
+    if (this.state.session?.id === sessionId) this.set({ discussion: phase });
+  }
+
+  /** 訊息裡 @ 了「我的 Agent」但還不是成員的：拉進來 */
+  private async joinMentioned(sessionId: string, text: string): Promise<void> {
+    const { repo } = this.deps;
+    if (!text.includes('@')) return;
+    const members = new Set((await repo.listMembers(sessionId)).map((m) => m.agent.id));
+    const mine = (await repo.listMyAgents()).filter((a) => !members.has(a.id));
+    for (const id of findMentions(text, mine)) await this.joinAgent(sessionId, mine.find((a) => a.id === id)!, 'mention');
+  }
+
+  /** 加進討論，畫面上記一行「某某加入了討論」 */
+  private async joinAgent(sessionId: string, a: Agent, by: 'auto' | 'mention'): Promise<void> {
+    const { repo } = this.deps;
+    await repo.addMember(sessionId, a.id, by);
+    await repo.addMessage(sessionId, { role: 'note', content: t('{p0} 加入了討論', { p0: a.name }), detail: RECORD_NOTE });
+    if (this.state.session?.id === sessionId) {
+      this.set({ messages: await repo.listMessages(sessionId) });
+      await this.refreshGroup();
+    }
+  }
+
+  /** 有成員的對話：大家輪流講到沒人想講、到連續上限、你按暫停為止 */
+  private async discuss(
+    sessionId: string,
+    opts: { mustReply?: boolean; only?: { agentId: string; replyTo: string | null; expand?: boolean; altGroup?: string } } = {}
+  ): Promise<void> {
+    const { repo } = this.deps;
+    if (this.runs.has(sessionId)) return;
+    const first = await repo.getSession(sessionId);
+    if (!first) return;
+    const abort = new AbortController();
+    const run: Run = { abort, streaming: null, parentId: first.parentId, phase: null };
+    this.runs.set(sessionId, run);
+    this.publishRuns();
+    let mustReply = !!opts.mustReply;
+    let streak = 0;
+    let suggest = false;
+    let reason: StopReason = 'quiet';
+    try {
+      for (;;) {
+        if (abort.signal.aborted) {
+          reason = 'stopped';
+          break;
+        }
+        const s = await repo.getSession(sessionId);
+        const members = await repo.listMembers(sessionId);
+        if (!s || members.length === 0) break;
+        const group = s.group ?? DEFAULT_GROUP;
+        // 你在中途插話：重新算連續幾則，一定有人回你
+        if (run.interject) {
+          run.interject = false;
+          mustReply = true;
+          streak = 0;
+        }
+        if (opts.only) {
+          if (streak > 0) break;
+        } else if (!mustReply && streak >= group.maxStreak) {
+          reason = 'cap';
+          break;
+        }
+        const msgs = await repo.listMessages(sessionId);
+        const names = new Map(members.map((m) => [m.agent.id, m.agent.name]));
+        for (const id of msgs.flatMap((m) => (m.agentId && !names.has(m.agentId) ? [m.agentId] : []))) names.set(id, this.state.agents[id]?.name ?? (await repo.getAgent(id))?.name ?? 'AI');
+        const lines = toLines(msgs, names);
+        const pick = opts.only
+          ? { id: opts.only.agentId, replyTo: opts.only.replyTo, outsider: null as Agent | null }
+          : await this.pickSpeaker(s, group, members, lines, mustReply, streak, run, (v) => (suggest = v));
+        if (abort.signal.aborted) {
+          reason = 'stopped';
+          break;
+        }
+        if (pick === 'error') {
+          reason = 'error';
+          break;
+        }
+        if (!pick) break;
+        if (pick.outsider) await this.joinAgent(sessionId, pick.outsider, 'auto');
+        const speaker = members.find((m) => m.agent.id === pick.id)?.agent ?? pick.outsider ?? (await repo.getAgent(pick.id));
+        if (!speaker) break;
+        const ok = await this.speak(sessionId, speaker, pick.replyTo, run, { expand: opts.only?.expand, altGroup: opts.only?.altGroup });
+        if (!ok) {
+          reason = abort.signal.aborted ? 'stopped' : 'error';
+          break;
+        }
+        streak++;
+        mustReply = false;
+      }
+    } finally {
+      this.setPhase(sessionId, run, null);
+      if (this.runs.get(sessionId) === run) this.runs.delete(sessionId);
+      this.publishRuns();
+      if (this.state.session?.id === sessionId) {
+        this.set({ messages: await repo.listMessages(sessionId) });
+        await this.refreshGroup();
+      }
+      if (first.parentId && this.state.session?.id !== sessionId && !this.state.fresh.includes(sessionId)) this.set({ fresh: [...this.state.fresh, sessionId] });
+    }
+    // 自然停下來（沒人想講、到上限）：AI 覺得差不多了就提議收尾
+    if ((reason === 'quiet' || reason === 'cap') && !opts.only && suggest && !this.state.suggestConclude.includes(sessionId)) {
+      this.set({ suggestConclude: [...this.state.suggestConclude, sessionId] });
+    }
+    if (reason === 'quiet' && this.state.session?.id === sessionId && streak > 0) this.deps.onEvent?.('answered');
+    // 有人講過話、還沒有標題：取一個
+    const after = await repo.getSession(sessionId);
+    const sm = after ? this.modelFor(null, after) : null;
+    if (streak > 0 && after && !after.title && sm) this.titleTask = this.autoTitle(sessionId, sm.url, sm.model, sm.info);
+  }
+
+  /** 選下一個發言的人：@ 到的先講，再照發言方式；回 null 是沒人要講 */
+  private async pickSpeaker(
+    s: Session,
+    group: GroupSettings,
+    members: Member[],
+    lines: Line[],
+    mustReply: boolean,
+    streak: number,
+    run: Run,
+    onSuggest: (v: boolean) => void
+  ): Promise<{ id: string; replyTo: string | null; outsider: Agent | null } | null | 'error'> {
+    const speakers = members.map((m) => this.toSpeaker(m));
+    const last = lines.at(-1);
+    const lastSpeaker = last?.who && last.who !== 'ai' ? last.who : null;
+    const lastAgent = [...lines].reverse().find((l) => l.who && l.who !== 'ai')?.who ?? null;
+    const mentioned = last ? findMentions(last.content, speakers).filter((id) => id !== lastSpeaker) : [];
+    // 回哪一則：那個人最近說的；沒說要回誰時，你剛說完就回你
+    const replyId = (name: string, self: string): string | null => {
+      const n = name.trim().toLowerCase();
+      const hit = n ? [...lines].reverse().find((l) => l.who !== self && l.name.toLowerCase() === n.replace(/^@/, '')) : undefined;
+      return hit?.id ?? (last && last.who !== self && last.who === null ? last.id : null);
+    };
+    if (mentioned[0]) return { id: mentioned[0], replyTo: last!.id, outsider: null };
+    if (members.length === 1) return mustReply ? { id: speakers[0].id, replyTo: replyId('', speakers[0].id), outsider: null } : null;
+    if (group.mode === 'mention') {
+      if (!mustReply) return null;
+      const id = lastAgent ?? speakers[0].id;
+      return { id, replyTo: replyId('', id), outsider: null };
+    }
+    if (group.mode === 'round') {
+      if (streak >= members.length) return null;
+      const next = nextInRound(speakers, lastAgent);
+      return next ? { id: next.id, replyTo: replyId('', next.id), outsider: null } : null;
+    }
+    const sm = this.modelFor(null, s);
+    if (!sm) return null;
+    if (group.mode === 'host') {
+      this.setPhase(s.id, run, { phase: 'hosting', agentId: null });
+      try {
+        const text = await this.collect(sm.url, sm.model, hostMessages(speakers, lines), { think: quickThink(sm.info), format: HOST_SCHEMA, options: { num_predict: 120 }, signal: run.abort.signal });
+        const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+        onSuggest(json.conclude === true);
+        const id = idByName(String(json.next ?? ''), speakers) ?? (mustReply ? (nextInRound(speakers, lastAgent)?.id ?? null) : null);
+        return id ? { id, replyTo: replyId(String(json.reply_to ?? ''), id), outsider: null } : null;
+      } catch (e) {
+        if (run.abort.signal.aborted) return null;
+        return this.discussionError(s.id, e);
+      }
+    }
+    // 自由搶話：每個人同時舉手
+    this.setPhase(s.id, run, { phase: 'bidding', agentId: null });
+    const outsiders = group.autoJoin
+      ? (await this.deps.repo.listMyAgents()).filter((a) => a.autoJoin && !members.some((m) => m.agent.id === a.id)).slice(0, MAX_OUTSIDERS)
+      : [];
+    const people = [...speakers.map((p) => ({ ...p, member: true })), ...outsiders.map((a, i) => ({ ...this.toSpeaker(a, members.length + i), member: false }))];
+    const errors: unknown[] = [];
+    const bids = await Promise.all(
+      people.map(async (p): Promise<Bid> => {
+        const agent = p.member ? members.find((m) => m.agent.id === p.id)!.agent : outsiders.find((a) => a.id === p.id)!;
+        const m = this.modelFor(agent, s);
+        if (!m) return { id: p.id, score: 0, replyTo: '', conclude: false };
+        try {
+          const text = await this.collect(m.url, m.model, bidMessages(p, speakers, lines, !p.member), {
+            think: quickThink(m.info),
+            format: BID_SCHEMA,
+            options: { num_predict: 80, temperature: 0.4 },
+            signal: run.abort.signal,
+          });
+          return parseBid(p.id, m.info?.think ? (splitThink(text)?.content ?? text) : text);
+        } catch (e) {
+          errors.push(e);
+          return { id: p.id, score: 0, replyTo: '', conclude: false };
+        }
+      })
+    );
+    if (run.abort.signal.aborted) return null;
+    // 成員全部問不到（電腦沒開、模型不見了）：說原因，不要默默停下來
+    if (errors.length >= speakers.length && errors.length === people.length) return this.discussionError(s.id, errors[0]);
+    onSuggest(wantsConclusion(bids, new Set(speakers.map((p) => p.id))));
+    const chosen = chooseSpeaker(bids, people, { lastSpeaker, mentioned: [], mustReply });
+    if (!chosen) return null;
+    return { id: chosen.id, replyTo: replyId(chosen.replyTo, chosen.id), outsider: outsiders.find((a) => a.id === chosen.id) ?? null };
+  }
+
+  /** 討論中問不到模型：記一則錯誤，停下來 */
+  private async discussionError(sessionId: string, e: unknown): Promise<'error'> {
+    await this.deps.repo.addMessage(sessionId, { role: 'error', content: t('沒有得到回答：{p0}', { p0: describeError(e) }), detail: errorDetail(e) });
+    if (this.state.session?.id === sessionId) this.deps.onEvent?.('failed');
+    return 'error';
+  }
+
+  /** 某個 Agent 正式發言：串流到畫面；講完回 true，停止或出錯回 false */
+  private async speak(sessionId: string, a: Agent, replyTo: string | null, run: Run, opts: { expand?: boolean; altGroup?: string } = {}): Promise<boolean> {
+    const { repo } = this.deps;
+    const s = await repo.getSession(sessionId);
+    const m = s ? this.modelFor(a, s) : null;
+    if (!s || !m) return false;
+    const here = () => this.state.session?.id === sessionId;
+    const signal = run.abort.signal;
+    const contextTokens = await this.runtimeContext(m.url, m.model);
+    const build = async () => {
+      const cur = (await repo.getSession(sessionId))!;
+      const members = await repo.listMembers(sessionId);
+      const names = new Map(members.map((x) => [x.agent.id, x.agent.name]));
+      const msgs = await repo.listMessages(sessionId);
+      for (const id of msgs.flatMap((x) => (x.agentId && !names.has(x.agentId) ? [x.agentId] : []))) names.set(id, (await repo.getAgent(id))?.name ?? 'AI');
+      // 你最後附的照片：看得懂圖的模型才送
+      const lastUser = [...msgs].reverse().find((x) => x.role === 'user');
+      const images = lastUser?.attachments.length && m.info?.vision !== false ? { id: lastUser.id, data: lastUser.attachments.map((x) => x.base64) } : undefined;
+      return {
+        out: speakMessages({
+          me: this.toSpeaker(a),
+          members: members.map((x) => this.toSpeaker(x)),
+          role: await this.roleFor(a),
+          notes: (await repo.listNotes(a.id, 5)).map((n) => n.content),
+          summary: cur.summary,
+          summarySeq: cur.summarySeq,
+          lines: toLines(msgs, names),
+          replyTo: replyTo ?? '',
+          expand: opts.expand,
+          contextTokens,
+          images,
+        }),
+      };
+    };
+    let { out } = await build();
+    // 前面的對話放不下：先併進前情摘要
+    if (out.overflowSeq !== null) {
+      try {
+        await this.summarize(sessionId, out.overflowSeq, m.url, m.model, m.info, run, contextTokens);
+      } catch (e) {
+        if (signal.aborted) return false;
+      }
+      ({ out } = await build());
+    }
+    this.setPhase(sessionId, run, { phase: 'speaking', agentId: a.id });
+    const placeholder = await repo.addMessage(sessionId, {
+      role: 'assistant',
+      content: '',
+      model: m.model,
+      hostLabel: this.hostLabel(m.url),
+      agentId: a.id,
+      replyTo,
+      altGroup: opts.altGroup ?? null,
+      detail: out.truncatedRole ? ROLE_TRUNCATED : '',
+    });
+    run.streaming = { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting', agentId: a.id };
+    if (here()) {
+      this.set({ messages: await repo.listMessages(sessionId) });
+      if (!this.state.agents[a.id]) await this.refreshGroup();
+    }
+    this.publishRuns();
+    let content = '';
+    let thinking = '';
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      timer = null;
+      if (!run.streaming) return;
+      run.streaming = { ...run.streaming, content: cleanReply(content, a.name), thinking, phase: content ? 'answering' : thinking ? 'thinking' : 'waiting' };
+      if (here()) this.set({ streaming: run.streaming });
+    };
+    try {
+      const sentThink = thinkToSend(m.info, s.think);
+      const mayLeak = !!m.info?.think && !sentThink;
+      let raw = '';
+      const result = await this.clientFor(m.url).chat(
+        { model: m.model, messages: out.messages, think: sentThink },
+        (d) => {
+          if (d.thinking) thinking += d.thinking;
+          if (d.content) {
+            raw += d.content;
+            const split = mayLeak ? splitThink(raw) : null;
+            content = split ? split.content : raw;
+            if (split) thinking = split.thinking;
+          }
+          if (!timer) timer = setTimeout(flush, this.throttleMs);
+        },
+        signal
+      );
+      const stats = { evalCount: result.evalCount, evalDurationNs: result.evalDurationNs, promptEvalCount: result.promptEvalCount, totalDurationNs: result.totalDurationNs };
+      await repo.updateMessage(placeholder.id, { content: cleanReply(content, a.name).trim(), thinking, stats });
+      return true;
+    } catch (e) {
+      await this.notePairingLost(m.url, e);
+      const cancelled = e instanceof OllamaError && e.kind === 'cancelled';
+      if (content.trim() || thinking) await repo.updateMessage(placeholder.id, { content: cleanReply(content, a.name).trim(), thinking });
+      else await repo.deleteMessage(placeholder.id);
+      if (cancelled) {
+        await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
+        if (here()) this.deps.onEvent?.('stopped');
+      } else {
+        await this.discussionError(sessionId, e);
+      }
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+      run.streaming = null;
+      this.publishRuns();
+      if (here()) this.set({ messages: await repo.listMessages(sessionId) });
+      void this.refreshLoaded(m.url);
+    }
+  }
+
+  /** 把第 upTo 則（含）以前、還沒摘要過的對話併進前情摘要（太多就分幾次） */
+  private async summarize(sessionId: string, upTo: number, url: string, model: string, info: ModelInfo | undefined, run: Run, contextTokens: number): Promise<void> {
+    const { repo } = this.deps;
+    this.setPhase(sessionId, run, { phase: 'summarizing', agentId: null });
+    for (;;) {
+      const s = await repo.getSession(sessionId);
+      if (!s || s.summarySeq >= upTo) return;
+      const names = new Map((await repo.listMembers(sessionId)).map((x) => [x.agent.id, x.agent.name]));
+      const pending = toLines(await repo.listMessages(sessionId), names).filter((l) => l.seq > s.summarySeq && l.seq <= upTo);
+      if (pending.length === 0) return void (await repo.updateSession(sessionId, { summarySeq: upTo }));
+      // 一次只塞得下上下文的一半
+      const chunk: Line[] = [];
+      let room = Math.floor(contextTokens * 0.5) - estimateTokens(s.summary);
+      for (const l of pending) {
+        room -= estimateTokens(l.content) + 8;
+        if (room < 0 && chunk.length > 0) break;
+        chunk.push(l);
+      }
+      const text = await this.collect(url, model, summaryMessages(s.summary, chunk), { think: quickThink(info), options: { num_predict: 700 }, signal: run.abort.signal });
+      const summary = (info?.think ? (splitThink(text)?.content ?? text) : text).trim();
+      await repo.updateSession(sessionId, { summary: summary || s.summary, summarySeq: chunk.at(-1)!.seq });
+    }
   }
 
   // ---- 手機上動手做事 ----

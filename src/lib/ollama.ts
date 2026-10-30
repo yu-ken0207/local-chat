@@ -446,13 +446,24 @@ export class OllamaClient {
 
   /** 串流聊天：每收到一段字就呼叫 onDelta，結束時回傳統計數字 */
   async chat(
-    params: { model: string; messages: ChatMessage[]; think?: ThinkSetting; tools?: unknown[] },
+    params: {
+      model: string;
+      messages: ChatMessage[];
+      think?: ThinkSetting;
+      tools?: unknown[];
+      /** 要模型照這個 JSON 結構回（多 AI 討論的舉手、主持人） */
+      format?: unknown;
+      /** 模型參數，例如 num_predict（最多回幾個字詞）、temperature */
+      options?: Record<string, unknown>;
+    },
     onDelta: (delta: ChatDelta) => void,
     signal?: AbortSignal
   ): Promise<ChatResult> {
     const body: Record<string, unknown> = { model: params.model, messages: params.messages, stream: true };
     if (params.think !== undefined) body.think = params.think;
     if (params.tools && params.tools.length > 0) body.tools = params.tools;
+    if (params.format !== undefined) body.format = params.format;
+    if (params.options) body.options = params.options;
 
     const abort = makeAbort(this.firstTokenTimeout, signal);
     let waitingMs = this.firstTokenTimeout;

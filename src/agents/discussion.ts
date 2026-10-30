@@ -1,0 +1,377 @@
+import { getLanguage } from '../i18n';
+import type { ChatMessage } from '../lib/ollama';
+import type { AgentCard, Message } from '../store/repo';
+
+// 多 AI 討論的純邏輯：舉手、選下一個發言的人、@ 誰、組給模型的訊息、上下文預算。
+// 給模型的指示不跟著畫面翻譯（i18n-ignore），依 App 語言選一份。
+
+/** 討論裡的一個人（Agent） */
+export type Speaker = { id: string; name: string; intro: string; talk: number; position: number };
+
+/** 對話裡的一行：誰說的（Agent id；使用者是 null；一對一時的 AI 是 'ai'） */
+export type Line = { id: string; seq: number; who: string | null; name: string; content: string; replyTo: string | null };
+
+const zh = () => getLanguage() !== 'en';
+/** 使用者在討論裡的稱呼 */
+export const userName = () => (zh() ? '使用者' : 'User'); // i18n-ignore
+const plainAiName = () => 'AI';
+
+/** 存起來的訊息整理成討論的一行行（錯誤、提示、工具結果、空的都不算） */
+export function toLines(messages: Message[], names: Map<string, string>): Line[] {
+  const out: Line[] = [];
+  for (const m of messages) {
+    if ((m.role !== 'user' && m.role !== 'assistant') || !m.content.trim()) continue;
+    const who = m.role === 'user' ? null : (m.agentId ?? 'ai');
+    const name = who === null ? userName() : who === 'ai' ? plainAiName() : (names.get(who) ?? plainAiName());
+    out.push({ id: m.id, seq: m.seq, who, name, content: m.content.trim(), replyTo: m.replyTo });
+  }
+  return out;
+}
+
+/** 粗估 token 數：中日韓字（含全形標點）一字約一個，其他約四個字元一個 */
+export function estimateTokens(text: string): number {
+  let cjk = 0;
+  for (const ch of text) if (/[\u3000-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(ch)) cjk++;
+  return cjk + Math.ceil((text.length - cjk) / 4);
+}
+
+/** 角色原文太長時截短：照段落取到上限為止，後面註明省略 */
+export function truncateRole(prompt: string, maxTokens: number): { text: string; truncated: boolean } {
+  if (estimateTokens(prompt) <= maxTokens) return { text: prompt, truncated: false };
+  const paras = prompt.split(/\n(?=\s*\n)|\n(?=#)/);
+  let text = '';
+  for (const p of paras) {
+    if (estimateTokens(text + p) > maxTokens) break;
+    text += p + '\n';
+  }
+  // 第一段就超過：硬切
+  if (!text.trim()) {
+    let cut = '';
+    for (const ch of prompt) {
+      if (estimateTokens(cut + ch) > maxTokens) break;
+      cut += ch;
+    }
+    text = cut;
+  }
+  return { text: text.trimEnd() + (zh() ? '\n…（角色說明太長，以下省略）' : '\n… (role description truncated)'), truncated: true }; // i18n-ignore
+}
+
+/** 自己建的 Agent：角色卡寫成角色說明 */
+export function cardPrompt(name: string, intro: string, card: AgentCard | null): string {
+  const rows = zh()
+    ? [`你是「${name}」。${intro}`, card?.expertise && `專長：${card.expertise}`, card?.stance && `立場與個性：${card.stance}`, card?.style && `說話風格：${card.style}`, card?.blindSpot && `盲點：${card.blindSpot}`] // i18n-ignore
+    : [`You are "${name}". ${intro}`, card?.expertise && `Expertise: ${card.expertise}`, card?.stance && `Stance and personality: ${card.stance}`, card?.style && `Speaking style: ${card.style}`, card?.blindSpot && `Blind spot: ${card.blindSpot}`];
+  return rows.filter(Boolean).join('\n');
+}
+
+/** 找出這段話 @ 了誰（名字照長的先比，避免「小明」吃掉「小明明」） */
+export function findMentions(text: string, people: { id: string; name: string }[]): string[] {
+  const lower = text.toLowerCase();
+  const sorted = [...people].sort((a, b) => b.name.length - a.name.length);
+  const hits: { id: string; at: number }[] = [];
+  const taken: [number, number][] = [];
+  for (const p of sorted) {
+    const needle = '@' + p.name.toLowerCase();
+    let at = lower.indexOf(needle);
+    while (at >= 0) {
+      const end = at + needle.length;
+      if (!taken.some(([s, e]) => at < e && end > s)) {
+        taken.push([at, end]);
+        if (!hits.some((h) => h.id === p.id)) hits.push({ id: p.id, at });
+      }
+      at = lower.indexOf(needle, end);
+    }
+  }
+  return hits.sort((a, b) => a.at - b.at).map((h) => h.id);
+}
+
+/** 回答開頭自己加了名字（「【財務長】」「財務長：」）就拿掉 */
+export function cleanReply(text: string, name: string): string {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text.replace(new RegExp(`^\\s*(?:\\*\\*)?(?:【${esc}】|\\[${esc}\\]|${esc}\\s*[：:])(?:\\*\\*)?\\s*`), '').trimStart();
+}
+
+const quote = (l: Line, lines: Line[]) => {
+  const target = l.replyTo ? lines.find((x) => x.id === l.replyTo) : undefined;
+  const to = target ? (zh() ? `（回覆 ${target.name}）` : ` (replying to ${target.name})`) : ''; // i18n-ignore
+  return `【${l.name}】${to}${l.content}`;
+};
+
+// ---- 舉手 ----
+
+export type Bid = { id: string; score: number; replyTo: string; conclude: boolean };
+
+export const BID_SCHEMA = {
+  type: 'object',
+  properties: { score: { type: 'integer', minimum: 0, maximum: 10 }, reply_to: { type: 'string' }, conclude: { type: 'boolean' } },
+  required: ['score', 'reply_to', 'conclude'],
+};
+
+/** 舉手用的訊息：只帶名字、一句話介紹、最近幾則（不帶角色原文，才快） */
+export function bidMessages(me: Speaker, members: Speaker[], lines: Line[], outsider = false): ChatMessage[] {
+  const names = [userName(), ...members.map((m) => m.name)].join(zh() ? '、' : ', ');
+  const recent = lines.slice(-10).map((l) => quote({ ...l, content: l.content.slice(0, 400) }, lines)).join('\n');
+  const system = zh()
+    ? [
+        `你是「${me.name}」：${me.intro}`, // i18n-ignore
+        outsider ? `你目前不在這個討論裡（成員：${names}）。只有話題跟你的專長非常相關時才加入。` : `你在一個群組討論裡，成員：${names}。`, // i18n-ignore
+        '看最近的對話，判斷你現在有多想發言，只回 JSON：', // i18n-ignore
+        '- score：0–10。10＝有重要、新的觀點非講不可；5＝可以補充；0＝沒什麼要說，或你剛講過。', // i18n-ignore
+        '- reply_to：想回應誰（填名字），對大家說就填空字串。', // i18n-ignore
+        '- conclude：覺得討論已經差不多、可以做結論了就填 true。', // i18n-ignore
+      ] // i18n-ignore
+    : [
+        `You are "${me.name}": ${me.intro}`,
+        outsider ? `You are not in this discussion yet (members: ${names}). Only join if the topic is closely related to your expertise.` : `You are in a group discussion. Members: ${names}.`,
+        'Read the recent conversation and decide how much you want to speak now. Reply with JSON only:',
+        '- score: 0–10. 10 = you have an important new point; 5 = you could add something; 0 = nothing to add, or you just spoke.',
+        '- reply_to: the name of the person you want to respond to, or an empty string to address everyone.',
+        '- conclude: true if you think the discussion is ready to wrap up with a conclusion.',
+      ];
+  return [
+    { role: 'system', content: system.join('\n') },
+    { role: 'user', content: recent || (zh() ? '（還沒有人說話）' : '(Nobody has spoken yet)') }, // i18n-ignore
+  ];
+}
+
+/** 解析舉手的回覆；不是 JSON 時盡量從文字裡找分數 */
+export function parseBid(id: string, text: string): Bid {
+  const clamp = (n: number) => Math.max(0, Math.min(10, Math.round(Number.isFinite(n) ? n : 0)));
+  const json = text.match(/\{[\s\S]*\}/)?.[0];
+  if (json) {
+    try {
+      const v = JSON.parse(json);
+      return { id, score: clamp(Number(v.score)), replyTo: typeof v.reply_to === 'string' ? v.reply_to.trim() : '', conclude: v.conclude === true };
+    } catch {
+      // 往下用文字找
+    }
+  }
+  const n = text.match(/\b(10|[0-9])\b/);
+  return { id, score: n ? clamp(Number(n[1])) : 0, replyTo: '', conclude: false };
+}
+
+export const SPEAK_THRESHOLD = 5;
+export const OUTSIDER_THRESHOLD = 7;
+
+/**
+ * 從舉手結果選下一個發言的人。
+ * - 上一則 @ 到的人一定講（照 @ 的順序，跳過剛講完的）
+ * - 分數依積極度加減，剛講完的扣分（避免同一人連講）
+ * - 成員要到門檻、還不是成員的（AI 自己加入）門檻更高
+ * - mustReply（你剛說完）：大家都沒到門檻也要有一個成員回
+ */
+export function chooseSpeaker(
+  bids: Bid[],
+  people: (Speaker & { member: boolean })[],
+  ctx: { lastSpeaker: string | null; mentioned: string[]; mustReply: boolean }
+): { id: string; replyTo: string } | null {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const forced = ctx.mentioned.find((id) => id !== ctx.lastSpeaker && byId.has(id));
+  if (forced) return { id: forced, replyTo: bids.find((b) => b.id === forced)?.replyTo ?? '' };
+  const scored = bids
+    .filter((b) => byId.has(b.id))
+    .map((b) => {
+      const p = byId.get(b.id)!;
+      return { b, p, adj: b.score + (p.talk - 0.5) * 4 - (b.id === ctx.lastSpeaker ? 3 : 0) };
+    })
+    .sort((x, y) => y.adj - x.adj || Number(y.p.member) - Number(x.p.member) || x.p.position - y.p.position);
+  const pick = scored.find((s) => s.adj >= (s.p.member ? SPEAK_THRESHOLD : OUTSIDER_THRESHOLD)) ?? (ctx.mustReply ? scored.find((s) => s.p.member) : undefined);
+  return pick ? { id: pick.b.id, replyTo: pick.b.replyTo } : null;
+}
+
+/** 成員裡過半覺得可以收尾 */
+export const wantsConclusion = (bids: Bid[], memberIds: Set<string>) => {
+  const mine = bids.filter((b) => memberIds.has(b.id));
+  return mine.length > 0 && mine.filter((b) => b.conclude).length * 2 > mine.length;
+};
+
+/** 輪流：成員順序的下一個 */
+export function nextInRound(members: Speaker[], lastSpeaker: string | null): Speaker | null {
+  if (members.length === 0) return null;
+  const sorted = [...members].sort((a, b) => a.position - b.position);
+  const i = sorted.findIndex((m) => m.id === lastSpeaker);
+  return sorted[(i + 1) % sorted.length];
+}
+
+// ---- 主持人點名 ----
+
+export const HOST_SCHEMA = {
+  type: 'object',
+  properties: { next: { type: 'string' }, reply_to: { type: 'string' }, conclude: { type: 'boolean' } },
+  required: ['next', 'reply_to', 'conclude'],
+};
+
+export function hostMessages(members: Speaker[], lines: Line[]): ChatMessage[] {
+  const list = members.map((m) => `- ${m.name}：${m.intro}`).join('\n');
+  const recent = lines.slice(-12).map((l) => quote({ ...l, content: l.content.slice(0, 400) }, lines)).join('\n');
+  const system = zh()
+    ? `你是群組討論的主持人，不發言，只決定下一個由誰講。成員：\n${list}\n\n看最近的對話，選最該接著講的人，讓討論有來有往、不要一直同一個人。只回 JSON：next＝下一個人的名字（沒必要再講就填空字串）、reply_to＝他該回應誰（可空）、conclude＝討論是否已經可以做結論。` // i18n-ignore
+    : `You are the moderator of a group discussion. You don't speak; you only decide who speaks next. Members:\n${list}\n\nRead the recent conversation and pick who should speak next so the discussion goes back and forth. Reply with JSON only: next = that person's name (empty string if nobody needs to speak), reply_to = who they should respond to (may be empty), conclude = whether the discussion is ready for a conclusion.`;
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: recent || (zh() ? '（還沒有人說話）' : '(Nobody has spoken yet)') }, // i18n-ignore
+  ];
+}
+
+/** 名字對到人（不分大小寫，前後空白、@、【】都不算） */
+export function idByName(name: string, people: { id: string; name: string }[]): string | null {
+  const n = name.replace(/^[@【\s]+|[】\s]+$/g, '').toLowerCase();
+  if (!n) return null;
+  return people.find((p) => p.name.toLowerCase() === n)?.id ?? null;
+}
+
+// ---- 正式發言 ----
+
+/** 群組規則（放在角色說明前面） */
+function groupRules(me: Speaker, members: Speaker[], expand: boolean): string {
+  const list = members.map((m) => `- ${m.name}：${m.intro}`).join('\n');
+  return zh()
+    ? [
+        `你是「${me.name}」，正在一個多人群組聊天裡討論。成員：`, // i18n-ignore
+        `- ${userName()}：發起討論的人，也是其中一員`, // i18n-ignore
+        list,
+        '',
+        '規則：', // i18n-ignore
+        `- 你只代表「${me.name}」發言，不要替別人說話，開頭不要寫自己的名字。`, // i18n-ignore
+        expand ? '- 這次請完整、詳細地說明，不限長度。' : '- 像聊天一樣，1–4 句，一次講一個重點。', // i18n-ignore
+        '- 可以同意、反對、補充或提問；用名字稱呼人，要特別問某人就寫 @名字。', // i18n-ignore
+        '- 不要重複別人說過的話；沒有新東西就簡短表態。', // i18n-ignore
+        '- 請用繁體中文（台灣用語）回答。', // i18n-ignore
+      ].join('\n') // i18n-ignore
+    : [
+        `You are "${me.name}" in a group chat discussion. Members:`,
+        `- ${userName()}: started the discussion and is also a participant`,
+        list,
+        '',
+        'Rules:',
+        `- Speak only as "${me.name}". Don't speak for others and don't start with your own name.`,
+        expand ? '- This time, explain fully and in detail; no length limit.' : '- Keep it conversational: 1–4 sentences, one point at a time.',
+        '- You may agree, disagree, add to, or ask; address people by name, and write @Name to ask someone directly.',
+        "- Don't repeat what others said; if you have nothing new, state your position briefly.",
+        '- Reply in English.',
+      ].join('\n');
+}
+
+export type SpeakInput = {
+  me: Speaker;
+  members: Speaker[];
+  /** 角色原文或角色卡寫成的說明 */
+  role: string;
+  notes: string[];
+  summary: string;
+  /** 前情摘要涵蓋到第幾則（含） */
+  summarySeq: number;
+  lines: Line[];
+  /** 要回應的那一則 */
+  replyTo: string;
+  expand?: boolean;
+  /** 模型能放的上下文（token） */
+  contextTokens: number;
+  /** 你最後附的照片（看得懂圖的模型才給）：附在那一則上 */
+  images?: { id: string; data: string[] };
+};
+
+/**
+ * 組正式發言要送的訊息：群組規則＋角色說明＋筆記、前情摘要、最近幾則（自己說的當 assistant，別人的當 user 加上名字）、最後提醒輪到你。
+ * 放不下時：角色說明最多佔四成（截短並回報），對話從最新往回塞，塞不下的回報 overflowSeq（要併進前情摘要）。
+ */
+export function speakMessages(input: SpeakInput): { messages: ChatMessage[]; truncatedRole: boolean; overflowSeq: number | null } {
+  const { me, lines } = input;
+  const answerRoom = Math.max(512, Math.floor(input.contextTokens * 0.2));
+  const role = truncateRole(input.role, Math.floor(input.contextTokens * 0.4));
+  const notes = input.notes.length
+    ? (zh() ? '\n\n你之前討論留下的筆記：\n' : '\n\nYour notes from earlier discussions:\n') + input.notes.map((n) => `- ${n}`).join('\n') // i18n-ignore
+    : '';
+  const roleHead = zh() ? '\n\n以下是你的角色設定：\n' : '\n\nYour role:\n'; // i18n-ignore
+  const system = groupRules(me, input.members, !!input.expand) + roleHead + role.text + notes;
+  const target = lines.find((l) => l.id === input.replyTo);
+  const nudge = zh()
+    ? `現在輪到你（${me.name}）發言${target ? `，回應【${target.name}】` : ''}。直接說你要說的話。` // i18n-ignore
+    : `It's your turn (${me.name})${target ? `, responding to ${target.name}` : ''}. Say what you want to say.`;
+  const summary = input.summary ? (zh() ? `前情摘要（之前的討論）：\n${input.summary}` : `Summary of the earlier discussion:\n${input.summary}`) : ''; // i18n-ignore
+  let room = input.contextTokens - answerRoom - estimateTokens(system) - estimateTokens(summary) - estimateTokens(nudge);
+  const recent = lines.filter((l) => l.seq > input.summarySeq);
+  const kept: Line[] = [];
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const cost = estimateTokens(recent[i].content) + 8;
+    // 最新的一則一定要帶（不然不知道在回什麼），太長就截
+    if (cost > room && kept.length > 0) break;
+    kept.unshift(recent[i]);
+    room -= cost;
+  }
+  const overflow = recent.length > kept.length ? recent[recent.length - kept.length - 1].seq : null;
+  const messages: ChatMessage[] = [{ role: 'system', content: system }];
+  if (summary) messages.push({ role: 'system', content: summary });
+  for (const l of kept) {
+    if (l.who === me.id) messages.push({ role: 'assistant', content: l.content });
+    else messages.push({ role: 'user', content: quote(l, lines), ...(input.images?.id === l.id ? { images: input.images.data } : {}) });
+  }
+  messages.push({ role: 'system', content: nudge });
+  return { messages, truncatedRole: role.truncated, overflowSeq: overflow };
+}
+
+// ---- 前情摘要 ----
+
+export function summaryMessages(oldSummary: string, lines: Line[]): ChatMessage[] {
+  const body = lines.map((l) => quote(l, lines)).join('\n');
+  const system = zh()
+    ? '把群組討論濃縮成一段前情摘要：保留每個人的主要立場、已經有的共識、還沒解決的問題。300 字以內，用繁體中文（台灣用語）。只回摘要本身。' // i18n-ignore
+    : 'Condense the group discussion into a summary: keep each person’s main position, the points already agreed, and the open questions. Under 200 words. Reply with the summary only.';
+  const user = (oldSummary ? (zh() ? `之前的摘要：\n${oldSummary}\n\n接下來的對話：\n` : `Earlier summary:\n${oldSummary}\n\nWhat was said next:\n`) : '') + body; // i18n-ignore
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+}
+
+// ---- 一句話生成角色卡 ----
+
+export const AGENT_DRAFT_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    intro: { type: 'string' },
+    expertise: { type: 'string' },
+    stance: { type: 'string' },
+    style: { type: 'string' },
+    blindSpot: { type: 'string' },
+    emoji: { type: 'string' },
+    talk: { type: 'number', minimum: 0, maximum: 1 },
+  },
+  required: ['name', 'intro', 'expertise', 'stance', 'style', 'blindSpot', 'emoji', 'talk'],
+};
+
+/** 你寫一句話，請模型補成完整的角色卡；avoid：「再生一個」時不要跟上一個一樣 */
+export function agentDraftMessages(idea: string, avoid?: string): ChatMessage[] {
+  const system = zh()
+    ? [
+        '幫使用者設計一個參加群組討論的 AI 角色。照使用者的描述填出（只回 JSON）：', // i18n-ignore
+        '- name：稱呼，2–8 個字', // i18n-ignore
+        '- intro：一句話介紹，25 個字以內', // i18n-ignore
+        '- expertise：專長', // i18n-ignore
+        '- stance：立場與個性（他在討論裡通常站哪一邊、在意什麼）', // i18n-ignore
+        '- style：說話風格', // i18n-ignore
+        '- blindSpot：盲點（讓討論有張力，也讓別人知道要補哪裡）', // i18n-ignore
+        '- emoji：一個代表他的 emoji', // i18n-ignore
+        '- talk：積極度，0–1（越大越愛發言）', // i18n-ignore
+        '用繁體中文（台灣用語）。', // i18n-ignore
+      ]
+    : [
+        'Design an AI character who takes part in group discussions, based on the user’s description. Fill in (reply with JSON only):',
+        '- name: what to call them, 1–3 words',
+        '- intro: a one-line introduction, under 15 words',
+        '- expertise',
+        '- stance: their usual position and personality in a discussion, what they care about',
+        '- style: how they talk',
+        '- blindSpot: their blind spot (adds tension, and tells others what to cover)',
+        '- emoji: one emoji that represents them',
+        '- talk: how talkative, 0–1',
+        'Write in English.',
+      ];
+  const extra = avoid ? (zh() ? `\n（上一個生成的是「${avoid}」，這次換一個不一樣的角度）` : `\n(The previous one was "${avoid}"; try a different angle this time.)`) : ''; // i18n-ignore
+  return [
+    { role: 'system', content: system.join('\n') },
+    { role: 'user', content: idea.trim() + extra },
+  ];
+}
+
