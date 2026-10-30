@@ -110,7 +110,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
         <View style={styles.aiBlock}>
           <Text style={styles.aiMark} {...decorative}>•</Text>
           <View style={styles.body}>
-            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} /> : null}
+            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} onCopyCode={h.onCopyCode} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} {...press} /> : null}
             {/* 模型回了空白（不是只叫工具）：說清楚，最後一則還可以重新產生 */}
             {!live && !content && !toolTurn ? <Text style={styles.emptyAnswer}>{t('AI 沒有回答。')}</Text> : null}
@@ -233,7 +233,7 @@ export function Thumbnails({ images, onOpen }: { images: Attachment[]; onOpen: (
 }
 
 /** 思考過程：預設收起來，只顯示一行；點了展開 */
-function Thinking({ text, live, press }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: () => void } }) {
+function Thinking({ text, live, press, onCopyCode }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: () => void }; onCopyCode: (code: string) => void }) {
   const [open, setOpen] = useState(false);
   const lastLine = text.trim().split('\n').filter(Boolean).at(-1) ?? '';
   return (
@@ -250,7 +250,8 @@ function Thinking({ text, live, press }: { text: string; live: boolean; press: {
         </Text>
       </Pressable>
       {open ? (
-        <Markdown text={text} dim {...press} />
+        // 程式碼區塊也要有「複製」：字不能選取，長按選單的「複製」也只複製回答本文
+        <Markdown text={text} dim onCopyCode={onCopyCode} {...press} />
       ) : live ? (
         <Text style={[styles.small, styles.dim]} numberOfLines={2}>
           {lastLine}

@@ -539,6 +539,24 @@ describe('對話', () => {
     expect(screen.getByText('第一步先想清楚')).toBeTruthy();
   });
 
+  test('思考過程裡的程式碼區塊也有「複製」', async () => {
+    const { store, net, copyText } = await setup();
+    await act(async () => {
+      await store.setThink(true);
+    });
+    net.hosts.get(A)!.reply = () => ({
+      lines: [
+        { message: { content: '', thinking: '先試試：\n\n```py\nprint(1)\n```' }, done: false },
+        { message: { content: '結論' }, done: false },
+        { message: { content: '' }, done: true },
+      ],
+    });
+    await send(store, '想一想');
+    await fireEvent.press(await screen.findByLabelText('展開思考過程'));
+    await fireEvent.press(screen.getByLabelText('複製程式碼'));
+    expect(copyText).toHaveBeenCalledWith('print(1)');
+  });
+
   test('上下文快滿：用白話提醒，按「開新對話」開新的一段', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.runtimeCtx = 140;
