@@ -2047,7 +2047,9 @@ export class ChatStore {
     const last = lines.at(-1);
     const lastSpeaker = last?.who && last.who !== 'ai' ? last.who : null;
     const lastAgent = [...lines].reverse().find((l) => l.who && l.who !== 'ai')?.who ?? null;
-    const mentioned = last ? findMentions(last.content, speakers).filter((id) => id !== lastSpeaker) : [];
+    // 同一則 @ 了好幾個人：最久沒講話的先講（沒講過的最優先），不然常常兩個人互 @ 一直對話，第三個人被 @ 了也排不到
+    const spokeAt = (id: string) => lines.map((l) => l.who).lastIndexOf(id);
+    const mentioned = last ? findMentions(last.content, speakers).filter((id) => id !== lastSpeaker).sort((a, b) => spokeAt(a) - spokeAt(b)) : [];
     // 回哪一則：那個人最近說的；沒說要回誰時，你剛說完就回你
     const replyId = (name: string, self: string): string | null => {
       const n = name.trim().toLowerCase();
