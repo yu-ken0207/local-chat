@@ -72,10 +72,20 @@ export function cardPrompt(name: string, intro: string, card: AgentCard | null):
   return rows.filter(Boolean).join('\n');
 }
 
-/** 找出這段話 @ 了誰（名字照長的先比，避免「小明」吃掉「小明明」） */
+/**
+ * 名字的簡稱：第一段（空白、括號前面），例如「SRE 網站可靠性工程師」是 SRE、「財務長 (CFO)」是財務長。
+ * 模型常用簡稱叫人；太短或跟別人撞名的不算
+ */
+export function aliasesOf(people: { id: string; name: string }[]): { id: string; name: string }[] {
+  const short = people.map((p) => ({ id: p.id, name: p.name.split(/[\s（(]/)[0].trim() })).filter((a, i) => a.name.length >= 2 && a.name !== people[i].name);
+  const taken = new Set(people.map((p) => p.name.toLowerCase()));
+  return short.filter((a) => !taken.has(a.name.toLowerCase()) && short.filter((b) => b.name.toLowerCase() === a.name.toLowerCase()).length === 1);
+}
+
+/** 找出這段話 @ 了誰（全名或簡稱；名字照長的先比，避免「小明」吃掉「小明明」） */
 export function findMentions(text: string, people: { id: string; name: string }[]): string[] {
   const lower = text.toLowerCase();
-  const sorted = [...people].sort((a, b) => b.name.length - a.name.length);
+  const sorted = [...people, ...aliasesOf(people)].sort((a, b) => b.name.length - a.name.length);
   const hits: { id: string; at: number }[] = [];
   const taken: [number, number][] = [];
   for (const p of sorted) {
@@ -221,11 +231,11 @@ export function hostMessages(members: Speaker[], lines: Line[]): ChatMessage[] {
   ];
 }
 
-/** 名字對到人（不分大小寫，前後空白、@、【】都不算） */
+/** 名字對到人（全名或簡稱；不分大小寫，前後空白、@、【】都不算） */
 export function idByName(name: string, people: { id: string; name: string }[]): string | null {
   const n = name.replace(/^[@【\s]+|[】\s]+$/g, '').toLowerCase();
   if (!n) return null;
-  return people.find((p) => p.name.toLowerCase() === n)?.id ?? null;
+  return [...people, ...aliasesOf(people)].find((p) => p.name.toLowerCase() === n)?.id ?? null;
 }
 
 // ---- 正式發言 ----

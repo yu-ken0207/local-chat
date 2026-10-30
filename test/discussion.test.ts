@@ -113,6 +113,22 @@ describe('@ 誰', () => {
     expect(findMentions('小明你說呢', people)).toEqual([]);
   });
 
+  test('簡稱也算：「SRE 網站可靠性工程師」可以寫 @SRE；撞名或太短的簡稱不算', () => {
+    const team = [
+      { id: 's', name: 'SRE 網站可靠性工程師' },
+      { id: 'c', name: '財務長 (CFO)' },
+      { id: 'a', name: 'A 小組' },
+      { id: 'x', name: '工程師 甲' },
+      { id: 'y', name: '工程師 乙' },
+    ];
+    expect(findMentions('@SRE 幫我確認，@財務長 也看一下', team)).toEqual(['s', 'c']);
+    expect(findMentions('@SRE 網站可靠性工程師 你好', team)).toEqual(['s']);
+    expect(findMentions('@A 你呢', team)).toEqual([]);
+    expect(findMentions('@工程師 誰都可以', team)).toEqual([]);
+    expect(idByName('SRE', team)).toBe('s');
+    expect(idByName('財務長', team)).toBe('c');
+  });
+
   test('名字對到人', () => {
     expect(idByName('@小明', people)).toBe('a');
     expect(idByName('【BOB】', people)).toBe('c');

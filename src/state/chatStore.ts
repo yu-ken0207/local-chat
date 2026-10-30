@@ -8,7 +8,7 @@ import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type Helpe
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
-import { PromptStore, entryIntro, entryName, getEntry, searchCatalog, type CatalogEntry } from '../agents/catalog';
+import { PromptStore, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar, type CatalogEntry } from '../agents/catalog';
 import {
   AGENT_DRAFT_SCHEMA,
   PICK_ROLES_SCHEMA,
@@ -1599,7 +1599,7 @@ export class ChatStore {
     const str = (x: unknown) => (typeof x === 'string' ? x.trim() : '');
     if (!str(v.name)) throw new Error(t('AI 沒有生成角色，換個說法再試一次。'));
     // 頭像：圖鑑裡名字或專長最接近的那個角色的像素頭像
-    const avatar = [str(v.name), ...str(v.expertise).split(/[、，,\s]+/)].filter(Boolean).map((q) => searchCatalog(q)[0]).find(Boolean)?.id ?? null;
+    const avatar = suggestAvatar(str(v.name), str(v.expertise).split(/[、，,\s]+/));
     return {
       avatar,
       name: str(v.name).slice(0, 30),
@@ -2052,8 +2052,10 @@ export class ChatStore {
     const mentioned = last ? findMentions(last.content, speakers).filter((id) => id !== lastSpeaker).sort((a, b) => spokeAt(a) - spokeAt(b)) : [];
     // 回哪一則：那個人最近說的；沒說要回誰時，你剛說完就回你
     const replyId = (name: string, self: string): string | null => {
-      const n = name.trim().toLowerCase();
-      const hit = n ? [...lines].reverse().find((l) => l.who !== self && l.name.toLowerCase() === n.replace(/^@/, '')) : undefined;
+      // 名字可能是簡稱（SRE）：先對到人，再找那個人最近說的；你（使用者）照名字比
+      const who = idByName(name, speakers);
+      const n = name.trim().toLowerCase().replace(/^@/, '');
+      const hit = n ? [...lines].reverse().find((l) => l.who !== self && (who ? l.who === who : l.name.toLowerCase() === n)) : undefined;
       return hit?.id ?? (last && last.who !== self && last.who === null ? last.id : null);
     };
     if (mentioned[0]) return { id: mentioned[0], replyTo: last!.id, outsider: null };

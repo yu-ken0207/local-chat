@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { PromptStore, catalogEntries, catalogLicenses, categories, entryIntro, entryName, getEntry, searchCatalog } from '../src/agents/catalog';
+import { PromptStore, catalogEntries, catalogLicenses, categories, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar } from '../src/agents/catalog';
 import { PROMPT_SHARDS } from '../src/agents/shards';
 import raw from '../src/agents/catalog.json';
 import { setLanguage } from '../src/i18n';
@@ -268,6 +268,12 @@ describe('圖鑑', () => {
     expect(searchCatalog('', 'life').every((e) => e.c === 'life')).toBe(true);
     expect(searchCatalog('historian', 'code')).toEqual([]);
     expect(searchCatalog('沒有這種角色xyz')).toEqual([]);
+  });
+
+  test('自己建的 Agent 挑頭像：名字對到的優先（不會因為介紹裡有「風險管理」挑到財務專家）', () => {
+    expect(suggestAvatar('資安老古', ['漏洞分析', '風險管理', '滲透測試'])).toBe('agency:security/security-architect');
+    expect(suggestAvatar('沒有這種人', ['滲透測試'])).toBe('agency:security/security-penetration-tester');
+    expect(suggestAvatar('ㄅㄆㄇ', [])).toBeNull();
   });
 
   test('原文分片：對照表跟索引的分片數一樣', () => {

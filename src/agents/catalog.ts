@@ -93,6 +93,23 @@ export function searchCatalog(query: string, category?: CategoryKey | null): Cat
   return [...hits.filter((h) => h.name), ...hits.filter((h) => !h.name)].map((h) => h.e);
 }
 
+/**
+ * 自己建的 Agent 用哪個圖鑑角色的頭像：先找「名字」對到的（全名、前兩三個字、專長的每一項），
+ * 都沒有才用介紹裡提到的（不然「風險管理」會挑到介紹裡剛好有這幾個字的財務專家）
+ */
+export function suggestAvatar(name: string, terms: string[]): string | null {
+  const queries = [...new Set([name, name.slice(0, 2), name.slice(0, 3), ...terms].map((q) => q.trim()).filter((q) => q.length >= 2))];
+  for (const q of queries) {
+    const hit = searchCatalog(q).find((e) => e.n.some((n) => n.toLowerCase().includes(q.toLowerCase())));
+    if (hit) return hit.id;
+  }
+  for (const q of queries) {
+    const hit = searchCatalog(q)[0];
+    if (hit) return hit.id;
+  }
+  return null;
+}
+
 /** 一個分片：Agent id 對到各語言的角色原文 */
 export type PromptShard = Record<string, { zh?: string; en?: string }>;
 export type ShardLoader = (index: number) => Promise<PromptShard>;
