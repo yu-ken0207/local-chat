@@ -179,7 +179,8 @@ export function ChatScreen(p: ChatScreenProps) {
       </>
     );
   };
-  const title = session?.title || (state.messages.length > 0 ? t('對話') : t('新對話'));
+  // 還沒取好標題：跟對話清單一樣先用第一句話（不寫「對話」，免得跟左上角的按鈕同一個字）
+  const title = session?.title || state.messages.find((m) => m.role === 'user')?.content.trim() || t('新對話');
   const hasChat = !!session && state.messages.length > 0;
 
   /** 點標題：改名或刪除這段對話（跟對話清單的 ⋯ 一樣） */

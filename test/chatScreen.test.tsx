@@ -237,6 +237,13 @@ describe('鍵盤與捲動', () => {
 });
 
 describe('對話', () => {
+  test('標題還在取的時候：標題列先顯示第一句話，不寫「對話」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.titleReply = () => ({ lines: [{ message: { content: '' }, done: false }], hang: true });
+    await send(store, '中午吃什麼');
+    expect(screen.getByTestId('chat-title').props.children).toBe('中午吃什麼');
+  });
+
   test('AI 回了空白：寫「AI 沒有回答」，可以按重新產生', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '' }, done: true }] });
