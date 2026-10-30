@@ -52,12 +52,15 @@ function checkWhen(text: string, ctx: ToolContext, what: string): string | null 
 export function calendarTools(api: CalendarApi): PhoneTool[] {
   const findCalendar = async (name: string): Promise<CalendarInfo> => {
     const writable = (await api.calendars()).filter((c) => c.canWrite);
+    const id = await api.defaultCalendarId();
     if (name) {
-      const hit = writable.find((c) => c.title.toLowerCase() === name.toLowerCase());
+      // 同名的可能有好幾個（例如 iCloud 和公司帳號都叫「行事曆」）：有預設的那個就用它。
+      // 沒指定時卡片上填的就是預設行事曆的名稱，不這樣會寫進另一個帳號
+      const same = writable.filter((c) => c.title.toLowerCase() === name.toLowerCase());
+      const hit = same.find((c) => c.id === id) ?? same[0];
       if (!hit) throw new Error(t('找不到可以加行程的「{p0}」行事曆。', { p0: name }));
       return hit;
     }
-    const id = await api.defaultCalendarId();
     const hit = writable.find((c) => c.id === id) ?? writable[0];
     if (!hit) throw new Error(t('手機上沒有可以加行程的行事曆。'));
     return hit;

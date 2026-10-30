@@ -148,6 +148,19 @@ describe('加行程', () => {
     await createEvent.undo!(out.data);
     expect(api.deleted).toEqual(['e1']);
   });
+
+  test('同名的行事曆有好幾個（例如 iCloud 和公司帳號都叫「行事曆」）：卡片上填的預設行事曆名稱寫進預設的那個', async () => {
+    const { api, createEvent } = tools();
+    api.list = [
+      { id: 'exchange', title: '行事曆', canWrite: true },
+      { id: 'icloud', title: '行事曆', canWrite: true },
+    ];
+    api.defaultId = 'icloud';
+    const { input } = await createEvent.fillDefaults!({ title: "看牙醫", start: "2026-11-04T15:00" }, ctx);
+    expect(input.calendar).toBe('行事曆');
+    await createEvent.run(input);
+    expect(api.created[0].calendarId).toBe('icloud');
+  });
 });
 
 describe('加提醒', () => {
