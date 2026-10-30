@@ -329,11 +329,15 @@ describe('畫面', () => {
     expect(screen.getByText('（AI 猜的）')).toBeTruthy();
     expect(screen.getByText('開始：11/4（週三）15:00')).toBeTruthy();
     await fireEvent.press(screen.getByText('加入'));
-    expect(await screen.findByText('✓ 新增 1 個行程')).toBeTruthy();
+    expect(await screen.findByText('新增 1 個行程')).toBeTruthy();
+    // 前面一格狀態符號（讀螢幕不唸），讀螢幕唸「已完成：…」
+    expect(screen.getByText('✓', { includeHiddenElements: true }).props.accessibilityElementsHidden).toBe(true);
+    expect(screen.getByLabelText('已完成：新增 1 個行程')).toBeTruthy();
     expect(await screen.findByText('好了')).toBeTruthy();
     expect(cal.created).toHaveLength(1);
     await fireEvent.press(screen.getByText('復原'));
     expect(await screen.findByText('已復原：新增 1 個行程')).toBeTruthy();
+    expect(screen.getByText('–', { includeHiddenElements: true })).toBeTruthy();
   });
 
   test('修改時間用時間選擇器：選了就照選的做；選填的結束時間可以拿掉再加上', async () => {
@@ -398,7 +402,7 @@ describe('畫面', () => {
     await fireEvent.press(screen.getByText('修改'));
     await fireEvent.changeText(screen.getByLabelText('標題'), '看牙醫');
     await fireEvent.press(screen.getByText('加入'));
-    await screen.findByText('✓ 新增 1 個行程');
+    await screen.findByText('新增 1 個行程');
     expect(cal.created[0].title).toBe('看牙醫');
   });
 

@@ -33,7 +33,7 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
         ? what
         : t('沒有回答')
       : action.status === 'done'
-        ? `✓ ${what}`
+        ? what
         : action.status === 'undone'
           ? t('已復原：{p0}', { p0: what })
           : action.status === 'declined'
@@ -41,9 +41,17 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
             : action.status === 'skipped'
               ? t('跳過：{p0}（你直接打字了）', { p0: label })
               : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
+  // 每行前面固定一格狀態符號，一眼分得出：做好 ✓（綠）、沒做成 ✗（紅）、沒有做／跳過／已復原 –（淡）
+  const done = action.status === 'done';
+  const failed = action.status === 'failed';
   return (
     <View style={styles.doneRow} testID={`action-${action.id}`}>
-      <Text style={[styles.small, action.status === 'failed' ? styles.red : styles.dim, styles.flex]}>{text}</Text>
+      <Text style={[styles.small, styles.mark, { color: done ? C.green : failed ? C.errorText : C.secondary }]} accessibilityElementsHidden importantForAccessibility="no">
+        {done ? '✓' : failed ? '✗' : '–'}
+      </Text>
+      <Text style={[styles.small, failed ? styles.red : styles.dim, styles.flex]} accessibilityLabel={done ? t('已完成：{p0}', { p0: text }) : undefined}>
+        {text}
+      </Text>
       {action.status === 'done' && tool?.undo ? <ActionButton text={t('復原')} onPress={() => void h.onUndo(action.id)} /> : null}
       {action.status === 'failed' && (action.result as { error?: string } | null)?.error === 'permission_denied' ? (
         <ActionButton text={t('打開設定')} onPress={() => void Linking.openSettings()} />
@@ -462,6 +470,7 @@ const styles = StyleSheet.create({
   // 輸入框不設 lineHeight：iOS 的 TextInput 設了 lineHeight 字會偏下
   input: { fontFamily: TEXT.body.fontFamily, fontSize: TEXT.body.fontSize, color: C.label, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  mark: { width: 14, textAlign: 'center' },
   doneRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   item: { gap: 6 },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },

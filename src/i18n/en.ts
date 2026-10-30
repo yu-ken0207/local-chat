@@ -365,6 +365,7 @@ export const en: Record<string, string> = {
   "跳過：{p0}（你直接打字了）": "Skipped: {p0} (you typed a new message)",
   "加上": "Set",
   "不改了": "Keep as is",
+  "已完成：{p0}": "Done: {p0}",
   "捲到最新": "Scroll to latest",
   "AI 改任何東西之前都會先問你，做完也可以復原。": "The AI asks before changing anything, and you can undo it afterwards. ",
   "目前的模型做得到這些事。": "The current model can do these.",
