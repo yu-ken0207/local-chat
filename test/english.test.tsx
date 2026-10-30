@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { ActionSheetIOS } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
-import { setLanguage } from '../src/i18n';
+import { setLanguage, t } from '../src/i18n';
 import { ChatStore } from '../src/state/chatStore';
 import { Repo } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -70,4 +70,11 @@ test('中文手機也可以在 App 裡改成英文', async () => {
   expect(screen.getByText('連接你的電腦')).toBeTruthy();
   await store.setPref('language', 'en');
   await waitFor(() => expect(screen.getByText('Connect your computer')).toBeTruthy());
+});
+
+test('英文：時間欄位讀螢幕的標籤唸起來通順（欄位名是 Starts、Remind at 這種，不能直接接 date）', () => {
+  setLanguage('en');
+  expect(t('{p0}日期', { p0: t('開始') })).toBe('Starts, date');
+  expect(t('{p0}時間', { p0: t('什麼時候提醒') })).toBe('Remind at, time');
+  expect(t('拿掉{p0}', { p0: t('結束') })).toBe('Remove the Ends field');
 });
