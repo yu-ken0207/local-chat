@@ -392,6 +392,7 @@ export function ChatScreen(p: ChatScreenProps) {
           <Composer
             modelLabel={modelLabel}
             canAttach={!!model?.vision}
+            modelKnown={!!model}
             think={model?.think ?? null}
             thinkValue={session?.think ?? null}
             busy={!!state.streaming}

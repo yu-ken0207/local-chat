@@ -174,6 +174,27 @@ describe('輸入列', () => {
     // 灰的但按得到：按了說為什麼不能附照片
     await fireEvent.press(screen.getByLabelText('附加照片（目前的模型看不懂圖片）'));
     expect(screen.getByText('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。')).toBeTruthy();
+    // 照著換成看得懂圖的模型：那句提示就收掉
+    await act(async () => {
+      await store.selectModel(A, 'gemma4:31b');
+    });
+    expect(screen.queryByText('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。')).toBeNull();
+    expect(disabled('附加照片')).toBe(false);
+  });
+
+  test('讀不到模型資訊（電腦沒連上）：＋按了說讀不到，不說成模型看不懂圖；已附的照片不拿掉', async () => {
+    const { store, net } = await setup();
+    pickActionSheet(0);
+    await fireEvent.press(screen.getByLabelText('附加照片'));
+    expect(await screen.findByLabelText('移除照片 1')).toBeTruthy();
+    net.hosts.delete(A);
+    await act(async () => {
+      await store.loadModels(A);
+    });
+    await fireEvent.press(screen.getByLabelText('附加照片（還沒讀到模型的資訊）'));
+    expect(screen.getByText('還沒讀到這個模型的資訊（電腦可能沒連上），讀到了才知道能不能附照片。')).toBeTruthy();
+    expect(screen.queryByText(/看不懂圖片/)).toBeNull();
+    expect(screen.getByLabelText('移除照片 1')).toBeTruthy();
   });
 
   test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {

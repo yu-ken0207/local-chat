@@ -15,6 +15,8 @@ type Props = {
   /** 「主機 · 模型」；還沒選模型時是 null */
   modelLabel: string | null;
   canAttach: boolean;
+  /** 讀得到目前模型的資訊（看不看得懂圖）；讀不到時（電腦沒連上、清單還在讀）不能說成「模型看不懂圖片」 */
+  modelKnown?: boolean;
   think: ThinkOption | null;
   thinkValue: ThinkSetting | null;
   busy: boolean;
@@ -61,13 +63,25 @@ export function Composer(p: Props) {
   const [sending, setSending] = useState(false);
   const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
-  // 換成看不懂圖的模型時，拿掉已附的照片並提示
+  const modelKnown = p.modelKnown ?? true;
+  // 換成看不懂圖的模型時，拿掉已附的照片並提示（讀不到模型資訊時不算：可能只是電腦一時連不上）
   useEffect(() => {
-    if (!p.canAttach && photos.length > 0) {
+    if (modelKnown && !p.canAttach && photos.length > 0) {
       setPhotos([]);
       setHint(t('目前的模型看不懂圖片，已移除附上的照片。'));
     }
-  }, [p.canAttach, photos.length]);
+  }, [modelKnown, p.canAttach, photos.length]);
+  // 換成看得懂圖的模型了：「看不懂圖片」那句不用再留著
+  useEffect(() => {
+    if (p.canAttach) setHint('');
+  }, [p.canAttach]);
+  // 「＋」灰掉的原因：還沒選模型、讀不到模型資訊、模型看不懂圖，各說各的
+  const attachBlocked =
+    p.modelLabel === null
+      ? { label: t('附加照片（還沒選模型）'), hint: t('先選一個模型，才能附照片。') }
+      : !modelKnown
+        ? { label: t('附加照片（還沒讀到模型的資訊）'), hint: t('還沒讀到這個模型的資訊（電腦可能沒連上），讀到了才知道能不能附照片。') }
+        : { label: t('附加照片（目前的模型看不懂圖片）'), hint: t('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。') };
 
   useEffect(() => {
     if (!p.injected) return;
@@ -177,9 +191,9 @@ export function Composer(p: Props) {
         <View style={styles.inputRow}>
           <IconButton
             name="plus"
-            label={p.canAttach ? t('附加照片') : t('附加照片（目前的模型看不懂圖片）')}
-            // 模型看不懂圖：灰的但按得到，按了說原因（不然按了沒反應，不知道為什麼）
-            onPress={p.canAttach ? openAttach : () => setHint(t('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。'))}
+            label={p.canAttach ? t('附加照片') : attachBlocked.label}
+            // 不能附照片：灰的但按得到，按了說原因（不然按了沒反應，不知道為什麼）
+            onPress={p.canAttach ? openAttach : () => setHint(attachBlocked.hint)}
             dimmed={!p.canAttach}
             disabled={p.busy || photos.length >= MAX_PHOTOS}
           />
