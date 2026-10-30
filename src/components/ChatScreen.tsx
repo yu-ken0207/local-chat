@@ -325,6 +325,8 @@ export function ChatScreen(p: ChatScreenProps) {
             bottomInset={bottomInset}
             onSend={async (text, photos) => {
               nearBottom.current = true;
+              // 送出後收鍵盤，整個畫面留給回答（使用者決定，10/30）
+              Keyboard.dismiss();
               if (editing) {
                 const id = editing.id;
                 setEditing(null);

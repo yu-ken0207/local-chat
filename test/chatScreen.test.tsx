@@ -227,6 +227,13 @@ describe('選單', () => {
 });
 
 describe('鍵盤與捲動', () => {
+  test('送出後收鍵盤', async () => {
+    const { store } = await setup();
+    const dismiss = jest.spyOn(Keyboard, 'dismiss');
+    await send(store, 'hi');
+    expect(dismiss).toHaveBeenCalled();
+  });
+
   test('點訊息、用按鈕打開對話清單，都會收鍵盤', async () => {
     const { store } = await setup();
     await send(store, 'hi');
