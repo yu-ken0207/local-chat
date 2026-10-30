@@ -352,7 +352,7 @@ export function DiscussionStatus({
     return (
       <View style={styles.status} accessibilityLiveRegion="polite">
         <SymbolView name="checkmark.seal" size={16} tintColor={C.accent} />
-        <Text style={[styles.statusText, styles.flex]}>{t('大家覺得差不多可以收尾了')}</Text>
+        <Text style={[styles.statusText, styles.flex]}>{t('大家覺得可以收尾了')}</Text>
         {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} primary /> : null}
         <ActionButton text={t('繼續聊')} onPress={onContinue} />
         <Pressable onPress={onDismissSuggest} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('先不要')}>

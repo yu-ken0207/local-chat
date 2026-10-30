@@ -158,9 +158,9 @@ test('大家覺得可以收尾：出現提示，可以繼續聊或先不要', as
   await screenOf(store);
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '開始');
   await fireEvent.press(screen.getByLabelText('送出'));
-  expect(await screen.findByText('大家覺得差不多可以收尾了')).toBeTruthy();
+  expect(await screen.findByText('大家覺得可以收尾了')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('先不要'));
-  expect(screen.queryByText('大家覺得差不多可以收尾了')).toBeNull();
+  expect(screen.queryByText('大家覺得可以收尾了')).toBeNull();
 });
 
 test('成員面板：改發言方式、拿掉成員；幫我挑照話題從圖鑑挑', async () => {

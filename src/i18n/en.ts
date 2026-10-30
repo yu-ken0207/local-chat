@@ -587,7 +587,7 @@ export const en: Record<string, string> = {
   "回覆 {p0}，點一下看那則": "Replying to {p0}. Tap to see that message",
   "大家在想要不要說話…": "Everyone is deciding whether to speak…",
   "大家正在討論，按「暫停」後再試一次。": "The group is discussing. Tap Pause and try again.",
-  "大家覺得差不多可以收尾了": "The group thinks it's time to wrap up",
+  "大家覺得可以收尾了": "The group thinks it's time to wrap up",
   "大家說完了": "Everyone has had their say",
   "寫一句話，AI 照話題挑幾個觀點不同的角色。": "Write a sentence and the AI will pick a few characters with different views on the topic.",
   "幫我挑": "Pick for me",
