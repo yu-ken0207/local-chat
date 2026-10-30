@@ -367,6 +367,7 @@ export const en: Record<string, string> = {
   "跳過：{p0}（你直接打字了）": "Skipped: {p0} (you typed a new message)",
   "加上": "Set",
   "不改了": "Keep as is",
+  "（AI 猜的）": " (AI's guess)",
   "拿掉": "Remove",
   "拿掉{p0}": "Remove {p0}",
   "結束要比開始晚": "End must be after start",

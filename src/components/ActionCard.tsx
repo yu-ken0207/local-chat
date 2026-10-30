@@ -344,6 +344,8 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
             .map(([key, label]) => (
               <Text key={key} style={[styles.small, guessed.has(key) ? styles.guessed : styles.dim]} accessibilityLabel={guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: shown(tool, key, action.input[key]) }) : undefined}>
                 {label}：{shown(tool, key, action.input[key])}
+                {/* AI 或 App 補上的：不只靠顏色，寫明是猜的 */}
+                {guessed.has(key) ? <Text style={styles.guessedTag}>{t('（AI 猜的）')}</Text> : null}
               </Text>
             ))
         : null}
@@ -444,7 +446,8 @@ const styles = StyleSheet.create({
   small: { ...TEXT.small },
   dim: { color: C.secondary },
   off: { color: C.tertiary, textDecorationLine: 'line-through' },
-  guessed: { color: C.tertiary, fontStyle: 'italic' },
+  guessed: { color: C.secondary, fontStyle: 'italic' },
+  guessedTag: { color: C.secondary, fontStyle: 'normal' },
   red: { color: C.errorText },
   flex: { flex: 1 },
   field: { gap: 2 },

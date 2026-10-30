@@ -325,6 +325,8 @@ describe('畫面', () => {
     const { cal } = await screenWithCard();
     expect(screen.getByText('新增「帶小孩看牙醫」')).toBeTruthy();
     expect(screen.getByLabelText('結束：11/4（週三）16:00（AI 猜的）')).toBeTruthy();
+    // 不只靠顏色：畫面上也寫「（AI 猜的）」
+    expect(screen.getByText('（AI 猜的）')).toBeTruthy();
     expect(screen.getByText('開始：11/4（週三）15:00')).toBeTruthy();
     await fireEvent.press(screen.getByText('加入'));
     expect(await screen.findByText('✓ 新增 1 個行程')).toBeTruthy();
