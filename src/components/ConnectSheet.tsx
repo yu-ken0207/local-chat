@@ -20,10 +20,14 @@ type Props = {
   copyText: (text: string) => void;
   /** 從設定的「你的電腦」進來：管理用，電腦清單放最上面，點一台只出選單、不直接切換目前的對話 */
   manage?: boolean;
+  /** 配對成功但電腦還沒有模型：按「選一個模型下載」時（外面關掉這個面板、接著打開選模型） */
+  onNeedModel?: () => void;
 };
 
 /** 連接你的電腦：自動尋找、手動輸入位址、你的電腦清單、連不上時的說明 */
-export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage }: Props) {
+export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage, onNeedModel }: Props) {
+  // 配對成功但這台電腦還沒有模型：面板最上面說清楚，給下一步
+  const [pairedNoModel, setPairedNoModel] = useState('');
   const [helpOpen, setHelpOpen] = useState(!!showHelp);
   /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
   const [adding, setAdding] = useState<string | null>(null);
@@ -50,10 +54,12 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage
     }
   }
 
-  /** 配對成功：選好模型就關掉面板，可以直接聊天 */
+  /** 配對成功：選好模型就關掉面板，可以直接聊天；電腦還沒有模型就說清楚、給「選一個模型下載」 */
   function paired() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    if (store.getState().session?.model) onClose();
+    const s = store.getState().session;
+    if (s?.model) return onClose();
+    setPairedNoModel(store.hostLabel(s?.hostUrl) || t('你的電腦'));
   }
 
   /** 掃到 QR code：配對成功回 null，失敗回說明（掃描畫面會顯示） */
@@ -194,6 +200,14 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {pairedNoModel ? (
+          <View style={styles.pairedCard} accessibilityLiveRegion="polite">
+            <Text style={styles.lead}>{t('已連上「{p0}」。這台電腦還沒有模型，下載一個就能開始聊天。', { p0: pairedNoModel })}</Text>
+            <Pressable onPress={() => (onNeedModel ? onNeedModel() : onClose())} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
+              <Text style={styles.primaryText}>{t('選一個模型下載')}</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {manage ? hostList : null}
         {manage ? <Text style={styles.section}>{t('新增電腦')}</Text> : null}
         <Text style={styles.lead}>{t('在電腦上打開 Local AI 小幫手，按「配對新手機」，再用手機掃描電腦畫面上的 QR code。')}</Text>
@@ -372,6 +386,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.4 },
   content: { padding: 16, paddingTop: 4, gap: 12, paddingBottom: 48 },
   lead: { ...TEXT.small, color: C.label },
+  pairedCard: { gap: 10, marginBottom: 8 },
   primary: { height: 52, borderRadius: 14, backgroundColor: C.accentFill, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   primaryBusy: { opacity: 0.9 },
   primaryText: { ...TEXT.body, fontWeight: '700', color: '#ffffff' },

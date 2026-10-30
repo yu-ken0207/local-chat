@@ -39,6 +39,13 @@ export function ChatScreen(p: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   // 捲到上面看舊訊息時，右下角給「捲到最新」
+  // 連接面板關好之後要做的事（例如接著打開選模型）；iOS 沒回報關好時 1.5 秒後也繼續
+  const afterConnect = useRef<(() => void) | null>(null);
+  const connectClosed = () => {
+    const next = afterConnect.current;
+    afterConnect.current = null;
+    next?.();
+  };
   const [atEnd, setAtEnd] = useState(true);
   const messageCount = useRef(0);
   const nearBottom = useRef(true);
@@ -291,6 +298,7 @@ export function ChatScreen(p: ChatScreenProps) {
                 scanning={state.scan?.running && state.scan.total > 0 ? t('正在尋找你的電腦…（{p0}/{p1}）', { p0: state.scan.done, p1: state.scan.total }) : ''}
                 modelLabel={modelLabel}
                 hostState={session?.hostUrl ? state.hostStatus[session.hostUrl]?.state : undefined}
+                noModels={!!session?.hostUrl && state.models[session.hostUrl]?.loading === false && state.models[session.hostUrl]?.list.length === 0 && !state.models[session.hostUrl]?.error}
                 onConnect={() => setConnect({ help: false })}
                 onHelp={() => setConnect({ help: true })}
                 onPickModel={() => setSheetOpen(true)}
@@ -390,8 +398,20 @@ export function ChatScreen(p: ChatScreenProps) {
           <Modal visible={sheetOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSheetOpen(false)}>
             <ModelSheet store={store} state={state} copyText={p.copyText} onClose={() => setSheetOpen(false)} />
           </Modal>
-          <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)}>
-            <ConnectSheet store={store} state={state} copyText={p.copyText} showHelp={connect?.help} onClose={() => setConnect(null)} />
+          <Modal visible={!!connect} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnect(null)} onDismiss={connectClosed}>
+            <ConnectSheet
+              store={store}
+              state={state}
+              copyText={p.copyText}
+              showHelp={connect?.help}
+              onClose={() => setConnect(null)}
+              onNeedModel={() => {
+                // 等連接面板關好再打開選模型（兩層面板不能同時動）
+                afterConnect.current = () => setSheetOpen(true);
+                setConnect(null);
+                setTimeout(connectClosed, 1500);
+              }}
+            />
           </Modal>
           <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
         </View>
@@ -411,6 +431,7 @@ function EmptyState({
   scanning,
   modelLabel,
   hostState,
+  noModels,
   onConnect,
   onHelp,
   onPickModel,
@@ -420,6 +441,8 @@ function EmptyState({
   modelLabel: string | null;
   /** 這段對話的電腦現在連不連得到：沒連上時不要寫「已經連上」 */
   hostState?: 'checking' | 'online' | 'offline';
+  /** 電腦連上了，但上面一個模型都沒有：要說「下載一個」，不是「選一個」 */
+  noModels?: boolean;
   onConnect: () => void;
   onHelp: () => void;
   onPickModel: () => void;
@@ -450,6 +473,11 @@ function EmptyState({
         </>
       ) : checking ? (
         <Text style={styles.hint}>{t('正在連線到你的電腦…')}</Text>
+      ) : phase === 'noModel' && noModels ? (
+        <>
+          <PrimaryButton text={t('下載一個模型')} onPress={onPickModel} />
+          <Text style={styles.hint}>{t('已經連上電腦，但上面還沒有模型。下載一個就能開始聊天。')}</Text>
+        </>
       ) : phase === 'noModel' ? (
         <>
           <PrimaryButton text={t('選擇模型')} onPress={onPickModel} />

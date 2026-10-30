@@ -155,6 +155,19 @@ describe('連接面板', () => {
     expect(await screen.findByText(/直接在下面輸入問題/)).toBeTruthy();
   });
 
+  test('配對成功但電腦還沒有模型：說清楚、給「選一個模型下載」，按了接著打開選模型', async () => {
+    const net = new FakeOllamaNet();
+    net.addHelper(H, { id: 'h1', name: '書房電腦', code: '123456' }, { models: [] });
+    const { store } = await setup({ net });
+    await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.press(screen.getByText('連接你的電腦'));
+    await fireEvent.press(await screen.findByText('掃描 QR code'));
+    await fireEvent(await screen.findByTestId('qr-camera'), 'barcodeScanned', { data: payload('123456') });
+    expect(await screen.findByText(/這台電腦還沒有模型/, {}, { timeout: 3000 })).toBeTruthy();
+    await fireEvent.press(screen.getByText('選一個模型下載'));
+    expect(await screen.findByRole('header', { name: '選擇模型' }, { timeout: 3000 })).toBeTruthy();
+  });
+
   test('掃到別的 QR code：留在掃描畫面，說明要掃哪一個', async () => {
     await openConnect();
     await fireEvent.press(await screen.findByText('掃描 QR code'));
