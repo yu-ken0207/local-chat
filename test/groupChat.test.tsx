@@ -68,8 +68,10 @@ test('空白對話可以邀請 Agent：從我的 Agent 加進來，上面出現�
 test('討論：你在右、Agent 在左帶名字；討論中可以插話、可以暫停；說完了可以繼續討論', async () => {
   const { net, store, agents } = await setup();
   for (const a of Object.values(agents)) await store.addMember(a.id);
+  // 連續上限 1、工程師第二輪不到門檻：插話沒被處理的話就沒人回
+  await store.setGroupSettings({ maxStreak: 1 });
   let release!: () => void;
-  script(net, { 財務長: [8, 0, 0], 工程師: [0, 6, 0] }, { hold: new Promise<void>((r) => (release = r)) });
+  script(net, { 財務長: [8, 0, 0], 工程師: [0, 3, 0] }, { hold: new Promise<void>((r) => (release = r)) });
   await screenOf(store);
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '要換伺服器嗎');
   await fireEvent.press(screen.getByLabelText('送出'));

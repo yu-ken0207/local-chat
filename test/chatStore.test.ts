@@ -765,6 +765,50 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(store.getState().messages.map((m) => m.id)).toEqual(original);
   });
 
+  test('回答中按復原：等它停好再清，不留「已停止」，原本的回答還在、不會被重試刪掉', async () => {
+    const { net, store } = await ready();
+    await store.send('原本');
+    const original = store.getState().messages.map((m) => m.id);
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '講到一半' }, done: false }], hang: true });
+    await store.editAndResend(original[0], '改過', [], true);
+    await flush();
+    expect(store.getState().streaming).not.toBeNull();
+    await store.undoLast();
+    expect(store.getState().messages.map((m) => m.id)).toEqual(original);
+    expect(store.getState().running).toEqual({});
+    await store.retry();
+    expect(store.getState().messages.map((m) => m.id)).toEqual(original);
+  });
+
+  test('編輯已經併進前情摘要的訊息：摘要作廢；按復原放回去', async () => {
+    const { repo, store } = await ready();
+    await store.send('第一題');
+    await store.send('第二題');
+    const s = store.getState().session!;
+    const [q1, a1] = store.getState().messages;
+    await repo.updateSession(s.id, { summary: '舊摘要', summarySeq: a1.seq });
+    await store.editAndResend(q1.id, '改過');
+    expect(await repo.getSession(s.id)).toMatchObject({ summary: '', summarySeq: 0 });
+    await store.undoLast();
+    expect(await repo.getSession(s.id)).toMatchObject({ summary: '舊摘要', summarySeq: a1.seq });
+    // 摘要後面的訊息不影響摘要
+    const later = store.getState().messages.at(-1)!;
+    await store.deleteMessage(later.id);
+    expect(await repo.getSession(s.id)).toMatchObject({ summary: '舊摘要' });
+  });
+
+  test('刪除所有對話時還在回答：等它停好，新畫面沒有舊的串流', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '講到一半' }, done: false }], hang: true });
+    await store.send('a', [], true);
+    await flush();
+    expect(store.getState().streaming).not.toBeNull();
+    await store.deleteAllSessions();
+    expect(store.getState().streaming).toBeNull();
+    expect(store.getState().running).toEqual({});
+    expect(store.getState().messages).toEqual([]);
+  });
+
   test('移除電腦可以復原', async () => {
     const { store } = await ready();
     await store.removeHost(A);

@@ -1,5 +1,5 @@
 import { PromptStore, getEntry, suggestAvatar } from '../src/agents/catalog';
-import { ChatStore, ROLE_TRUNCATED } from '../src/state/chatStore';
+import { ChatStore, ROLE_MISSING, ROLE_TRUNCATED } from '../src/state/chatStore';
 import { DEFAULT_GROUP, Repo, type Agent } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
 import { memoryDb } from './helpers/nodeDb';
@@ -115,9 +115,11 @@ test('連續上限：講滿就停下等你；過半覺得可以收尾就提議',
 
 test('討論中插話：馬上送出（不用等），有人回你的新訊息', async () => {
   const { net, store } = await setup();
+  // 連續上限 1、工程師第二輪不到門檻：插話沒被處理的話就沒人回
+  await store.setGroupSettings({ maxStreak: 1 });
   let release!: () => void;
   const hold = new Promise<void>((r) => (release = r));
-  script(net, { 財務長: [8, 0, 0], 工程師: [0, 6, 0] }, { hold });
+  script(net, { 財務長: [8, 0, 0], 工程師: [0, 3, 0] }, { hold });
   const first = store.send('要換伺服器嗎');
   await new Promise((r) => setTimeout(r, 50));
   expect(store.getState().discussion).toEqual({ phase: 'speaking', agentId: expect.any(String) });
@@ -125,6 +127,8 @@ test('討論中插話：馬上送出（不用等），有人回你的新訊息',
   release();
   await first;
   expect(said(store)).toEqual(['你：要換伺服器嗎', '財務長：財務長說第1次', '你：預算只有 10 萬', '工程師：工程師說第1次']);
+  const msgs = store.getState().messages;
+  expect(msgs.at(-1)!.replyTo).toBe(msgs.find((m) => m.content === '預算只有 10 萬')!.id);
 });
 
 test('暫停：講到一半停掉，記「已停止」，討論結束；再按繼續就接著聊', async () => {
@@ -195,6 +199,20 @@ test('電腦連不到：說原因，不要默默停下來', async () => {
   await store.send('嗨');
   expect(said(store).at(-1)).toMatch(/^錯誤：沒有得到回答/);
   expect(store.getState().running).toEqual({});
+  // 舉手全部失敗就報錯，不會再去叫人正式發言
+  expect(net.chatBodies().some((b) => !b.format)).toBe(false);
+});
+
+test('討論到一半電腦斷線：舉手全部失敗要說原因，不是「大家說完了」', async () => {
+  const { net, store } = await setup();
+  const host = net.hosts.get(A)!;
+  host.reply = (body: any) => {
+    if (body.format) return { lines: [{ message: { content: `{"score":${whoBids(body) === '財務長' ? 8 : 0},"reply_to":"","conclude":false}` }, done: false }, done] };
+    host.online = false;
+    return { lines: [{ message: { content: '財務長講完了' }, done: false }, done] };
+  };
+  await store.send('嗨');
+  expect(said(store)).toEqual(['你：嗨', '財務長：財務長講完了', expect.stringMatching(/^錯誤：沒有得到回答/)]);
 });
 
 test('請他展開講：同一個人完整說明那一則，只講這一次', async () => {
@@ -232,6 +250,20 @@ test('圖鑑的 Agent：用圖鑑原文當角色說明；上下文太小就截�
   expect(store.getState().messages.at(-1)).toMatchObject({ detail: ROLE_TRUNCATED, content: '大廚說第1次' });
 });
 
+test('圖鑑的 Agent 讀不到原文：用簡短說明照樣講，並註明', async () => {
+  const prompts = new PromptStore(async () => {
+    throw new Error('Metro 沒開');
+  });
+  const { net, repo, store } = await setup({ members: [], prompts });
+  const chef = await repo.agentFromCatalog('lobe:chef', { name: '大廚', intro: '會做菜', emoji: '👨‍🍳' });
+  await store.addMember(chef.id);
+  script(net, {});
+  await store.send('今晚吃什麼');
+  const speech = net.chatBodies().find((b) => whoSpeaks(b) === '大廚')!;
+  expect(speech.messages[0].content).toContain('會做菜');
+  expect(store.getState().messages.at(-1)).toMatchObject({ detail: ROLE_MISSING, content: '大廚說第1次' });
+});
+
 test('對話太長：前面的併進前情摘要，之後只送摘要和最近的', async () => {
   const { net, repo, store } = await setup({ members: ['財務長'], runtimeCtx: 2048 });
   const s = store.getState().session!;
@@ -249,6 +281,17 @@ test('對話太長：前面的併進前情摘要，之後只送摘要和最近�
   expect(said(store).at(-1)).toBe('財務長：財務長說第1次');
 });
 
+test('摘要回空的（會思考的模型字數被思考用光）：不往前推，下次再摘', async () => {
+  const { net, repo, store } = await setup({ members: ['財務長'], runtimeCtx: 2048 });
+  const s = store.getState().session!;
+  for (let i = 0; i < 40; i++) await repo.addMessage(s.id, { role: i % 2 ? 'assistant' : 'user', content: `第${i}句`.padEnd(80, '。') });
+  await store.openSession((await repo.createSession()).id);
+  await store.openSession(s.id);
+  net.hosts.get(A)!.reply = (body: any) => ({ lines: [{ message: { content: whoSpeaks(body) ? '好' : '' }, done: false }, done] });
+  await store.send('最後一句');
+  expect(await repo.getSession(s.id)).toMatchObject({ summary: '', summarySeq: 0 });
+});
+
 test('換到別段對話：討論在背景繼續；回來看得到成員和結果', async () => {
   const { net, store } = await setup();
   let release!: () => void;
@@ -260,8 +303,11 @@ test('換到別段對話：討論在背景繼續；回來看得到成員和結�
   await store.newSession();
   expect(store.getState().members).toEqual([]);
   expect(store.getState().running).toHaveProperty(s.id);
+  // 背景的討論不會蓋到新對話的畫面
+  expect([store.getState().streaming, store.getState().discussion, store.getState().messages]).toEqual([null, null, []]);
   release();
   await p;
+  expect([store.getState().streaming, store.getState().discussion, store.getState().messages]).toEqual([null, null, []]);
   await store.openSession(s.id);
   await store.groupTask;
   expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', '工程師']);
@@ -476,3 +522,184 @@ test('換語言：從圖鑑來的成員和「我的 Agent」名字馬上跟著�
   expect(store.getState().members.map((m) => m.agent.name)).toEqual([e.n[0]]);
 });
 
+test('換語言後 @ 另一個語言的名字也對得到人', async () => {
+  const { net, store } = await setup();
+  const e = getEntry('agency:academic/academic-historian')!;
+  await store.addCatalogMember(e.id, { name: e.n[0], intro: e.d[0], emoji: e.e });
+  const historian = store.getState().members.at(-1)!.agent.id;
+  await store.setPref('language', 'en');
+  net.hosts.get(A)!.reply = (body: any) =>
+    body.format ? { lines: [{ message: { content: '{"score":0,"reply_to":"","conclude":false}' }, done: false }, done] } : { lines: [{ message: { content: 'ok' }, done: false }, done] };
+  await store.send(`@${e.n[0]} what do you think`);
+  expect(store.getState().messages.find((m) => m.role === 'assistant')!.agentId).toBe(historian);
+  await store.setPref('language', 'zh-Hant');
+});
+
+
+describe('審查修正（2026-10-31）', () => {
+  const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+
+  test('舉手時插話：從你這句重新選，你 @ 的人回你這句', async () => {
+    const { net, store } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const host = net.hosts.get(A)!;
+    let first = true;
+    host.reply = (body: any) => {
+      if (body.format) {
+        const hold = first ? gate : undefined;
+        first = false;
+        return { lines: [{ message: { content: `{"score":${whoBids(body) === '財務長' ? 9 : 0},"reply_to":"","conclude":false}` }, done: false }, done], holdLast: hold };
+      }
+      return { lines: [{ message: { content: `${whoSpeaks(body)}說了` }, done: false }, done] };
+    };
+    const p = store.send('要換伺服器嗎');
+    await tick();
+    expect(store.getState().discussion).toMatchObject({ phase: 'bidding' });
+    await store.send('@工程師 你先說');
+    release();
+    await p;
+    await store.groupTask;
+    const msgs = store.getState().messages;
+    const ask = msgs.find((m) => m.content === '@工程師 你先說')!;
+    const next = msgs[msgs.indexOf(ask) + 1];
+    expect(store.getState().agents[next.agentId!]?.name).toBe('工程師');
+    expect(next.replyTo).toBe(ask.id);
+    // 財務長舉手最高，但被插話打斷，沒有搶在你 @ 的人前面
+    expect(said(store).slice(0, 3)).toEqual(['你：要換伺服器嗎', '你：@工程師 你先說', '工程師：工程師說了']);
+  });
+
+  test('一次 @ 兩個人：自由搶話兩個都講；只回被 @ 的也兩個都講', async () => {
+    for (const mode of ['free', 'mention'] as const) {
+      const { net, store } = await setup({ members: ['財務長', '工程師', '律師'] });
+      await store.setGroupSettings({ mode });
+      script(net, {});
+      await store.send('@律師 @工程師 你們怎麼看');
+      expect(said(store)).toEqual(['你：@律師 @工程師 你們怎麼看', '律師：律師說第1次', '工程師：工程師說第1次']);
+    }
+  });
+
+  test('只回被 @ 的：收尾後你再說話，由最近講話的成員回（不是結論卡）', async () => {
+    const { net, store } = await setup();
+    await store.setGroupSettings({ mode: 'mention' });
+    script(net, {});
+    await store.send('@工程師 你先');
+    net.hosts.get(A)!.reply = (body: any) => {
+      const reply = (content: string) => ({ lines: [{ message: { content }, done: false }, done] });
+      if (body.format?.properties?.options) return reply('{"question":"?","options":["甲","乙"]}');
+      if (body.format?.properties?.choice) return reply('{"choice":1,"reason":""}');
+      if (body.format?.properties?.consensus) return reply('{"consensus":"甲","disagreements":[],"todos":[]}');
+      if (whoSpeaks(body)) return reply(`${whoSpeaks(body)}回了`);
+      return reply('筆記');
+    };
+    await store.conclude();
+    expect(store.getState().messages.at(-1)).toMatchObject({ detail: 'conclusion' });
+    await store.send('那接下來呢');
+    expect(said(store).at(-1)).toBe('工程師：工程師回了');
+  });
+
+  test('收尾中插話：結論卡寫完接著討論，有人回你這句', async () => {
+    const { net, store } = await setup();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    net.hosts.get(A)!.reply = (body: any) => {
+      const reply = (content: string, holdLast?: Promise<unknown>) => ({ lines: [{ message: { content }, done: false }, done], holdLast });
+      if (body.format?.properties?.options) return reply('{"question":"?","options":["甲","乙"]}', gate);
+      if (body.format?.properties?.choice) return reply('{"choice":1,"reason":""}');
+      if (body.format?.properties?.consensus) return reply('{"consensus":"甲","disagreements":[],"todos":[]}');
+      if (body.format) return reply(`{"score":${whoBids(body) === '工程師' ? 8 : 0},"reply_to":"","conclude":false}`);
+      if (whoSpeaks(body)) return reply(`${whoSpeaks(body)}回了`);
+      return reply('筆記');
+    };
+    const p = store.conclude();
+    await tick();
+    expect(store.getState().discussion).toMatchObject({ phase: 'concluding' });
+    await store.send('我還有一點想補充');
+    release();
+    await p;
+    const msgs = store.getState().messages.filter((m) => m.role !== 'note' || m.detail === 'conclusion');
+    expect(msgs.map((m) => m.detail === 'conclusion' ? '結論卡' : m.content)).toEqual(['我還有一點想補充', '結論卡', '工程師回了']);
+    const ask = msgs[0];
+    expect(msgs.at(-1)!.replyTo).toBe(ask.id);
+  });
+
+  test('舉手時按停止：記「已停止」', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '{' }, done: false }], hang: true });
+    const p = store.send('開始');
+    await tick();
+    expect(store.getState().discussion).toMatchObject({ phase: 'bidding' });
+    store.stop();
+    await p;
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' });
+    expect(store.getState().running).toEqual({});
+  });
+
+  test('收尾失敗後按重試：重新收尾，不是接著討論', async () => {
+    const { net, store } = await setup();
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('要換伺服器嗎');
+    const host = net.hosts.get(A)!;
+    host.reply = () => ({ lines: [{ error: 'model crashed' }] });
+    await store.conclude();
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'error' });
+    host.reply = (body: any) => {
+      const reply = (content: string) => ({ lines: [{ message: { content }, done: false }, done] });
+      if (body.format?.properties?.options) return reply('{"question":"?","options":["甲","乙"]}');
+      if (body.format?.properties?.choice) return reply('{"choice":1,"reason":""}');
+      if (body.format?.properties?.consensus) return reply('{"consensus":"甲","disagreements":[],"todos":[]}');
+      if (body.format) return reply('{"score":9,"reply_to":"","conclude":false}');
+      return reply(whoSpeaks(body) ? '又討論了' : '筆記');
+    };
+    await store.retry();
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', detail: 'conclusion' });
+    expect(store.getState().messages.some((m) => m.content === '又討論了')).toBe(false);
+  });
+
+  test('有人舉手出錯：跳過他、說一聲是誰，其他人照樣討論', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = (body: any) => {
+      if (body.format) return whoBids(body) === '財務長' ? { lines: [{ error: 'model crashed' }] } : { lines: [{ message: { content: '{"score":3,"reply_to":"","conclude":false}' }, done: false }, done] };
+      return { lines: [{ message: { content: `${whoSpeaks(body)}回了` }, done: false }, done] };
+    };
+    await store.send('嗨');
+    expect(said(store)).toEqual(['你：嗨', '工程師：工程師回了']);
+    expect(store.getState().notice).toBe('財務長 這次沒有回應（電腦連不到或出錯），其他人照樣討論。');
+  });
+
+  test('一般對話背景送出：回答還在跑，換到別段一樣可以送出', async () => {
+    const { net, store } = await setup({ members: [] });
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let n = 0;
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: `回答${++n}` }, done: false }, done], holdLast: n === 1 ? gate : undefined });
+    const a = store.getState().session!.id;
+    await store.send('第一段', [], true);
+    await tick();
+    expect(store.getState().running).toHaveProperty(a);
+    await store.newSession();
+    await store.send('第二段', [], true);
+    await tick();
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['第二段', '回答2']);
+    release();
+    await tick();
+    await store.openSession(a);
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['第一段', '回答1']);
+  });
+
+  test('刪掉正在討論的對話：等它停好才刪，也不會再去取標題', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = (body: any) =>
+      body.format
+        ? { lines: [{ message: { content: '{"score":9,"reply_to":"","conclude":false}' }, done: false }, done] }
+        : { lines: [{ message: { content: '講到一半' }, done: false }], hang: true };
+    const s = store.getState().session!;
+    const p = store.send('開始');
+    await tick(80);
+    await store.deleteSession(s.id);
+    await p;
+    await tick();
+    expect(store.getState().running).toEqual({});
+    expect(net.titleBodies()).toEqual([]);
+  });
+});

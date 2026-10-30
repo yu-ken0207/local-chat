@@ -695,15 +695,15 @@ export function ChatScreen(p: ChatScreenProps) {
           const saved = editing;
           setEditing(null);
           try {
-            await store.editAndResend(saved.id, text, photos);
+            await store.editAndResend(saved.id, text, photos, true);
           } catch (e) {
             // 沒送出去：字和照片會放回輸入框，「編輯中」也要回來，不然再按送出會變成多加一則
             setEditing(saved);
             throw e;
           }
         } else {
-          // 多 AI 討論：送出就好，討論在背景跑（大家在講的時候也能接著插話）
-          await store.send(text, photos, group);
+          // 送出就好，回答、討論在背景跑：換到別段照樣可以問，大家在講的時候也能接著插話
+          await store.send(text, photos, true);
         }
       }}
       onStop={() => store.stop()}

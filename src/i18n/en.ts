@@ -616,6 +616,7 @@ export const en: Record<string, string> = {
   "被 @ 拉進來": "added by @-mention",
   "要討論什麼？": "What's the topic?",
   "角色說明太長，這次只用了前面一部分。": "The role description was too long, so only the first part was used.",
+  "這次讀不到角色原文，暫時用簡短說明。": "Couldn't load the full role description this time, so a short one was used.",
   "討論中…": "Discussing…",
   "討論設定": "Discussion settings",
   "請他展開講": "Ask them to elaborate",
@@ -645,4 +646,6 @@ export const en: Record<string, string> = {
   "搜尋頭像": "Search pictures",
   "用 emoji": "Use emoji",
   "用 {p0} 的頭像": "Use {p0}'s picture",
+  "{p0} 這次沒有回應（電腦連不到或出錯），其他人照樣討論。": "{p0} didn't respond this time (computer unreachable or an error). The others will keep going.",
+  "、": ", ",
 };

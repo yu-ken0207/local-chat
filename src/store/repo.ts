@@ -635,6 +635,11 @@ export class Repo {
     return rows.map((r) => ({ id: r.id, parentMessageId: r.parent_message_id, count: Number(r.n) }));
   }
 
+  /** 對話還在（沒有被刪、也沒有在最近刪除裡） */
+  async isActive(id: string): Promise<boolean> {
+    return !!(await this.db.get('SELECT 1 FROM sessions WHERE id = ? AND deleted_at IS NULL', [id]));
+  }
+
   async getSession(id: string): Promise<Session | null> {
     const row = await this.db.get<SessionRow>('SELECT * FROM sessions WHERE id = ?', [id]);
     return row ? toSession(row) : null;

@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, Style
 
 import { entryIntro, entryName, getEntry, type CatalogEntry } from '../agents/catalog';
 import { CONCLUSION, parseConclusion, type Conclusion } from '../agents/discussion';
-import { ROLE_TRUNCATED, type ChatState, type ChatStore, type DiscussionPhase, type Streaming } from '../state/chatStore';
+import { ROLE_MISSING, ROLE_TRUNCATED, type ChatState, type ChatStore, type DiscussionPhase, type Streaming } from '../state/chatStore';
 import { DEFAULT_GROUP, isRecordNote, type Agent, type Attachment, type GroupSettings, type JoinedBy, type Member, type Message, type SpeakMode } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { AgentAvatar, avatarId } from './AgentAvatar';
@@ -115,6 +115,7 @@ export function BubbleView({
           {live ? <Working streaming={live} /> : null}
         </View>
         {m.detail === ROLE_TRUNCATED ? <Text style={styles.note}>{t('角色說明太長，這次只用了前面一部分。')}</Text> : null}
+        {m.detail === ROLE_MISSING ? <Text style={styles.note}>{t('這次讀不到角色原文，暫時用簡短說明。')}</Text> : null}
         {!live && (m.versions || h.isLast) ? (
           <View style={styles.actions}>
             {m.versions && h.onSwitchVersion ? (

@@ -167,7 +167,7 @@ describe('舉手', () => {
     { ...ENG, member: true },
     { ...PM, member: false },
   ];
-  const ctx = { lastSpeaker: null, mentioned: [] as string[], mustReply: false };
+  const ctx = { lastSpeaker: null, mustReply: false };
 
   test('分數最高的講；剛講完的扣分；積極度加減', () => {
     const bids = [
@@ -180,10 +180,15 @@ describe('舉手', () => {
     expect(chooseSpeaker(bids, shy, ctx)!.id).toBe('eng');
   });
 
-  test('被 @ 的一定講（跳過剛講完的）', () => {
-    const bids = [{ id: 'cfo', score: 9, replyTo: '', conclude: false }];
-    expect(chooseSpeaker(bids, people, { ...ctx, mentioned: ['eng'] })!.id).toBe('eng');
-    expect(chooseSpeaker(bids, people, { ...ctx, mentioned: ['cfo', 'eng'], lastSpeaker: 'cfo' })!.id).toBe('eng');
+  test('這輪舉手出錯的人不選：你剛說完要有人回時也跳過他（你 @ 的人由 chatStore 先排，不在這裡）', () => {
+    const bids = [
+      { id: 'cfo', score: 0, replyTo: '', conclude: false },
+      { id: 'eng', score: 0, replyTo: '', conclude: false },
+    ];
+    const eager = [{ ...CFO, talk: 1, member: true }, { ...ENG, member: true }];
+    expect(chooseSpeaker(bids, eager, { ...ctx, mustReply: true })!.id).toBe('cfo');
+    expect(chooseSpeaker(bids, eager, { ...ctx, mustReply: true, skip: ['cfo'] })!.id).toBe('eng');
+    expect(chooseSpeaker(bids, eager, { ...ctx, mustReply: true, skip: ['cfo', 'eng'] })).toBeNull();
   });
 
   test('都沒到門檻：停；你剛說完就讓最高的成員回；還不是成員的要更高分', () => {
@@ -272,8 +277,40 @@ describe('正式發言', () => {
     expect(overflowSeq).not.toBeNull();
     expect(messages.at(-2)!.content).toContain('第29句');
     expect(messages.map((m) => m.content).join('\n')).not.toContain('第0句');
-    const kept = lines.filter((l) => l.seq > overflowSeq!);
-    expect(messages.filter((m) => m.role === 'user')).toHaveLength(kept.filter((l) => l.who !== 'eng').length);
+    // 摘要到 overflowSeq 之後，剩下的要放得進這次送出去的範圍（摘一次就夠，不會下一句又滿）
+    const after = lines.filter((l) => l.seq > overflowSeq!);
+    expect(after.length).toBeGreaterThanOrEqual(1);
+    expect(after.length).toBeLessThanOrEqual(messages.filter((m) => m.role === 'user').length);
+    expect(overflowSeq!).toBeLessThan(lines.at(-1)!.seq);
+  });
+
+  test('要回應的那一則已經被擠出去：提醒裡直接引用它說的話', () => {
+    const target = line('cfo', '財務長', '我認為預算最多 20 萬');
+    const rest = Array.from({ length: 30 }, (_, i) => line(null, '使用者', `第${i}句`.padEnd(120, '。')));
+    const { messages } = speakMessages({ ...base, lines: [target, ...rest], replyTo: target.id, contextTokens: 2048 });
+    expect(messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n')).not.toContain('預算最多');
+    expect(messages.at(-1)!.content).toContain('回應【財務長】說的：「我認為預算最多 20 萬」');
+  });
+
+  test('要回應的那一則還在畫面裡：提醒不重複引用', () => {
+    const target = line('cfo', '財務長', '我認為預算最多 20 萬');
+    const { messages } = speakMessages({ ...base, lines: [target, line(null, '使用者', '大家怎麼看')], replyTo: target.id });
+    expect(messages.at(-1)!.content).toBe('現在輪到你（工程師）發言，回應【財務長】。直接說你要說的話。');
+  });
+
+  test('最新一則超長：截短後整包不超過上下文', () => {
+    const huge = line(null, '使用者', '很長'.repeat(4000));
+    const { messages } = speakMessages({ ...base, lines: [line('cfo', '財務長', '先說'), huge], contextTokens: 2048 });
+    const last = messages.at(-2)!;
+    expect(last.content).toContain('太長，後面省略');
+    expect(messages.reduce((n, m) => n + estimateTokens(m.content), 0)).toBeLessThanOrEqual(2048);
+  });
+
+  test('筆記最多佔一成：太多就只帶最新的幾則', () => {
+    const notes = Array.from({ length: 40 }, (_, i) => `第${i}則筆記`.padEnd(60, '。'));
+    const { messages } = speakMessages({ ...base, lines: [line(null, '使用者', '開始')], notes, contextTokens: 4096 });
+    expect(messages[0].content).toContain('第39則筆記');
+    expect(messages[0].content).not.toContain('第0則筆記');
   });
 
   test('英文：規則、提醒都是英文', () => {

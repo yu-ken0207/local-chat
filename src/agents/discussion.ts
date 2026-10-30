@@ -79,7 +79,15 @@ export function cardPrompt(name: string, intro: string, card: AgentCard | null):
 export function aliasesOf(people: { id: string; name: string }[]): { id: string; name: string }[] {
   const short = people.map((p) => ({ id: p.id, name: p.name.split(/[\s（(]/)[0].trim() })).filter((a, i) => a.name.length >= 2 && a.name !== people[i].name);
   const taken = new Set(people.map((p) => p.name.toLowerCase()));
-  return short.filter((a) => !taken.has(a.name.toLowerCase()) && short.filter((b) => b.name.toLowerCase() === a.name.toLowerCase()).length === 1);
+  // 同一個人的中英文名字可能有同一個簡稱（都是 SRE）：看的是幾個「人」用這個簡稱
+  const owners = (n: string) => new Set(short.filter((b) => b.name.toLowerCase() === n).map((b) => b.id));
+  const seen = new Set<string>();
+  return short.filter((a) => {
+    const n = a.name.toLowerCase();
+    if (taken.has(n) || owners(n).size !== 1 || seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  });
 }
 
 /** 找出這段話 @ 了誰（全名或簡稱；名字照長的先比，避免「小明」吃掉「小明明」） */
@@ -177,20 +185,18 @@ export const MENTION_BOOST = 2;
 export const RECENT_PENALTY = 3;
 
 /**
- * 從舉手結果選下一個發言的人。
- * - mentioned（你 @ 的人）一定講（跳過剛講完的）
+ * 從舉手結果選下一個發言的人（你 @ 的人在這之前就排好了，見 chatStore 的 owed）。
  * - 分數依積極度加減；剛講完的再扣 3；最近 4 輪每講一次扣 3；被別的 Agent @ 到的加 2
  * - 成員要到門檻、還不是成員的（AI 自己加入）門檻更高；同分時最久沒講的先講
  * - mustReply（你剛說完）：大家都沒到門檻也要有一個成員回
+ * - skip：這輪舉手出錯的人（電腦連不到），不選
  */
 export function chooseSpeaker(
   bids: Bid[],
   people: (Speaker & { member: boolean })[],
-  ctx: { lastSpeaker: string | null; mentioned: string[]; mustReply: boolean; boost?: string[]; recent?: string[] }
+  ctx: { lastSpeaker: string | null; mustReply: boolean; boost?: string[]; recent?: string[]; skip?: string[] }
 ): { id: string; replyTo: string } | null {
-  const byId = new Map(people.map((p) => [p.id, p]));
-  const forced = ctx.mentioned.find((id) => id !== ctx.lastSpeaker && byId.has(id));
-  if (forced) return { id: forced, replyTo: bids.find((b) => b.id === forced)?.replyTo ?? '' };
+  const byId = new Map(people.filter((p) => !ctx.skip?.includes(p.id)).map((p) => [p.id, p]));
   const recent = ctx.recent ?? [];
   const times = (id: string) => recent.filter((x) => x === id).length;
   const spokeAt = (id: string) => recent.lastIndexOf(id);
@@ -298,42 +304,80 @@ export type SpeakInput = {
   images?: { id: string; data: string[] };
 };
 
+/** 一段話截到大約 maxTokens，後面註明省略 */
+function clip(text: string, maxTokens: number, note: string): string {
+  if (estimateTokens(text) <= maxTokens) return text;
+  let out = '';
+  for (const ch of text) {
+    if (estimateTokens(out + ch) > maxTokens) break;
+    out += ch;
+  }
+  return out + note;
+}
+
 /**
  * 組正式發言要送的訊息：群組規則＋角色說明＋筆記、前情摘要、最近幾則（自己說的當 assistant，別人的當 user 加上名字）、最後提醒輪到你。
- * 放不下時：角色說明最多佔四成（截短並回報），對話從最新往回塞，塞不下的回報 overflowSeq（要併進前情摘要）。
+ * 放不下時：角色說明最多佔四成（截短並回報）、筆記最多一成；對話從最新往回塞，最新一則太長就截短；
+ * 要回應的那一則不在裡面（已經摘要過、被擠掉）就把它的內容放進最後的提醒。
+ * 塞不下的回報 overflowSeq：要併進前情摘要到這一則為止（多摘一點，摘完剩下的只佔一半，不用每講一則就重摘）
  */
 export function speakMessages(input: SpeakInput): { messages: ChatMessage[]; truncatedRole: boolean; overflowSeq: number | null } {
   const { me, lines } = input;
-  const answerRoom = Math.max(512, Math.floor(input.contextTokens * 0.2));
-  const role = truncateRole(input.role, Math.floor(input.contextTokens * 0.4));
-  const notes = input.notes.length
-    ? (zh() ? '\n\n你之前討論留下的筆記：\n' : '\n\nYour notes from earlier discussions:\n') + input.notes.map((n) => `- ${n}`).join('\n') // i18n-ignore
+  const ctx = input.contextTokens;
+  const answerRoom = Math.max(512, Math.floor(ctx * 0.2));
+  const role = truncateRole(input.role, Math.floor(ctx * 0.4));
+  // 筆記最多一成：放不下就少帶幾則舊的
+  const noteList = [...input.notes];
+  while (noteList.length > 0 && estimateTokens(noteList.join('\n')) > ctx * 0.1) noteList.shift();
+  const notes = noteList.length
+    ? (zh() ? '\n\n你之前討論留下的筆記：\n' : '\n\nYour notes from earlier discussions:\n') + noteList.map((n) => `- ${n}`).join('\n') // i18n-ignore
     : '';
   const roleHead = zh() ? '\n\n以下是你的角色設定：\n' : '\n\nYour role:\n'; // i18n-ignore
   const system = groupRules(me, input.members, !!input.expand) + roleHead + role.text + notes;
   const target = lines.find((l) => l.id === input.replyTo);
-  const nudge = zh()
-    ? `現在輪到你（${me.name}）發言${target ? `，回應【${target.name}】` : ''}。直接說你要說的話。` // i18n-ignore
-    : `It's your turn (${me.name})${target ? `, responding to ${target.name}` : ''}. Say what you want to say.`;
+  const quoteOf = (t: Line) => clip(t.content, 300, '…');
+  const nudgeFor = (withQuote: boolean) => {
+    if (zh()) {
+      const to = target ? (withQuote ? `，回應【${target.name}】說的：「${quoteOf(target)}」` : `，回應【${target.name}】`) : ''; // i18n-ignore
+      return `現在輪到你（${me.name}）發言${to}。直接說你要說的話。`; // i18n-ignore
+    }
+    const to = target ? (withQuote ? `, responding to what ${target.name} said: "${quoteOf(target)}"` : `, responding to ${target.name}`) : '';
+    return `It's your turn (${me.name})${to}. Say what you want to say.`;
+  };
   const summary = input.summary ? (zh() ? `前情摘要（之前的討論）：\n${input.summary}` : `Summary of the earlier discussion:\n${input.summary}`) : ''; // i18n-ignore
-  let room = input.contextTokens - answerRoom - estimateTokens(system) - estimateTokens(summary) - estimateTokens(nudge);
+  // 先替「引用要回應的那一則」留位置，塞完發現它就在裡面再拿掉
+  const room0 = ctx - answerRoom - estimateTokens(system) - estimateTokens(summary) - estimateTokens(nudgeFor(!!target));
+  let room = room0;
   const recent = lines.filter((l) => l.seq > input.summarySeq);
   const kept: Line[] = [];
   for (let i = recent.length - 1; i >= 0; i--) {
     const cost = estimateTokens(recent[i].content) + 8;
-    // 最新的一則一定要帶（不然不知道在回什麼），太長就截
     if (cost > room && kept.length > 0) break;
-    kept.unshift(recent[i]);
-    room -= cost;
+    // 最新的一則一定要帶（不然不知道在回什麼）：太長就截短
+    const line = cost > room ? { ...recent[i], content: clip(recent[i].content, Math.max(200, room - 8), zh() ? '…（太長，後面省略）' : '… (too long, rest omitted)') } : recent[i]; // i18n-ignore
+    kept.unshift(line);
+    room -= estimateTokens(line.content) + 8;
   }
-  const overflow = recent.length > kept.length ? recent[recent.length - kept.length - 1].seq : null;
+  let overflow: number | null = null;
+  if (recent.length > kept.length) {
+    // 摘到剩下的只佔一半
+    let half = Math.floor(room0 / 2);
+    let keep = 0;
+    for (let i = recent.length - 1; i >= 0; i--) {
+      half -= estimateTokens(recent[i].content) + 8;
+      if (half < 0) break;
+      keep++;
+    }
+    keep = Math.max(1, Math.min(keep, kept.length));
+    overflow = recent[recent.length - keep - 1].seq;
+  }
   const messages: ChatMessage[] = [{ role: 'system', content: system }];
   if (summary) messages.push({ role: 'system', content: summary });
   for (const l of kept) {
     if (l.who === me.id) messages.push({ role: 'assistant', content: l.content });
     else messages.push({ role: 'user', content: quote(l, lines), ...(input.images?.id === l.id ? { images: input.images.data } : {}) });
   }
-  messages.push({ role: 'system', content: nudge });
+  messages.push({ role: 'system', content: nudgeFor(!!target && !kept.some((l) => l.id === target.id)) });
   return { messages, truncatedRole: role.truncated, overflowSeq: overflow };
 }
 

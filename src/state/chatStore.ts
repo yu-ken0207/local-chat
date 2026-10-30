@@ -207,7 +207,23 @@ type Run = {
   /** 多 AI 討論：進行到哪、你在中途插話了 */
   phase?: DiscussionPhase | null;
   interject?: boolean;
+  /** 使用者按了停止（或刪除、清除、還原時停掉）；連不到電腦時自己停下的不算 */
+  stopped?: boolean;
+  /** 已經記過「已停止」 */
+  noted?: boolean;
+  /** 收完尾（finally 跑完）時 resolve：刪除、還原前要等它，免得還在寫資料 */
+  ended: Promise<void>;
+  finish: () => void;
 };
+
+function newRun(parentId: string | null, streaming: Streaming | null): Run {
+  let finish!: () => void;
+  const ended = new Promise<void>((r) => (finish = r));
+  return { abort: new AbortController(), streaming, parentId, phase: null, ended, finish };
+}
+
+/** 等這些 run 收完尾；卡在不理會停止的地方（例如工具還在跑）時，最多等這麼久 */
+const STOP_WAIT_MS = 5000;
 
 /** 討論為什麼停下來：沒人想講、到連續上限、按了暫停、出錯 */
 type StopReason = 'quiet' | 'cap' | 'stopped' | 'error';
@@ -218,6 +234,25 @@ function quickThink(info: ModelInfo | undefined): ThinkSetting | undefined {
   if (info.think.kind === 'always') return true;
   return info.think.kind === 'toggle' ? false : info.think.levels[0];
 }
+
+/** 小呼叫（舉手、投票、摘要…）的字數上限：會思考的模型思考也算在裡面，要多給 */
+function budget(n: number, info: ModelInfo | undefined): number {
+  return info?.think ? n * 6 : n;
+}
+
+/** @ 對人時用的名字：目前的名字，加上圖鑑來的中英文名字（換語言後打舊語言的名字照樣對得到） */
+function mentionPeople(agents: Agent[]): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  for (const a of agents) {
+    out.push({ id: a.id, name: a.name });
+    const e = a.catalogId ? getEntry(a.catalogId) : undefined;
+    for (const n of e?.n ?? []) if (n && n !== a.name) out.push({ id: a.id, name: n });
+  }
+  return out;
+}
+
+/** 一則訊息的 detail：讀不到角色原文，這次只用了名字和介紹（畫面上註明） */
+export const ROLE_MISSING = 'role-missing';
 
 /** 模型還沒載入、查不到實際上下文時，當作只有這麼多（Ollama 預設常是 4096） */
 const ASSUMED_CONTEXT = 4096;
@@ -1120,11 +1155,14 @@ export class ChatStore {
   async deleteSession(id: string): Promise<void> {
     const { repo } = this.deps;
     const wasCurrent = this.state.session?.id === id;
-    this.stopSession(id);
+    // 先停掉那段（連它的討論串）在背景的回答、等收完尾，免得之後還寫進刪掉的對話
+    await this.stopSession(id);
     // 上一個還能復原的操作先確定（例如清除全部資料）：不然它確定時會看到這段剛被移到最近刪除，直接永久刪掉
     await this.dismissUndo();
     const session = await repo.getSession(id);
     await repo.trashSessions([id]);
+    const gone = new Set([id, ...(await repo.threadsOf(id)).map((th) => th.id)]);
+    this.set({ fresh: this.state.fresh.filter((x) => !gone.has(x)), suggestConclude: this.state.suggestConclude.filter((x) => !gone.has(x)) });
     // 刪的是討論串：回到它那段對話
     if (wasCurrent) await (session?.parentId ? this.openSession(session.parentId) : this.openLatestOrNew());
     await this.offerUndo(t('已刪除「{p0}」', { p0: session?.title || t('對話') }), async () => {
@@ -1263,16 +1301,20 @@ export class ChatStore {
     await this.declinePending(s.id);
     await repo.addMessage(s.id, { role: 'user', content, attachments: images });
     this.set({ messages: await repo.listMessages(s.id), notice: '', suggestConclude: this.state.suggestConclude.filter((x) => x !== s.id) });
-    if (!group) return this.answer();
+    this.concludeFailed.delete(s.id);
+    // background：只等訊息存好就回來（畫面用：回答、討論在背景跑，換到別段照樣可以問）
+    const go = (task: Promise<void>) => (background ? void task.catch(() => {}) : task);
+    if (!group) return go(this.answer());
     await this.joinMentioned(s.id, content);
     const run = this.runs.get(s.id);
-    if (run) {
+    // 正在討論、收尾：插話，下一個人從你這句重新選
+    if (run && !run.abort.signal.aborted) {
       run.interject = true;
       return;
     }
-    const task = this.discuss(s.id, { mustReply: true });
-    if (background) void task.catch(() => {});
-    else await task;
+    // 剛按了暫停、還在收尾：等它收完再開始，你的話不會被吞掉
+    if (run) await run.ended;
+    return go(this.discuss(s.id, { mustReply: true }));
   }
 
   /**
@@ -1286,16 +1328,19 @@ export class ChatStore {
     if (!s || !target || this.state.streaming || this.runs.has(s.id)) return;
     if (override) await this.selectModel(override.hostUrl, override.model);
     // 舊回答收成版本（可以用 ‹ › 切回來）；它後面的訊息先藏起來
+    const keepSummary = await this.dropSummaryFrom(s.id, target.seq);
     const later = await repo.softDeleteFrom(s.id, target.seq + 1);
     const group = await repo.hideAsVersion(target.id);
     this.set({ messages: await repo.listMessages(s.id), notice: '' });
     if (later.length > 0) {
       const before = new Set(this.state.messages.map((m) => m.id));
       await this.offerUndo(t('已刪掉後面的 {p0} 則訊息', { p0: later.length }), async () => {
+        await this.stopSession(s.id);
         const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id) && m.id !== target.id);
         for (const m of added) await repo.deleteMessage(m.id);
         await repo.showVersion(target.id);
         await repo.restoreMessages(later);
+        await keepSummary();
         if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
       });
     }
@@ -1318,7 +1363,7 @@ export class ChatStore {
   }
 
   /** 編輯某則自己說的話並重送：這則和之後的訊息都換掉 */
-  async editAndResend(userId: string, text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
+  async editAndResend(userId: string, text: string, images: Omit<Attachment, 'id'>[] = [], background = false): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
     const target = this.state.messages.find((m) => m.id === userId && m.role === 'user' && !isThreadRoot(m));
@@ -1326,16 +1371,19 @@ export class ChatStore {
     if (images.length > 0 && this.refusesImages()) throw new Error(t('這個模型看不懂圖片，不能附照片'));
     if (!text.trim() && images.length === 0) return;
     const before = new Set((await repo.listMessages(s.id)).map((m) => m.id));
+    const keepSummary = await this.dropSummaryFrom(s.id, target.seq);
     const old = await repo.softDeleteFrom(s.id, target.seq);
     this.set({ messages: await repo.listMessages(s.id) });
     await this.offerUndo(t('已取代原本的訊息'), async () => {
-      this.stopSession(s.id);
+      // 等回答收完尾再清：不然它被中斷時寫的「已停止」會留在救回來的對話最後面
+      await this.stopSession(s.id);
       const added = (await repo.listMessages(s.id)).filter((m) => !before.has(m.id));
       for (const m of added) await repo.deleteMessage(m.id);
       await repo.restoreMessages(old);
+      await keepSummary();
       if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
     });
-    await this.send(text, images);
+    await this.send(text, images, background);
   }
 
   /** 最後一則是錯誤或「已停止」時，拿掉它（停止的話連半截回答一起拿掉）再問一次。「你按了復原」的紀錄行不算，看它上面那則 */
@@ -1355,8 +1403,22 @@ export class ChatStore {
     // 多 AI 討論：停下來的那一則留著（是某個人說了一半），接著討論
     if (last.role === 'note' && before?.role === 'assistant' && !group) await repo.deleteMessage(before.id);
     this.set({ messages: await repo.listMessages(s.id), notice: '' });
+    // 收尾失敗或被停掉的：重新收尾
+    if (group && this.concludeFailed.has(s.id)) return this.conclude(s.id);
     if (group) return this.discuss(s.id, { mustReply: true });
     await this.answer();
+  }
+
+  /**
+   * 動到已經併進前情摘要的訊息（seq 在 summarySeq 以內）：摘要作廢（裡面還有被換掉的內容），下次放不下時再重摘。
+   * 回傳按「復原」時把摘要放回去的函式
+   */
+  private async dropSummaryFrom(sessionId: string, seq: number): Promise<() => Promise<void>> {
+    const { repo } = this.deps;
+    const s = await repo.getSession(sessionId);
+    if (!s?.summary || seq > s.summarySeq) return async () => {};
+    await repo.updateSession(sessionId, { summary: '', summarySeq: 0 });
+    return async () => repo.updateSession(sessionId, { summary: s.summary, summarySeq: s.summarySeq });
   }
 
   /** 某則訊息之後還有幾則（重新產生、編輯前提醒用） */
@@ -1371,10 +1433,13 @@ export class ChatStore {
     const s = this.state.session;
     // 討論串帶進去的那一題是背景，刪了 AI 就不知道在談什麼
     if (!s || this.state.streaming?.messageId === id || this.state.messages.some((m) => m.id === id && isThreadRoot(m))) return;
+    const target = this.state.messages.find((m) => m.id === id);
+    const keepSummary = target ? await this.dropSummaryFrom(s.id, target.seq) : async () => {};
     await repo.softDeleteMessages([id]);
     this.set({ messages: await repo.listMessages(s.id) });
     await this.offerUndo(t('已刪除訊息'), async () => {
       await repo.restoreMessages([id]);
+      await keepSummary();
       if (this.state.session?.id === s.id) this.set({ messages: await repo.listMessages(s.id) });
     });
   }
@@ -1393,17 +1458,30 @@ export class ChatStore {
   /** 中途停止回答（目前這段） */
   stop(): void {
     const cur = this.state.session?.id;
-    if (cur) this.runs.get(cur)?.abort.abort();
+    const run = cur ? this.runs.get(cur) : undefined;
+    if (!run) return;
+    run.stopped = true;
+    run.abort.abort();
   }
 
-  /** 停掉某段對話（連它的討論串）在背景的回答：刪掉那段時用 */
-  private stopSession(id: string): void {
-    for (const [sid, r] of this.runs) if (sid === id || r.parentId === id) r.abort.abort();
+  /** 停掉這些 run，等它們收完尾（最多 STOP_WAIT_MS） */
+  private async halt(runs: Run[]): Promise<void> {
+    for (const r of runs) {
+      r.stopped = true;
+      r.abort.abort();
+    }
+    if (runs.length === 0) return;
+    await Promise.race([Promise.all(runs.map((r) => r.ended)), new Promise((r) => setTimeout(r, STOP_WAIT_MS))]);
   }
 
-  /** 全部停掉：刪除所有對話、清除全部資料、從備份還原時用 */
-  private stopAll(): void {
-    for (const r of this.runs.values()) r.abort.abort();
+  /** 停掉某段對話（連它的討論串）在背景的回答，等收完尾：刪掉那段、復原取代的訊息時用 */
+  private stopSession(id: string): Promise<void> {
+    return this.halt([...this.runs].filter(([sid, r]) => sid === id || r.parentId === id).map(([, r]) => r));
+  }
+
+  /** 全部停掉，等收完尾：刪除所有對話、清除全部資料、從備份還原時用 */
+  private stopAll(): Promise<void> {
+    return this.halt([...this.runs.values()]);
   }
 
   /** 依目前對話內容向模型要一則新的回答（send、重新產生、編輯重送共用） */
@@ -1437,13 +1515,13 @@ export class ChatStore {
 
     const hostLabel = this.hostLabel(url);
     const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel, altGroup: options.altGroup ?? null });
-    const abort = new AbortController();
-    const run = { abort, parentId: s.parentId, streaming: { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' } as Streaming };
+    const run = newRun(s.parentId, { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' });
+    const abort = run.abort;
     this.runs.set(s.id, run);
     if (here()) this.set({ messages: [...this.state.messages, placeholder] });
     this.publishRuns();
     const update = (patch: Partial<Streaming>) => {
-      if (this.runs.get(s.id) !== run) return;
+      if (this.runs.get(s.id) !== run || !run.streaming) return;
       run.streaming = { ...run.streaming, ...patch };
       if (here()) this.set({ streaming: run.streaming });
     };
@@ -1482,6 +1560,7 @@ export class ChatStore {
       .catch(() => {});
     let retryMoved = false;
     let next: 'continue' | 'wait' | 'done' = 'done';
+    let succeeded = false;
     try {
       const result = await this.clientFor(url).chat(
         { model, messages: history, think: sentThink, ...(tools.length > 0 ? { tools: toOllamaTools(tools) } : {}) },
@@ -1522,6 +1601,7 @@ export class ChatStore {
       // 有文字的回答出來、這段還沒有標題：請模型取標題（不擋住下一次輸入；第一個回答被停掉的話，下一個回答再取）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
       if (answered >= 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
+      succeeded = true;
     } catch (e) {
       await this.notePairingLost(url, e);
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled' && !unreachable;
@@ -1553,23 +1633,32 @@ export class ChatStore {
       const latest = await repo.listMessages(s.id);
       if (here()) this.set({ messages: latest });
       this.publishRuns();
-      // 討論串在背景答完：入口寫「新回答」（打開看過就拿掉）；目前看的是它那段對話時，順便更新問了幾次
+      // 討論串在背景好好答完：入口寫「新回答」（打開看過就拿掉；被停掉、出錯的不算）；目前看的是它那段對話時，順便更新問了幾次
       if (s.parentId && !here()) {
-        if (!this.state.fresh.includes(s.id)) this.set({ fresh: [...this.state.fresh, s.id] });
+        if (succeeded && !this.state.fresh.includes(s.id)) this.set({ fresh: [...this.state.fresh, s.id] });
         if (this.state.session?.id === s.parentId) this.set({ threads: await this.threadMap(this.state.session) });
       }
       void this.refreshLoaded(url);
     }
-    // 按了停止（不是連不到）：不再接著問模型
-    if (signal.aborted && !unreachable) {
-      if (next === 'continue') {
-        await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
-        const after = await repo.listMessages(s.id);
-        if (here()) this.set({ messages: after });
-        if (here()) this.deps.onEvent?.('stopped');
+    let active = false;
+    try {
+      active = await repo.isActive(s.id);
+      // 按了停止（不是連不到時自己停的）：不再接著問模型
+      if (signal.aborted && !unreachable) {
+        if (next === 'continue' && active) {
+          await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
+          const after = await repo.listMessages(s.id);
+          if (here()) this.set({ messages: after });
+          if (here()) this.deps.onEvent?.('stopped');
+        }
+        return;
       }
-      return;
+    } finally {
+      // 「已停止」也寫完了才算收完尾（復原時要等它，才清得掉）
+      run.finish();
     }
+    // 連不到、正在找新位址時按了停止，或這段已經刪掉：不再自動重問、不接著答
+    if (run.stopped || !active) return;
     // 電腦換了位址：已經改好，自動再問一次（換到別段也照樣在背景問）
     if (retryMoved) await this.answer({ ...options, retried: true, sessionId: s.id });
     // 工具都做完了（不用等使用者）：把結果交回模型，接著回答
@@ -1754,22 +1843,46 @@ export class ChatStore {
     return picked.slice(0, 4);
   }
 
+  /** 收尾失敗或被停掉的對話：按「重試」是重新收尾，不是接著討論 */
+  private concludeFailed = new Set<string>();
+
   /**
    * 收尾：整理者列出要決定的問題和 2–4 個方案、每個成員同時投一票（附理由）、寫結論卡（共識、分歧、待辦），
-   * 結論卡釘在對話最上面；最後每個 Agent 寫自己的筆記（下次討論帶著）
+   * 結論卡釘在對話最上面；最後每個 Agent 寫自己的筆記（下次討論帶著）。收尾中你又說了話：收完接著討論
    */
   async conclude(sessionId = this.state.session?.id): Promise<void> {
     const { repo } = this.deps;
     if (!sessionId || this.runs.has(sessionId)) return;
+    // 先佔住這段（第一個 await 之前）：連按兩次「收尾」不會出兩張結論卡
+    const run = newRun(null, null);
+    this.runs.set(sessionId, run);
+    this.publishRuns();
+    try {
+      const s = await repo.getSession(sessionId);
+      if (!s) return;
+      run.parentId = s.parentId;
+      this.publishRuns();
+      await this.concludeIn(sessionId, run);
+    } finally {
+      this.setPhase(sessionId, run, null);
+      if (this.runs.get(sessionId) === run) this.runs.delete(sessionId);
+      this.publishRuns();
+      const list = await repo.listMessages(sessionId);
+      if (this.state.session?.id === sessionId) this.set({ messages: list });
+      run.finish();
+    }
+    if (run.interject && !run.stopped) await this.discuss(sessionId, { mustReply: true });
+  }
+
+  /** 在這個 run 裡收尾（全自動討論停下來時直接接著用，不放掉 run） */
+  private async concludeIn(sessionId: string, run: Run): Promise<void> {
+    const { repo } = this.deps;
     const s = await repo.getSession(sessionId);
     const sm = s ? this.modelFor(null, s) : null;
     const members = await repo.listMembers(sessionId);
     if (!s || !sm || members.length === 0) return;
-    const abort = new AbortController();
-    const signal = abort.signal;
-    const run: Run = { abort, streaming: null, parentId: s.parentId, phase: null };
-    this.runs.set(sessionId, run);
-    this.publishRuns();
+    const signal = run.abort.signal;
+    this.concludeFailed.delete(sessionId);
     this.set({ suggestConclude: this.state.suggestConclude.filter((x) => x !== sessionId) });
     this.setPhase(sessionId, run, { phase: 'concluding', agentId: null });
     const json = (text: string, info: ModelInfo | undefined): any => {
@@ -1784,7 +1897,7 @@ export class ChatStore {
       const names = new Map(members.map((m) => [m.agent.id, m.agent.name]));
       const lines = toLines(await repo.listMessages(sessionId), names);
       // 1. 要決定什麼、有哪些方案
-      const o = json(await this.collect(sm.url, sm.model, optionsMessages(lines, s.summary), { think: quickThink(sm.info), format: OPTIONS_SCHEMA, options: { num_predict: 500 }, signal }), sm.info);
+      const o = json(await this.collect(sm.url, sm.model, optionsMessages(lines, s.summary), { think: quickThink(sm.info), format: OPTIONS_SCHEMA, options: { num_predict: budget(500, sm.info) }, signal }), sm.info);
       let options = strings(o.options, 4);
       if (options.length < 2) options = [t('同意目前的結論'), t('不同意')];
       const question = typeof o.question === 'string' && o.question.trim() ? o.question.trim() : t('結論是什麼？');
@@ -1795,7 +1908,7 @@ export class ChatStore {
           const mm = this.modelFor(m.agent, s);
           if (!mm) return;
           try {
-            const v = json(await this.collect(mm.url, mm.model, voteMessages(this.toSpeaker(m), question, options, lines, s.summary), { think: quickThink(mm.info), format: VOTE_SCHEMA, options: { num_predict: 200 }, signal }), mm.info);
+            const v = json(await this.collect(mm.url, mm.model, voteMessages(this.toSpeaker(m), question, options, lines, s.summary), { think: quickThink(mm.info), format: VOTE_SCHEMA, options: { num_predict: budget(200, mm.info) }, signal }), mm.info);
             const i = Math.round(Number(v.choice)) - 1;
             if (i >= 0 && i < options.length) card.options[i].votes.push({ who: m.agent.id, name: m.agent.name, reason: typeof v.reason === 'string' ? v.reason.trim() : '' });
           } catch {
@@ -1805,14 +1918,16 @@ export class ChatStore {
       );
       if (signal.aborted) throw new OllamaError('cancelled', t('已取消。'));
       // 3. 結論卡
-      const c = json(await this.collect(sm.url, sm.model, conclusionMessages(card, lines, s.summary), { think: quickThink(sm.info), format: CONCLUSION_SCHEMA, options: { num_predict: 800 }, signal }), sm.info);
+      const c = json(await this.collect(sm.url, sm.model, conclusionMessages(card, lines, s.summary), { think: quickThink(sm.info), format: CONCLUSION_SCHEMA, options: { num_predict: budget(800, sm.info) }, signal }), sm.info);
       card.consensus = typeof c.consensus === 'string' ? c.consensus.trim() : '';
       card.disagreements = strings(c.disagreements, 3);
       card.todos = strings(c.todos, 4);
       const msg = await repo.addMessage(sessionId, { role: 'note', content: JSON.stringify(card), detail: CONCLUSION });
       await repo.updateSession(sessionId, { pinnedId: msg.id });
+      const after = await repo.getSession(sessionId);
+      const list = await repo.listMessages(sessionId);
       if (this.state.session?.id === sessionId) {
-        this.set({ session: (await repo.getSession(sessionId)) ?? this.state.session, messages: await repo.listMessages(sessionId) });
+        this.set({ session: after ?? this.state.session, messages: list });
         this.deps.onEvent?.('answered');
       }
       // 4. 每個人寫筆記（下次討論帶著）
@@ -1821,7 +1936,7 @@ export class ChatStore {
           const mm = this.modelFor(m.agent, s);
           if (!mm) return;
           try {
-            const text = await this.collect(mm.url, mm.model, noteMessages(this.toSpeaker(m), card, lines), { think: quickThink(mm.info), options: { num_predict: 250 }, signal });
+            const text = await this.collect(mm.url, mm.model, noteMessages(this.toSpeaker(m), card, lines), { think: quickThink(mm.info), options: { num_predict: budget(250, mm.info) }, signal });
             const note = (mm.info?.think ? (splitThink(text)?.content ?? text) : text).trim().slice(0, 400);
             if (note) await repo.addNote(m.agent.id, sessionId, note);
           } catch {
@@ -1830,13 +1945,11 @@ export class ChatStore {
         })
       );
     } catch (e) {
-      if (signal.aborted) await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
-      else await this.discussionError(sessionId, e);
-    } finally {
-      this.setPhase(sessionId, run, null);
-      if (this.runs.get(sessionId) === run) this.runs.delete(sessionId);
-      this.publishRuns();
-      if (this.state.session?.id === sessionId) this.set({ messages: await repo.listMessages(sessionId) });
+      this.concludeFailed.add(sessionId);
+      if (signal.aborted) {
+        await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
+        run.noted = true;
+      } else await this.discussionError(sessionId, e);
     }
   }
 
@@ -1887,18 +2000,23 @@ export class ChatStore {
     return { id: a.id, name: a.name, intro: a.intro, talk: a.talk, position: 'agent' in m ? m.position : position };
   };
 
-  /** Agent 的角色說明：改過的原文、圖鑑原文、角色卡，依序找 */
-  private async roleFor(a: Agent): Promise<string> {
-    if (a.prompt) return a.prompt;
+  /** Agent 的角色說明：改過的原文、圖鑑原文、角色卡，依序找；圖鑑來的卻讀不到原文時 missing（畫面上註明） */
+  private async roleOf(a: Agent): Promise<{ text: string; missing: boolean }> {
+    if (a.prompt) return { text: a.prompt, missing: false };
     if (a.catalogId) {
       try {
         const p = await this.prompts.get(a.catalogId);
-        if (p) return p;
+        if (p) return { text: p, missing: false };
       } catch {
-        // 讀不到原文就用角色卡
+        // 讀不到原文：先用名字和介紹
       }
+      return { text: cardPrompt(a.name, a.intro, a.card), missing: true };
     }
-    return cardPrompt(a.name, a.intro, a.card);
+    return { text: cardPrompt(a.name, a.intro, a.card), missing: false };
+  }
+
+  private async roleFor(a: Agent): Promise<string> {
+    return (await this.roleOf(a)).text;
   }
 
   /** Agent 用哪台電腦、哪個模型（沒指定就跟著對話） */
@@ -1928,13 +2046,18 @@ export class ChatStore {
     if (this.state.session?.id === sessionId) this.set({ discussion: phase });
   }
 
-  /** 訊息裡 @ 了「我的 Agent」但還不是成員的：拉進來 */
+  /** 訊息裡 @ 了「我的 Agent」但還不是成員的：拉進來（簡稱、中英文名字都算） */
   private async joinMentioned(sessionId: string, text: string): Promise<void> {
     const { repo } = this.deps;
     if (!text.includes('@')) return;
-    const members = new Set((await repo.listMembers(sessionId)).map((m) => m.agent.id));
-    const mine = (await repo.listMyAgents()).filter((a) => !members.has(a.id));
-    for (const id of findMentions(text, mine)) await this.joinAgent(sessionId, mine.find((a) => a.id === id)!, 'mention');
+    const members = (await repo.listMembers(sessionId)).map((m) => m.agent);
+    const memberIds = new Set(members.map((a) => a.id));
+    const mine = (await repo.listMyAgents()).filter((a) => !memberIds.has(a.id));
+    // 跟成員一起比：簡稱撞到成員的不算，免得拉錯人
+    for (const id of findMentions(text, mentionPeople([...members, ...mine]))) {
+      const a = mine.find((x) => x.id === id);
+      if (a) await this.joinAgent(sessionId, a, 'mention');
+    }
   }
 
   /** 加進討論，畫面上記一行「某某加入了討論」 */
@@ -1942,32 +2065,44 @@ export class ChatStore {
     const { repo } = this.deps;
     await repo.addMember(sessionId, a.id, by);
     await repo.addMessage(sessionId, { role: 'note', content: t('{p0} 加入了討論', { p0: a.name }), detail: RECORD_NOTE });
+    const list = await repo.listMessages(sessionId);
     if (this.state.session?.id === sessionId) {
-      this.set({ messages: await repo.listMessages(sessionId) });
+      this.set({ messages: list });
       await this.refreshGroup();
     }
   }
 
-  /** 有成員的對話：大家輪流講到沒人想講、到連續上限、你按暫停為止 */
+  /**
+   * 有成員的對話：大家輪流講到沒人想講、到連續上限、你按暫停為止。
+   * 你在中途插話：下一個人就從你這句重新選（你 @ 的人先講）；收尾中插話：收完接著討論
+   */
   private async discuss(
     sessionId: string,
     opts: { mustReply?: boolean; only?: { agentId: string; replyTo: string | null; expand?: boolean; altGroup?: string } } = {}
   ): Promise<void> {
     const { repo } = this.deps;
     if (this.runs.has(sessionId)) return;
-    const first = await repo.getSession(sessionId);
-    if (!first) return;
-    const abort = new AbortController();
-    const run: Run = { abort, streaming: null, parentId: first.parentId, phase: null };
+    // 先佔住這段（第一個 await 之前），免得同時跑兩個
+    const run = newRun(null, null);
     this.runs.set(sessionId, run);
     this.publishRuns();
+    let only = opts.only ?? null;
     let mustReply = !!opts.mustReply;
     let streak = 0;
     let suggest = false;
     let reason: StopReason = 'quiet';
+    // 你最後一句 @ 了、還沒講的人（照 @ 的順序一個一個來）
+    let owed: string[] = [];
+    let owedFrom: string | null = null;
+    let parentId: string | null = null;
     try {
+      const first = await repo.getSession(sessionId);
+      if (!first) return;
+      parentId = first.parentId;
+      run.parentId = parentId;
+      this.publishRuns();
       for (;;) {
-        if (abort.signal.aborted) {
+        if (run.abort.signal.aborted) {
           reason = 'stopped';
           break;
         }
@@ -1975,13 +2110,14 @@ export class ChatStore {
         const members = await repo.listMembers(sessionId);
         if (!s || members.length === 0) break;
         const group = s.group ?? DEFAULT_GROUP;
-        // 你在中途插話：重新算連續幾則，一定有人回你
+        // 你在中途插話：重新算連續幾則，一定有人回你；正在「請他展開講」也改成回你
         if (run.interject) {
           run.interject = false;
+          only = null;
           mustReply = true;
           streak = 0;
         }
-        if (opts.only) {
+        if (only) {
           if (streak > 0) break;
         } else if (!mustReply && streak >= group.maxStreak) {
           reason = 'cap';
@@ -1991,10 +2127,17 @@ export class ChatStore {
         const names = new Map(members.map((m) => [m.agent.id, m.agent.name]));
         for (const id of msgs.flatMap((m) => (m.agentId && !names.has(m.agentId) ? [m.agentId] : []))) names.set(id, this.state.agents[id]?.name ?? (await repo.getAgent(id))?.name ?? 'AI');
         const lines = toLines(msgs, names);
-        const pick = opts.only
-          ? { id: opts.only.agentId, replyTo: opts.only.replyTo, outsider: null as Agent | null }
-          : await this.pickSpeaker(s, group, members, lines, mustReply, streak, run, (v) => (suggest = v));
-        if (abort.signal.aborted) {
+        // 你說了新的一句：重算你 @ 了誰（之後已經講過的不算）
+        const lastUser = [...lines].reverse().find((l) => l.who === null);
+        if (lastUser && lastUser.id !== owedFrom) {
+          owedFrom = lastUser.id;
+          const after = new Set(lines.filter((l) => l.seq > lastUser.seq).map((l) => l.who));
+          owed = findMentions(lastUser.content, mentionPeople(members.map((m) => m.agent))).filter((id) => !after.has(id));
+        }
+        const pick = only
+          ? { id: only.agentId, replyTo: only.replyTo, outsider: null as Agent | null }
+          : await this.pickSpeaker(s, group, members, lines, mustReply, streak, run, owed, (v) => (suggest = v));
+        if (run.abort.signal.aborted) {
           reason = 'stopped';
           break;
         }
@@ -2002,42 +2145,61 @@ export class ChatStore {
           reason = 'error';
           break;
         }
+        // 剛才在選人時你插話了：從你這句重新選
+        if (run.interject) continue;
         if (!pick) break;
         if (pick.outsider) await this.joinAgent(sessionId, pick.outsider, 'auto');
-        const speaker = members.find((m) => m.agent.id === pick.id)?.agent ?? pick.outsider ?? (await repo.getAgent(pick.id));
+        // 只從目前成員裡找；重新產生、展開講才找已經離開的人
+        const speaker = members.find((m) => m.agent.id === pick.id)?.agent ?? pick.outsider ?? (only ? await repo.getAgent(pick.id) : null);
         if (!speaker) break;
-        const ok = await this.speak(sessionId, speaker, pick.replyTo, run, { expand: opts.only?.expand, altGroup: opts.only?.altGroup });
+        const ok = await this.speak(sessionId, speaker, pick.replyTo, run, { expand: only?.expand, altGroup: only?.altGroup });
         if (!ok) {
-          reason = abort.signal.aborted ? 'stopped' : 'error';
+          reason = run.abort.signal.aborted ? 'stopped' : 'error';
           break;
         }
         streak++;
         mustReply = false;
+        owed = owed.filter((id) => id !== speaker.id);
+      }
+      // 在舉手、點名、摘要時按停止：也記一則「已停止」（正在講的那種 speak 自己記過了）
+      if (reason === 'stopped' && !run.noted && (await repo.isActive(sessionId))) {
+        await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
+        run.noted = true;
+        if (this.state.session?.id === sessionId) this.deps.onEvent?.('stopped');
+      }
+      // 自然停下來（沒人想講、到上限）：全自動就在同一個 run 裡直接收尾（中間不放掉，免得同時跑兩個）
+      const naturally = (reason === 'quiet' || reason === 'cap') && !opts.only && streak > 0 && !run.interject;
+      if (naturally && (await repo.getSession(sessionId))?.group?.autopilot) await this.concludeIn(sessionId, run);
+      else if (naturally && suggest && !this.state.suggestConclude.includes(sessionId)) {
+        this.set({ suggestConclude: [...this.state.suggestConclude, sessionId] });
       }
     } finally {
       this.setPhase(sessionId, run, null);
       if (this.runs.get(sessionId) === run) this.runs.delete(sessionId);
       this.publishRuns();
+      const list = await repo.listMessages(sessionId);
       if (this.state.session?.id === sessionId) {
-        this.set({ messages: await repo.listMessages(sessionId) });
+        this.set({ messages: list });
         await this.refreshGroup();
       }
-      if (first.parentId && this.state.session?.id !== sessionId && !this.state.fresh.includes(sessionId)) this.set({ fresh: [...this.state.fresh, sessionId] });
+      // 討論串在背景好好講完：入口寫「新回答」（被停掉、出錯的不算）
+      if (parentId && reason !== 'stopped' && reason !== 'error' && streak > 0 && this.state.session?.id !== sessionId && !this.state.fresh.includes(sessionId)) {
+        this.set({ fresh: [...this.state.fresh, sessionId] });
+      }
+      run.finish();
     }
-    // 自然停下來（沒人想講、到上限）：全自動就直接收尾；不然 AI 覺得差不多了就提議收尾
-    const naturally = (reason === 'quiet' || reason === 'cap') && !opts.only && streak > 0;
-    if (naturally && (await repo.getSession(sessionId))?.group?.autopilot) await this.conclude(sessionId);
-    else if (naturally && suggest && !this.state.suggestConclude.includes(sessionId)) {
-      this.set({ suggestConclude: [...this.state.suggestConclude, sessionId] });
-    }
+    // 收尾中或剛停下時你又說了話：接著討論，回你
+    if (run.interject && !run.stopped) return this.discuss(sessionId, { mustReply: true });
     if (reason === 'quiet' && this.state.session?.id === sessionId && streak > 0) this.deps.onEvent?.('answered');
-    // 有人講過話、還沒有標題：取一個
+    // 有人講過話、還沒有標題：取一個（被停掉、刪掉的不取）
     const after = await repo.getSession(sessionId);
     const sm = after ? this.modelFor(null, after) : null;
-    if (streak > 0 && after && !after.title && sm) this.titleTask = this.autoTitle(sessionId, sm.url, sm.model, sm.info);
+    if (streak > 0 && reason !== 'stopped' && reason !== 'error' && after && !after.title && sm && (await repo.isActive(sessionId))) {
+      this.titleTask = this.autoTitle(sessionId, sm.url, sm.model, sm.info);
+    }
   }
 
-  /** 選下一個發言的人：@ 到的先講，再照發言方式；回 null 是沒人要講 */
+  /** 選下一個發言的人：你 @ 了還沒講的先講，再照發言方式；回 null 是沒人要講 */
   private async pickSpeaker(
     s: Session,
     group: GroupSettings,
@@ -2046,27 +2208,34 @@ export class ChatStore {
     mustReply: boolean,
     streak: number,
     run: Run,
+    owed: string[],
     onSuggest: (v: boolean) => void
   ): Promise<{ id: string; replyTo: string | null; outsider: Agent | null } | null | 'error'> {
     const speakers = members.map((m) => this.toSpeaker(m));
+    const people = mentionPeople(members.map((m) => m.agent));
+    const isMember = (id: string | null) => !!id && speakers.some((p) => p.id === id);
     const last = lines.at(-1);
-    const lastSpeaker = last?.who && last.who !== 'ai' ? last.who : null;
-    const lastAgent = [...lines].reverse().find((l) => l.who && l.who !== 'ai')?.who ?? null;
-    // 同一則 @ 了好幾個人：最久沒講話的先講（沒講過的最優先），不然常常兩個人互 @ 一直對話，第三個人被 @ 了也排不到
-    const spokeAt = (id: string) => lines.map((l) => l.who).lastIndexOf(id);
-    const mentioned = last ? findMentions(last.content, speakers).filter((id) => id !== lastSpeaker).sort((a, b) => spokeAt(a) - spokeAt(b)) : [];
+    const lastSpeaker = isMember(last?.who ?? null) ? last!.who : null;
+    // 最近講話的成員（結論卡、一對一時的 AI、已經離開的人都不算）
+    const lastAgent = [...lines].reverse().find((l) => isMember(l.who))?.who ?? null;
+    const lastUser = [...lines].reverse().find((l) => l.who === null);
+    // 最後一句話（結論卡不算：收尾時你插的話在結論卡前面）
+    const lastTalk = [...lines].reverse().find((l) => l.who !== CONCLUSION);
     // 回哪一則：那個人最近說的；沒說要回誰時，你剛說完就回你
     const replyId = (name: string, self: string): string | null => {
-      // 名字可能是簡稱（SRE）：先對到人，再找那個人最近說的；你（使用者）照名字比
-      const who = idByName(name, speakers);
+      // 名字可能是簡稱（SRE）、另一個語言的名字：先對到人，再找那個人最近說的；你（使用者）照名字比
+      const who = idByName(name, people);
       const n = name.trim().toLowerCase().replace(/^@/, '');
       const hit = n ? [...lines].reverse().find((l) => l.who !== self && (who ? l.who === who : l.name.toLowerCase() === n)) : undefined;
-      return hit?.id ?? (last && last.who !== self && last.who === null ? last.id : null);
+      return hit?.id ?? (lastTalk && lastTalk.who === null ? lastTalk.id : null);
     };
-    // 你 @ 的人一定講；Agent 之間 @ 人只加分（只回被 @ 的模式例外，靠 @ 接力）
-    const fromUser = last?.who === null;
-    if (mentioned[0] && (fromUser || group.mode === 'mention')) return { id: mentioned[0], replyTo: last!.id, outsider: null };
-    const recent = lines.flatMap((l) => (l.who && l.who !== 'ai' && l.who !== 'conclusion' ? [l.who] : [])).slice(-4);
+    // 你 @ 了還沒講的人：一個一個來（剛講完的先跳過）
+    const due = owed.find((id) => id !== lastSpeaker && isMember(id)) ?? owed.find((id) => isMember(id));
+    if (due) return { id: due, replyTo: lastUser?.id ?? null, outsider: null };
+    // Agent 之間 @ 人：只回被 @ 的模式靠 @ 接力（一定講），其他模式只加分
+    const agentMentions = last && last.who !== null && last.who !== CONCLUSION ? findMentions(last.content, people).filter((id) => id !== lastSpeaker && isMember(id)) : [];
+    if (group.mode === 'mention' && agentMentions[0]) return { id: agentMentions[0], replyTo: last!.id, outsider: null };
+    const recent = lines.flatMap((l) => (isMember(l.who) ? [l.who!] : [])).slice(-4);
     if (members.length === 1) return mustReply ? { id: speakers[0].id, replyTo: replyId('', speakers[0].id), outsider: null } : null;
     if (group.mode === 'mention') {
       if (!mustReply) return null;
@@ -2083,10 +2252,10 @@ export class ChatStore {
     if (group.mode === 'host') {
       this.setPhase(s.id, run, { phase: 'hosting', agentId: null });
       try {
-        const text = await this.collect(sm.url, sm.model, hostMessages(speakers, lines), { think: quickThink(sm.info), format: HOST_SCHEMA, options: { num_predict: 120 }, signal: run.abort.signal });
-        const json = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+        const text = await this.collect(sm.url, sm.model, hostMessages(speakers, lines), { think: quickThink(sm.info), format: HOST_SCHEMA, options: { num_predict: budget(120, sm.info) }, signal: run.abort.signal });
+        const json = JSON.parse((sm.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}');
         onSuggest(json.conclude === true);
-        const id = idByName(String(json.next ?? ''), speakers) ?? (mustReply ? (nextInRound(speakers, lastAgent)?.id ?? null) : null);
+        const id = idByName(String(json.next ?? ''), people) ?? (mustReply ? (nextInRound(speakers, lastAgent)?.id ?? null) : null);
         return id ? { id, replyTo: replyId(String(json.reply_to ?? ''), id), outsider: null } : null;
       } catch (e) {
         if (run.abort.signal.aborted) return null;
@@ -2098,10 +2267,10 @@ export class ChatStore {
     const outsiders = group.autoJoin
       ? (await this.deps.repo.listMyAgents()).filter((a) => a.autoJoin && !members.some((m) => m.agent.id === a.id)).slice(0, MAX_OUTSIDERS)
       : [];
-    const people = [...speakers.map((p) => ({ ...p, member: true })), ...outsiders.map((a, i) => ({ ...this.toSpeaker(a, members.length + i), member: false }))];
-    const errors: unknown[] = [];
+    const bidders = [...speakers.map((p) => ({ ...p, member: true })), ...outsiders.map((a, i) => ({ ...this.toSpeaker(a, members.length + i), member: false }))];
+    const failed: { id: string; e: unknown }[] = [];
     const bids = await Promise.all(
-      people.map(async (p): Promise<Bid> => {
+      bidders.map(async (p): Promise<Bid> => {
         const agent = p.member ? members.find((m) => m.agent.id === p.id)!.agent : outsiders.find((a) => a.id === p.id)!;
         const m = this.modelFor(agent, s);
         if (!m) return { id: p.id, score: 0, replyTo: '', conclude: false };
@@ -2109,21 +2278,26 @@ export class ChatStore {
           const text = await this.collect(m.url, m.model, bidMessages(p, speakers, lines, !p.member), {
             think: quickThink(m.info),
             format: BID_SCHEMA,
-            options: { num_predict: 80, temperature: 0.4 },
+            options: { num_predict: budget(80, m.info), temperature: 0.4 },
             signal: run.abort.signal,
           });
           return parseBid(p.id, m.info?.think ? (splitThink(text)?.content ?? text) : text);
         } catch (e) {
-          errors.push(e);
+          failed.push({ id: p.id, e });
           return { id: p.id, score: 0, replyTo: '', conclude: false };
         }
       })
     );
     if (run.abort.signal.aborted) return null;
+    const failedMembers = failed.filter((f) => isMember(f.id));
     // 成員全部問不到（電腦沒開、模型不見了）：說原因，不要默默停下來
-    if (errors.length >= speakers.length && errors.length === people.length) return this.discussionError(s.id, errors[0]);
+    if (failedMembers.length >= speakers.length) return this.discussionError(s.id, failedMembers[0].e);
+    // 有人問不到：說一聲是誰（其他人照樣討論）
+    if (failedMembers.length > 0 && this.state.session?.id === s.id) {
+      this.set({ notice: t('{p0} 這次沒有回應（電腦連不到或出錯），其他人照樣討論。', { p0: failedMembers.map((f) => speakers.find((p) => p.id === f.id)!.name).join(t('、')) }) });
+    }
     onSuggest(wantsConclusion(bids, new Set(speakers.map((p) => p.id))));
-    const chosen = chooseSpeaker(bids, people, { lastSpeaker, mentioned: [], mustReply, boost: fromUser ? [] : mentioned, recent });
+    const chosen = chooseSpeaker(bids, bidders, { lastSpeaker, mustReply, boost: agentMentions, recent, skip: failed.map((f) => f.id) });
     if (!chosen) return null;
     return { id: chosen.id, replyTo: replyId(chosen.replyTo, chosen.id), outsider: outsiders.find((a) => a.id === chosen.id) ?? null };
   }
@@ -2144,6 +2318,7 @@ export class ChatStore {
     const here = () => this.state.session?.id === sessionId;
     const signal = run.abort.signal;
     const contextTokens = await this.runtimeContext(m.url, m.model);
+    const role = await this.roleOf(a);
     const build = async () => {
       const cur = (await repo.getSession(sessionId))!;
       const members = await repo.listMembers(sessionId);
@@ -2157,7 +2332,7 @@ export class ChatStore {
         out: speakMessages({
           me: this.toSpeaker(a),
           members: members.map((x) => this.toSpeaker(x)),
-          role: await this.roleFor(a),
+          role: role.text,
           notes: (await repo.listNotes(a.id, 5)).map((n) => n.content),
           summary: cur.summary,
           summarySeq: cur.summarySeq,
@@ -2188,11 +2363,12 @@ export class ChatStore {
       agentId: a.id,
       replyTo,
       altGroup: opts.altGroup ?? null,
-      detail: out.truncatedRole ? ROLE_TRUNCATED : '',
+      detail: role.missing ? ROLE_MISSING : out.truncatedRole ? ROLE_TRUNCATED : '',
     });
     run.streaming = { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting', agentId: a.id };
+    const shown = await repo.listMessages(sessionId);
     if (here()) {
-      this.set({ messages: await repo.listMessages(sessionId) });
+      this.set({ messages: shown });
       if (!this.state.agents[a.id]) await this.refreshGroup();
     }
     this.publishRuns();
@@ -2233,6 +2409,7 @@ export class ChatStore {
       else await repo.deleteMessage(placeholder.id);
       if (cancelled) {
         await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
+        run.noted = true;
         if (here()) this.deps.onEvent?.('stopped');
       } else {
         await this.discussionError(sessionId, e);
@@ -2242,7 +2419,8 @@ export class ChatStore {
       if (timer) clearTimeout(timer);
       run.streaming = null;
       this.publishRuns();
-      if (here()) this.set({ messages: await repo.listMessages(sessionId) });
+      const list = await repo.listMessages(sessionId);
+      if (here()) this.set({ messages: list });
       void this.refreshLoaded(m.url);
     }
   }
@@ -2265,9 +2443,11 @@ export class ChatStore {
         if (room < 0 && chunk.length > 0) break;
         chunk.push(l);
       }
-      const text = await this.collect(url, model, summaryMessages(s.summary, chunk), { think: quickThink(info), options: { num_predict: 700 }, signal: run.abort.signal });
+      const text = await this.collect(url, model, summaryMessages(s.summary, chunk), { think: quickThink(info), options: { num_predict: budget(700, info) }, signal: run.abort.signal });
       const summary = (info?.think ? (splitThink(text)?.content ?? text) : text).trim();
-      await repo.updateSession(sessionId, { summary: summary || s.summary, summarySeq: chunk.at(-1)!.seq });
+      // 摘要是空的（例如思考把字數用光）：不要往前推，不然這幾則同時從摘要和最近對話裡消失
+      if (!summary) return;
+      await repo.updateSession(sessionId, { summary, summarySeq: chunk.at(-1)!.seq });
     }
   }
 
@@ -2606,10 +2786,10 @@ export class ChatStore {
   /** 刪除所有對話：全部移到最近刪除（可以復原），保留電腦與模型設定；換成一段新的空白對話 */
   async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
-    this.stopAll();
+    await this.stopAll();
     await this.dismissUndo();
     const ids = await repo.trashAllSessions();
-    this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
+    this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {}, streaming: null, fresh: [], suggestConclude: [] });
     await this.offerUndo(t('已刪除 {p0} 段對話', { p0: ids.length }), async () => {
       await repo.restoreSessions(ids);
       await repo.deleteEmptySessions();
@@ -2623,7 +2803,7 @@ export class ChatStore {
    */
   async resetAll(): Promise<void> {
     const { repo } = this.deps;
-    this.stopAll();
+    await this.stopAll();
     this.stopScan();
     const snapshot = await repo.snapshotSettings();
     // 本來就在最近刪除的也一起清掉；按「復原」只救回這次移過去的
@@ -2645,6 +2825,9 @@ export class ChatStore {
       messages: [],
       context: null,
       notice: '',
+      streaming: null,
+      fresh: [],
+      suggestConclude: [],
     });
     await this.offerUndo(
       t('已清除全部資料'),
@@ -2672,9 +2855,11 @@ export class ChatStore {
    */
   async restoreFromBackup(source: Db): Promise<void> {
     const { repo } = this.deps;
-    this.stopAll();
+    // 等每個回答、討論收完尾再換資料庫：不然它們最後寫的訊息會跟還原交錯
+    await this.stopAll();
     this.stopScan();
     await this.dismissUndo();
+    this.set({ streaming: null, fresh: [], suggestConclude: [] });
     const snapshot = this.deps.openMemoryDb ? await this.deps.openMemoryDb() : null;
     if (snapshot) await repo.copyTo(snapshot);
     await repo.replaceWith(source);
