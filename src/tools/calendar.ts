@@ -170,9 +170,29 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
         ...[5, 10, 15, 30, 60].map((n) => ({ value: String(n), label: t('{n} 分鐘前', { n }) })),
       ],
     },
-    fillDefaults: (input) => {
-      if (input.allDay || input.end) return { input, guessed: [] };
-      return { input: { ...input, end: toLocalText(new Date(parseLocal(str(input.start)).getTime() + 60 * 60 * 1000)) }, guessed: ['end'] };
+    fillDefaults: async (input) => {
+      let out = input;
+      const guessed: string[] = [];
+      if (!input.allDay && !input.end) {
+        out = { ...out, end: toLocalText(new Date(parseLocal(str(input.start)).getTime() + 60 * 60 * 1000)) };
+        guessed.push('end');
+      }
+      // 寫進哪個行事曆也要看得到：沒指定就填上預設的那個（標成猜的，修改裡可以換）。
+      // 沒給權限時查不到也不會跳出詢問，就照舊寫「預設的行事曆」
+      if (!input.calendar) {
+        try {
+          const writable = (await api.calendars()).filter((c) => c.canWrite);
+          const id = await api.defaultCalendarId();
+          const calendar = writable.find((c) => c.id === id) ?? writable[0];
+          if (calendar) {
+            out = { ...out, calendar: calendar.title };
+            guessed.push('calendar');
+          }
+        } catch {
+          // 照舊用「預設的行事曆」
+        }
+      }
+      return { input: out, guessed };
     },
     check: (input, ctx) => {
       if (input.end && parseLocal(str(input.end)) < parseLocal(str(input.start))) return 'end must be after start.';

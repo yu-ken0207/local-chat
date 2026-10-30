@@ -33,7 +33,11 @@ class FakeCalendar implements CalendarApi {
   deleted: string[] = [];
   allowCalendar = async () => this.calendarOk;
   allowReminders = async () => this.remindersOk;
-  calendars = async () => this.list;
+  // 跟真的 iPhone 一樣：沒給權限時查行事曆會失敗（不會跳出詢問）
+  calendars = async () => {
+    if (!this.calendarOk) throw new Error('Missing calendar permission');
+    return this.list;
+  };
   defaultCalendarId = async () => this.defaultId;
   events = async (ids: string[], start: Date, end: Date) => this.stored.filter((e) => ids.includes(e.calendarId) && e.start >= start && e.start < end);
   createEvent = async (calendarId: string, event: NewEvent) => {
@@ -104,10 +108,16 @@ describe('看行事曆', () => {
 });
 
 describe('加行程', () => {
-  test('沒說結束時間：補開始後 1 小時並標成猜的；整天的不補', () => {
-    const { createEvent } = tools();
-    expect(createEvent.fillDefaults!({ title: 'a', start: '2026-11-04T15:00' }, ctx)).toEqual({ input: { title: 'a', start: '2026-11-04T15:00', end: '2026-11-04T16:00' }, guessed: ['end'] });
-    expect(createEvent.fillDefaults!({ title: 'a', start: '2026-11-20T00:00', allDay: true }, ctx).guessed).toEqual([]);
+  test('沒說結束時間：補開始後 1 小時；沒指定行事曆：填上預設的那個；都標成猜的；整天的不補結束', async () => {
+    const { createEvent, api } = tools();
+    expect(await createEvent.fillDefaults!({ title: 'a', start: '2026-11-04T15:00' }, ctx)).toEqual({
+      input: { title: 'a', start: '2026-11-04T15:00', end: '2026-11-04T16:00', calendar: '家庭' },
+      guessed: ['end', 'calendar'],
+    });
+    expect((await createEvent.fillDefaults!({ title: 'a', start: '2026-11-20T00:00', allDay: true, calendar: 'Work' }, ctx)).guessed).toEqual([]);
+    // 沒給行事曆權限：查不到就照舊（不跳出詢問）
+    api.calendarOk = false;
+    expect((await createEvent.fillDefaults!({ title: 'a', start: '2026-11-04T15:00' }, ctx)).guessed).toEqual(['end']);
   });
 
   test('時間在過去、超過一年、結束比開始早都退回', () => {
@@ -207,7 +217,8 @@ describe('接上 App', () => {
       expect(opts.options).toEqual(['預設的行事曆', '家庭', 'Work', '取消']);
       cb(2);
     });
-    await fireEvent.press(await screen.findByLabelText('行事曆：預設的行事曆，點一下選'));
+    // 沒指定行事曆時，卡片一開始就填好預設的那個（家庭），寫進哪裡看得到
+    await fireEvent.press(await screen.findByLabelText('行事曆：家庭，點一下選'));
     sheet.mockImplementationOnce((opts, cb) => {
       expect(opts.options.slice(0, 3)).toEqual(['不提醒', '5 分鐘前', '10 分鐘前']);
       cb(2);

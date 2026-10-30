@@ -1420,7 +1420,7 @@ export class ChatStore {
         });
         continue;
       }
-      const filled = tool.fillDefaults?.(checked.value, ctx) ?? { input: checked.value, guessed: [] };
+      const filled = (await tool.fillDefaults?.(checked.value, ctx)) ?? { input: checked.value, guessed: [] };
       await repo.addAction({ sessionId, messageId, callId: call.id, tool: tool.name, input: filled.input, guessed: filled.guessed, status: 'pending' });
       waiting++;
     }
