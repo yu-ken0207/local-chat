@@ -1,5 +1,5 @@
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,6 +54,17 @@ export function ChatScreen(p: ChatScreenProps) {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     nearBottom.current = contentSize.height - contentOffset.y - layoutMeasurement.height < 120;
   };
+  // 回答剛結束（或還沒出字就失敗）：「回答中」換成按鈕列或錯誤說明，內容變高也要跟著捲。
+  // 這時訊息數沒變、也不在串流中，下面 onContentSizeChange 的判斷抓不到；只算收尾後 1 秒內，
+  // 不然之後自己點開「思考過程」也會被拉走
+  const answerEnded = useRef(false);
+  const streamingNow = !!state.streaming;
+  useLayoutEffect(() => {
+    answerEnded.current = !streamingNow;
+    if (streamingNow) return;
+    const timer = setTimeout(() => (answerEnded.current = false), 1000);
+    return () => clearTimeout(timer);
+  }, [streamingNow]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [appSettingsOpen, setAppSettingsOpen] = useState(false);
@@ -293,10 +304,10 @@ export function ChatScreen(p: ChatScreenProps) {
             }}
             onEndVisible={setAtEnd}
             onContentSizeChange={() => {
-              // 只在 AI 正在回答、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
+              // 只在 AI 正在回答（含剛答完）、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
               const grew = state.messages.length !== messageCount.current;
               messageCount.current = state.messages.length;
-              if (nearBottom.current && !userScrolling.current && (grew || !!state.streaming)) scrollRef.current?.scrollToEnd({ animated: true });
+              if (nearBottom.current && !userScrolling.current && (grew || streamingNow || answerEnded.current)) scrollRef.current?.scrollToEnd({ animated: true });
             }}>
             {state.messages.length === 0 ? (
               <EmptyState

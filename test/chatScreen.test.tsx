@@ -270,6 +270,25 @@ describe('鍵盤與捲動', () => {
     expect(screen.queryByLabelText('捲到最新')).toBeNull();
   });
 
+  test('回答一結束（「回答中」換成按鈕列）也跟著捲到底，下面的按鈕不會被切掉', async () => {
+    const { net, store } = await setup();
+    let finish!: () => void;
+    const holdLast = new Promise<void>((r) => (finish = r));
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '好' }, done: false }, { message: { content: '' }, done: true, done_reason: 'stop' }], holdLast });
+    await send(store, 'hi', 'streaming');
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    const follows = () => toEnd.mock.calls.filter((c: any[]) => c[0]?.animated).length;
+    const list = screen.getByTestId('transcript');
+    // 串流中先來一次（記下訊息數），從答完那一刻開始算
+    await fireEvent(list, 'contentSizeChange', 390, 800);
+    toEnd.mockClear();
+    finish();
+    await waitFor(() => expect(store.getState().streaming).toBeNull());
+    // 訊息數沒變、也不在串流中：還是要跟
+    await fireEvent(list, 'contentSizeChange', 390, 830);
+    expect(follows()).toBe(1);
+  });
+
   test('手指在拖或放手後還在滑：內容變長也不自動捲到底；停下來在最底才跟著', async () => {
     // AI 回答中（內容一直變長）才會自動跟著捲
     const { net, store } = await setup();

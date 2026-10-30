@@ -14,8 +14,8 @@ export type FakeHost = {
   online: boolean;
   /** 連不到時是「沒有回應」（睡著、防火牆丟掉封包），不是馬上被拒絕 */
   silent?: boolean;
-  /** 自訂回答：回傳要串流送出的 JSON 物件；hang 代表送完後一直不結束（測停止） */
-  reply?: (body: any) => { lines: unknown[]; hang?: boolean };
+  /** 自訂回答：回傳要串流送出的 JSON 物件；hang 代表送完後一直不結束（測停止）；holdLast 等它好了才送最後一行（測剛答完那一刻） */
+  reply?: (body: any) => { lines: unknown[]; hang?: boolean; holdLast?: Promise<unknown> };
   /** 自動取標題的回答；沒設定時固定回「測試對話」 */
   titleReply?: (body: any) => { lines: unknown[] };
   /** 這個位址是 Local AI 小幫手（後面接這台假 Ollama） */
@@ -175,12 +175,12 @@ export class FakeOllamaNet {
         if (!host.models.some((x) => x.name === body.model)) return json({ error: `model "${body.model}" not found` }, 404);
         if (!host.loaded.includes(body.model)) host.loaded.push(body.model);
         const isTitle = isTitlePrompt(body.messages[0]?.content);
-        const { lines, hang }: { lines: unknown[]; hang?: boolean } = isTitle
+        const { lines, hang, holdLast }: { lines: unknown[]; hang?: boolean; holdLast?: Promise<unknown> } = isTitle
           ? (host.titleReply?.(body) ?? { lines: [{ message: { content: '測試對話' }, done: false }, { message: { content: '' }, done: true }] })
           : host.reply
             ? host.reply(body)
             : defaultReply(body);
-        return respond(200, lines.map((l) => JSON.stringify(l) + '\n'), init.signal, hang);
+        return respond(200, lines.map((l) => JSON.stringify(l) + '\n'), init.signal, hang, holdLast);
       }
     }
     return json({ error: 'unknown path' }, 404);
@@ -198,7 +198,7 @@ function defaultReply(body: any): { lines: unknown[]; hang?: boolean } {
   return { lines };
 }
 
-function respond(status: number, chunks: string[], signal?: AbortSignal, hang = false) {
+function respond(status: number, chunks: string[], signal?: AbortSignal, hang = false, holdLast?: Promise<unknown>) {
   const encoder = new TextEncoder();
   let i = 0;
   const aborted = () => Object.assign(new Error('Aborted'), { name: 'AbortError' });
@@ -211,6 +211,7 @@ function respond(status: number, chunks: string[], signal?: AbortSignal, hang = 
       getReader: () => ({
         read: async () => {
           if (signal?.aborted) throw aborted();
+          if (holdLast && i === chunks.length - 1) await holdLast;
           if (i < chunks.length) return { done: false, value: encoder.encode(chunks[i++]) };
           if (hang) {
             return new Promise<never>((_, reject) => {
