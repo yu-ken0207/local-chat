@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
-import { Linking } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
 
 import { Markdown } from '../src/components/Markdown';
 
@@ -75,4 +75,23 @@ test('左右捲的程式碼、表格裡面自己接手指：點一下、長按�
   expect(onLongPress).toHaveBeenCalledTimes(1);
   await fireEvent.press(screen.getByText('b'));
   expect(onPress).toHaveBeenCalledTimes(1);
+});
+
+test('表格每一欄一樣寬：先量出每一欄最寬的格子，各列照那個寬度排，格線才對得齊', async () => {
+  await render(<Markdown text={'| 語言 | 適合場景 |\n|---|---|\n| Python | AI、數據分析 |\n| Go | 後端 API、微服務、雲端基礎設施 |'} />);
+  // 往上找到那一格（有框線的 View）
+  const width = (text: string) => {
+    let el: any = screen.getByText(text);
+    while (el && !(el.type === 'View' && StyleSheet.flatten(el.props.style)?.borderWidth)) el = el.parent;
+    return StyleSheet.flatten(el.props.style).width;
+  };
+  // 還沒量到：照字的寬度排
+  expect(width('Python')).toBeUndefined();
+  const layout = (w: number) => ({ nativeEvent: { layout: { x: 0, y: 0, width: w, height: 90 } } });
+  await fireEvent(screen.getByTestId('table-measure-0', { includeHiddenElements: true }), 'layout', layout(96));
+  await fireEvent(screen.getByTestId('table-measure-1', { includeHiddenElements: true }), 'layout', layout(210));
+  for (const t of ['語言', 'Python', 'Go']) expect(width(t)).toBe(96);
+  for (const t of ['適合場景', 'AI、數據分析', '後端 API、微服務、雲端基礎設施']) expect(width(t)).toBe(210);
+  // 量的那份讀螢幕不唸、也點不到
+  expect(screen.getAllByText('Python')).toHaveLength(1);
 });

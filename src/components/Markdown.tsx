@@ -189,9 +189,19 @@ function CodeBlock({ code, lang, ctx }: { code: string; lang: string; ctx: Ctx }
   );
 }
 
+/**
+ * 表格：同一欄每一列一樣寬，格線才對得齊（每一列各排各的話，同一欄在每一列寬度不同）。
+ * 先在看不到的地方把每一欄的格子疊起來，量出最寬的那格，各列再照這個寬度排；串流中內容變了會重量
+ */
 function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
-  const cell = (c: Tokens.TableCell, header: boolean, key: string) => (
-    <View key={key} style={[styles.cell, header && styles.headerCell]}>
+  const rows = [table.header, ...table.rows];
+  const columns = table.header.length;
+  const [widths, setWidths] = useState<number[]>([]);
+  const measured = (col: number, width: number) =>
+    setWidths((s) => (Math.abs((s[col] ?? 0) - width) < 0.5 ? s : Object.assign([...s], { [col]: width })));
+  const ready = Array.from({ length: columns }, (_, ci) => widths[ci] > 0).every(Boolean);
+  const cell = (c: Tokens.TableCell, header: boolean, key: string, width?: number) => (
+    <View key={key} style={[styles.cell, header && styles.headerCell, width ? { width } : null]}>
       {/* 不設 selectable（原因同程式碼區塊）；要複製就長按訊息選「複製」 */}
       <Text style={[ctx.base, header && styles.strong, { textAlign: c.align ?? 'left' }]}>
         {inline(c.tokens, ctx)}
@@ -201,10 +211,17 @@ function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
   return (
     <HScroll ctx={ctx}>
       <View style={styles.table}>
-        <View style={styles.row}>{table.header.map((c, i) => cell(c, true, `h${i}`))}</View>
-        {table.rows.map((r, ri) => (
+        {rows.map((r, ri) => (
           <View key={`r${ri}`} style={styles.row}>
-            {r.map((c, ci) => cell(c, false, `r${ri}-${ci}`))}
+            {r.map((c, ci) => cell(c, ri === 0, `c${ci}`, ready ? widths[ci] : undefined))}
+          </View>
+        ))}
+      </View>
+      {/* 量寬度用：看不到、摸不到、讀螢幕也不唸 */}
+      <View style={styles.measure} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        {Array.from({ length: columns }, (_, ci) => (
+          <View key={ci} testID={`table-measure-${ci}`} style={styles.measureColumn} onLayout={(e) => measured(ci, e.nativeEvent.layout.width)}>
+            {rows.map((r, ri) => (r[ci] ? cell(r[ci], ri === 0, `m${ri}`) : null))}
           </View>
         ))}
       </View>
@@ -253,4 +270,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row' },
   cell: { minWidth: 80, maxWidth: 220, padding: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
   headerCell: { backgroundColor: C.surface },
+  measure: { position: 'absolute', top: 0, left: 0, flexDirection: 'row', alignItems: 'flex-start', opacity: 0 },
+  measureColumn: { alignItems: 'flex-start' },
 });
