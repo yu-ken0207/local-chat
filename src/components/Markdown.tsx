@@ -237,7 +237,8 @@ function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
  */
 function HScroll({ ctx, children }: { ctx: Ctx; children: ReactNode }) {
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+    // 鍵盤開著時：手指照樣交給裡面的 Pressable（長按開選單、點一下收鍵盤），不要被 ScrollView 先拿去收鍵盤
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" testID="hscroll">
       <Pressable accessible={false} onPress={ctx.onPress} onLongPress={ctx.onLongPress} delayLongPress={350}>
         {children}
       </Pressable>

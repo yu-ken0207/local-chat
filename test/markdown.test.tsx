@@ -95,3 +95,8 @@ test('表格每一欄一樣寬：先量出每一欄最寬的格子，各列照�
   // 量的那份讀螢幕不唸、也點不到
   expect(screen.getAllByText('Python')).toHaveLength(1);
 });
+
+test('左右捲的區塊鍵盤開著時也把手指交給裡面（長按照樣開選單）', async () => {
+  await render(<Markdown text={'```python\nprint(1)\n```'} onLongPress={jest.fn()} />);
+  expect(screen.getByTestId('hscroll').props.keyboardShouldPersistTaps).toBe('handled');
+});
