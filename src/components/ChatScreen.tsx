@@ -199,23 +199,27 @@ export function ChatScreen(p: ChatScreenProps) {
   const composerAboveKeyboard = useRef(0);
   composerAboveKeyboard.current = gestureOffset;
   const revealField = useCallback((field: CardField) => {
-    const reveal = () =>
+    let done = false;
+    const reveal = () => {
+      if (done) return;
+      done = true;
+      subs.forEach((s) => s.remove());
+      clearTimeout(fallback);
       field.measureInWindow((_x, y, _w, h) => {
         const kb = Keyboard.metrics();
         if (!kb) return;
         const by = coveredBy(y + h, kb.screenY, composerAboveKeyboard.current);
         if (by > 0) scrollRef.current?.scrollTo({ y: scrollY.current + by, animated: true });
       });
-    if (Keyboard.isVisible()) {
-      requestAnimationFrame(reveal);
-      return;
-    }
-    // 等鍵盤出來、套件把內容推好（在最底時會整段往上推）再量
-    const sub = Keyboard.addListener('keyboardDidShow', () => {
-      sub.remove();
-      setTimeout(reveal, 50);
-    });
-    setTimeout(() => sub.remove(), 2000);
+    };
+    // 等這次鍵盤的位置定了再量：剛叫出鍵盤要等它出來、套件把內容推好；從輸入列換過來時，
+    // 輸入列掛在鍵盤上的那段會拿掉（鍵盤位置變了），用舊的位置量會多捲一個輸入列高
+    const subs = [
+      Keyboard.addListener('keyboardDidShow', () => setTimeout(reveal, 50)),
+      Keyboard.addListener('keyboardDidChangeFrame', () => setTimeout(reveal, 50)),
+    ];
+    // 鍵盤本來就開著、位置也沒變（不會有事件）：等一下就量
+    const fallback = setTimeout(reveal, Keyboard.isVisible() ? 350 : 2000);
   }, []);
 
   // 換對話時捲到最下面；從討論串回到原對話時回到剛才看的位置

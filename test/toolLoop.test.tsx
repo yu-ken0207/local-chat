@@ -355,10 +355,13 @@ describe('畫面', () => {
     await screenWithCard();
     await fireEvent.press(screen.getByText('修改'));
     const measure = (TextInput.prototype as any).measureInWindow as jest.Mock;
-    jest.spyOn(Keyboard, 'isVisible').mockReturnValue(true);
-    jest.spyOn(Keyboard, 'metrics').mockReturnValue({ screenX: 0, screenY: 500, width: 390, height: 344 });
+    const spies = [
+      jest.spyOn(Keyboard, 'isVisible').mockReturnValue(true),
+      jest.spyOn(Keyboard, 'metrics').mockReturnValue({ screenX: 0, screenY: 500, width: 390, height: 344 }),
+    ];
     const to = jest.spyOn(ScrollView.prototype as any, 'scrollTo').mockImplementation(() => {});
-    const frame = () => act(async () => await new Promise((r) => requestAnimationFrame(r)));
+    // 鍵盤本來就開著、沒有位置變化的事件：等一下（350ms）才量
+    const frame = () => act(async () => await new Promise((r) => setTimeout(r, 400)));
     try {
       // 欄位底在螢幕 600，鍵盤上緣 500：擋住 100，再多留 12
       measure.mockImplementation((cb: (x: number, y: number, w: number, h: number) => void) => cb(16, 560, 300, 40));
@@ -372,7 +375,10 @@ describe('畫面', () => {
       await frame();
       expect(to).not.toHaveBeenCalled();
     } finally {
+      // 不要把假的鍵盤、捲動留給後面的測試
       measure.mockReset();
+      spies.forEach((s) => s.mockRestore());
+      to.mockRestore();
     }
   });
 
