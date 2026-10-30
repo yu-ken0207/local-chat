@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { createContext, useContext, useEffect, useRef, useState, type ComponentRef } from 'react';
+import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import { fmtEventTime } from '../lib/format';
 import { parseLocal, toLocalText, type PhoneTool, type ToolInput } from '../lib/tools';
@@ -163,7 +163,7 @@ export function ActionListCard({
       })}
 
       {declining ? (
-        <TextInput
+        <CardInput
           value={reason}
           onChangeText={setReason}
           placeholder={t('要改成怎樣？（可以不填）')}
@@ -199,6 +199,28 @@ export function ActionListCard({
       )}
       {editing !== null && !progress ? <Text style={[styles.small, styles.dim]}>{t('先按「好」或「不改了」結束修改')}</Text> : null}
     </View>
+  );
+}
+
+/**
+ * 卡片裡的輸入框開始打字時，叫外面（ChatScreen）把它捲到鍵盤和輸入列上面：
+ * 不在最底時鍵盤不會把對話往上推，欄位會被擋住，打的字看不到
+ */
+export type CardField = ComponentRef<typeof TextInput>;
+export const RevealContext = createContext<((field: CardField) => void) | null>(null);
+
+function CardInput(props: TextInputProps) {
+  const ref = useRef<CardField>(null);
+  const reveal = useContext(RevealContext);
+  return (
+    <TextInput
+      ref={ref}
+      {...props}
+      onFocus={(e) => {
+        props.onFocus?.(e);
+        if (ref.current) reveal?.(ref.current);
+      }}
+    />
   );
 }
 
@@ -277,7 +299,7 @@ function ChoiceField({ label, value, load, onChange }: { label: string; value: s
       .catch(() => setOptions([]));
   }, [load]);
   if (options && options.length === 0) {
-    return <TextInput value={value} onChangeText={onChange} style={styles.input} accessibilityLabel={label} />;
+    return <CardInput value={value} onChangeText={onChange} style={styles.input} accessibilityLabel={label} />;
   }
   const shown = options?.find((o) => o.value === value)?.label ?? value;
   return (
@@ -367,7 +389,7 @@ function FieldEditor({ tool, input, done, onDone, onCancel, indent }: { tool: Ph
             ) : type === 'boolean' ? (
               <Switch value={!!v} onValueChange={(next) => setValues((s) => ({ ...s, [key]: next }))} accessibilityLabel={label} />
             ) : (
-              <TextInput
+              <CardInput
                 value={String(v)}
                 onChangeText={(text) => setValues((s) => ({ ...s, [key]: text }))}
                 style={styles.input}
@@ -427,7 +449,7 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
       ) : null}
 
       {mode === 'decline' ? (
-        <TextInput
+        <CardInput
           value={reason}
           onChangeText={setReason}
           placeholder={t('要改成怎樣？（可以不填）')}
@@ -481,7 +503,7 @@ function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Han
       <Text style={styles.text}>{question}</Text>
       {typing ? (
         <>
-          <TextInput
+          <CardInput
             value={text}
             onChangeText={setText}
             placeholder={t('你的回答')}

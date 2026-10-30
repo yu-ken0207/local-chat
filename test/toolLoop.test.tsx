@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Keyboard, ScrollView, TextInput } from 'react-native';
 
-import { ChatScreen } from '../src/components/ChatScreen';
+import { ChatScreen, coveredBy } from '../src/components/ChatScreen';
 import type { PhoneTool, ToolInput } from '../src/lib/tools';
 import { ChatStore, MAX_TOOL_ROUNDS, type ChatEvent } from '../src/state/chatStore';
 import { Repo } from '../src/store/repo';
@@ -348,6 +349,37 @@ describe('畫面', () => {
     await fireEvent.press(screen.getByText('復原'));
     expect(await screen.findByText('已復原：新增 1 個行程')).toBeTruthy();
     expect(screen.getByText('–', { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  test('按修改後點欄位打字：被鍵盤和輸入列擋住就往上捲到看得到；沒擋住不動', async () => {
+    await screenWithCard();
+    await fireEvent.press(screen.getByText('修改'));
+    const measure = (TextInput.prototype as any).measureInWindow as jest.Mock;
+    jest.spyOn(Keyboard, 'isVisible').mockReturnValue(true);
+    jest.spyOn(Keyboard, 'metrics').mockReturnValue({ screenX: 0, screenY: 500, width: 390, height: 344 });
+    const to = jest.spyOn(ScrollView.prototype as any, 'scrollTo').mockImplementation(() => {});
+    const frame = () => act(async () => await new Promise((r) => requestAnimationFrame(r)));
+    try {
+      // 欄位底在螢幕 600，鍵盤上緣 500：擋住 100，再多留 12
+      measure.mockImplementation((cb: (x: number, y: number, w: number, h: number) => void) => cb(16, 560, 300, 40));
+      await fireEvent(screen.getByLabelText('標題'), 'focus');
+      await frame();
+      expect(to).toHaveBeenCalledWith({ y: 112, animated: true });
+      // 在鍵盤上面：不捲
+      to.mockClear();
+      measure.mockImplementation((cb: (x: number, y: number, w: number, h: number) => void) => cb(16, 200, 300, 40));
+      await fireEvent(screen.getByLabelText('標題'), 'focus');
+      await frame();
+      expect(to).not.toHaveBeenCalled();
+    } finally {
+      measure.mockReset();
+    }
+  });
+
+  test('擋住多少：欄位底加一點空，超過輸入列上緣（鍵盤上緣減掉輸入列露出的高度）的部分', () => {
+    expect(coveredBy(600, 500, 0)).toBe(112);
+    expect(coveredBy(600, 500, 60)).toBe(172);
+    expect(coveredBy(400, 500, 60)).toBe(0);
   });
 
   test('凌晨 00:00 照寫 00:00，不會被當成整天', async () => {

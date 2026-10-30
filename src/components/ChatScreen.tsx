@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import { C, TEXT } from '../ui/theme';
 import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
-import { ActionListCard, ActionView } from './ActionCard';
+import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
 import { MessageView, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
@@ -57,8 +57,11 @@ export function ChatScreen(p: ChatScreenProps) {
     setFollowing(on);
   };
   const userScrolling = useRef(false);
+  // 目前捲到哪（卡片輸入框要往上捲多少時用）
+  const scrollY = useRef(0);
   const updateNearBottom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, contentInset, layoutMeasurement } = e.nativeEvent;
+    scrollY.current = contentOffset.y;
     // 鍵盤開著時，鍵盤那段留白放在 contentInset.bottom（不算在 contentSize 裡），要一起算
     follow(contentSize.height + (contentInset?.bottom ?? 0) - contentOffset.y - layoutMeasurement.height < 120);
   };
@@ -167,6 +170,30 @@ export function ChatScreen(p: ChatScreenProps) {
   // 不用先越過整個輸入列
   const [stickyHeight, setStickyHeight] = useState(0);
   const gestureOffset = Math.max(0, stickyHeight - keyboardOffset);
+
+  // 卡片裡的輸入框（修改欄位、說要改成怎樣、自己輸入答案）打字時要看得到：不在最底時鍵盤不會把對話往上推
+  // （keyboardLiftBehavior whenAtEnd），欄位會被鍵盤和輸入列擋住。鍵盤出來後量一下，擋住多少就往上捲多少
+  const composerAboveKeyboard = useRef(0);
+  composerAboveKeyboard.current = gestureOffset;
+  const revealField = useCallback((field: CardField) => {
+    const reveal = () =>
+      field.measureInWindow((_x, y, _w, h) => {
+        const kb = Keyboard.metrics();
+        if (!kb) return;
+        const by = coveredBy(y + h, kb.screenY, composerAboveKeyboard.current);
+        if (by > 0) scrollRef.current?.scrollTo({ y: scrollY.current + by, animated: true });
+      });
+    if (Keyboard.isVisible()) {
+      requestAnimationFrame(reveal);
+      return;
+    }
+    // 等鍵盤出來、套件把內容推好（在最底時會整段往上推）再量
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      sub.remove();
+      setTimeout(reveal, 50);
+    });
+    setTimeout(() => sub.remove(), 2000);
+  }, []);
 
   // 換對話時捲到最下面
   useEffect(() => {
@@ -291,6 +318,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
           <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
           {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
+          <RevealContext.Provider value={revealField}>
           <KeyboardChatScrollView
             ref={scrollRef}
             testID="transcript"
@@ -304,7 +332,10 @@ export function ChatScreen(p: ChatScreenProps) {
             // 「跟著最新」只看使用者自己的捲動：程式捲動的動畫不算，手指在拖或放手後還在滑時也不自動捲到底
             // （不然 AI 回答中往下拖收鍵盤，內容會被拉回最底，跟手指打架）
             onScrollBeginDrag={() => (userScrolling.current = true)}
-            onScroll={(e) => userScrolling.current && updateNearBottom(e)}
+            onScroll={(e) => {
+              scrollY.current = e.nativeEvent.contentOffset.y;
+              if (userScrolling.current) updateNearBottom(e);
+            }}
             onScrollEndDrag={(e) => {
               updateNearBottom(e);
               userScrolling.current = false;
@@ -353,6 +384,7 @@ export function ChatScreen(p: ChatScreenProps) {
               ))
             )}
           </KeyboardChatScrollView>
+          </RevealContext.Provider>
 
           {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
           <KeyboardStickyView
@@ -588,6 +620,11 @@ export function HeaderButton({ name, text, label, onPress, disabled }: { name: S
       ) : null}
     </Pressable>
   );
+}
+
+/** 輸入框被鍵盤或輸入列擋住多少 pt（沒擋到是 0）：都是螢幕座標；輸入列上緣再留一點空 */
+export function coveredBy(fieldBottom: number, keyboardTop: number, composerAboveKeyboard: number, gap = 12): number {
+  return Math.max(0, fieldBottom + gap - (keyboardTop - composerAboveKeyboard));
 }
 
 const styles = StyleSheet.create({
