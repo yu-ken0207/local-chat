@@ -142,6 +142,53 @@ describe('只讀的工具', () => {
   });
 });
 
+describe('回答中換對話、按停止', () => {
+  /** 讓「看行事曆」停在執行中，等測試放行 */
+  function holdListEvents(cal: ReturnType<typeof fakeCalendar>) {
+    const gate = { started: false, release: () => {} };
+    cal.tools[0].run = () =>
+      new Promise((resolve) => {
+        gate.started = true;
+        gate.release = () => resolve({ data: [], summary: '看了行事曆（0 筆）' });
+      });
+    return gate;
+  }
+
+  test('工具還在跑時換到別段對話：不接著回答，也不會把回答存進那段', async () => {
+    const { net, host, store, cal, repo } = await setup();
+    script(host, [() => [text('第一段好了'), done]]);
+    await store.send('第一段');
+    const first = store.getState().session!.id;
+    await store.newSession();
+    const second = store.getState().session!.id;
+    const gate = holdListEvents(cal);
+    script(host, [() => [toolCall('list_events', { day: '2026-11-04' }), done], () => [text('不該出現'), done]]);
+    const p = store.send('下週三有什麼');
+    await waitFor(() => expect(gate.started).toBe(true));
+    await store.openSession(first);
+    gate.release();
+    await p;
+    expect(net.chatBodies()).toHaveLength(2);
+    expect(store.getState().session?.id).toBe(first);
+    expect(store.getState().messages.map((m) => m.content)).toEqual(['第一段', '第一段好了']);
+    expect((await repo.listMessages(second)).map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
+  });
+
+  test('工具還在跑時按停止：不再接著問模型，寫一行「已停止」', async () => {
+    const { net, host, store, cal, events } = await setup();
+    const gate = holdListEvents(cal);
+    script(host, [() => [toolCall('list_events', { day: '2026-11-04' }), done], () => [text('不該出現'), done]]);
+    const p = store.send('下週三有什麼');
+    await waitFor(() => expect(gate.started).toBe(true));
+    store.stop();
+    gate.release();
+    await p;
+    expect(net.chatBodies()).toHaveLength(1);
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' });
+    expect(events).toContain('stopped');
+  });
+});
+
 describe('會改東西的工具', () => {
   async function askToAdd(args: unknown = { title: '帶小孩看牙醫', start: '2026-11-04T15:00' }) {
     const ctx = await setup();

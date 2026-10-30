@@ -268,6 +268,28 @@ describe('傳送與串流', () => {
     expect(events).toEqual(['stopped']);
   });
 
+  test('回答中換到別段對話：畫面只顯示那段，收到一半的字留在原本那段', async () => {
+    const { net, store, repo } = await ready();
+    await store.send('第一段');
+    const first = store.getState().session!.id;
+    await store.newSession();
+    const second = store.getState().session!.id;
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    const p = store.send('第二段');
+    await flush();
+    await store.openSession(first);
+    await p;
+    const st = store.getState();
+    expect(st.session?.id).toBe(first);
+    expect(st.streaming).toBeNull();
+    expect(st.messages.map((m) => m.content)).not.toContain('第二段');
+    expect((await repo.listMessages(second)).map((m) => [m.role, m.content])).toEqual([
+      ['user', '第二段'],
+      ['assistant', '寫到一半'],
+      ['note', '已停止'],
+    ]);
+  });
+
   test('連不到電腦：不留空白回答，加一則白話錯誤，技術細節另外存', async () => {
     const { net, store, events } = await ready();
     net.hosts.get(A)!.online = false;

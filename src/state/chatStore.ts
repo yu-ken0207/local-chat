@@ -1164,6 +1164,8 @@ export class ChatStore {
   private async answer(options: { altGroup?: string; retried?: boolean } = {}): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session!;
+    // 回答中可能換到別段對話：畫面、提示只在還是同一段時才更新
+    const here = () => this.state.session?.id === s.id;
     const url = s.hostUrl!;
     const model = s.model!;
     const info = this.currentModel();
@@ -1198,7 +1200,7 @@ export class ChatStore {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const flush = () => {
       timer = null;
-      if (!this.state.streaming) return;
+      if (this.state.streaming?.messageId !== placeholder.id) return;
       const allThinking = thinking + leaked;
       this.set({
         streaming: { ...this.state.streaming, content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' },
@@ -1261,13 +1263,13 @@ export class ChatStore {
       if (leaked) await this.markAlwaysThinks(url, model);
       const limit = await this.contextLimit(url, model);
       const used = result.promptEvalCount + result.evalCount;
-      this.set({ context: { used, limit, level: contextLevel(used, limit) } });
+      if (here()) this.set({ context: { used, limit, level: contextLevel(used, limit) } });
       // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
       if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls);
       else this.deps.onEvent?.('answered');
       // 第一個回答出來後，請模型幫這段對話取標題（不擋住下一次輸入）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
-      if (!this.state.session?.title && answered === 1) this.titleTask = this.autoTitle(s.id, url, model, info);
+      if (answered === 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
       await this.notePairingLost(url, e);
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled' && !unreachable;
@@ -1285,7 +1287,7 @@ export class ChatStore {
         else if (d.kind !== 'ok') reason = diagnosisText(d);
       }
       if (retryMoved) {
-        this.set({ notice: diagnosisText({ kind: 'moved', url: '' }) });
+        if (here()) this.set({ notice: diagnosisText({ kind: 'moved', url: '' }) });
       } else {
         await repo.addMessage(
           s.id,
@@ -1296,8 +1298,21 @@ export class ChatStore {
     } finally {
       if (timer) clearTimeout(timer);
       if (this.abort === abortForThis) this.abort = null;
-      this.set({ streaming: null, messages: await repo.listMessages(s.id) });
+      const latest = await repo.listMessages(s.id);
+      // 串流狀態只收自己的；換到別段對話時畫面已經是那段，不要把這段的訊息蓋上去
+      this.set({ ...(this.state.streaming?.messageId === placeholder.id ? { streaming: null } : {}), ...(here() ? { messages: latest } : {}) });
       void this.refreshLoaded(url);
+    }
+    // 換到別段對話：不再接著做（不然會用那段的內容回答、存進那段）
+    if (!here()) return;
+    // 工具做完之前按了停止：不再接著問模型
+    if (signal.aborted && !unreachable) {
+      if (next === 'continue') {
+        await repo.addMessage(s.id, { role: 'note', content: t('已停止') });
+        this.set({ messages: await repo.listMessages(s.id) });
+        this.deps.onEvent?.('stopped');
+      }
+      return;
     }
     // 電腦換了位址：已經改好，自動再問一次
     if (retryMoved) await this.answer({ ...options, retried: true });
