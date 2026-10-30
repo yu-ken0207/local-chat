@@ -582,6 +582,25 @@ describe('清單卡（一次好幾件）', () => {
     expect(note.content).not.toContain('校慶運動會');
   });
 
+  test('接著回答時停掉、按了復原再「重新回答」：最後的提醒照樣寫取消勾選的那件沒做（復原的紀錄行不算）', async () => {
+    const { store, host, net } = await three();
+    const [a, b] = pending(store);
+    // 接著回答時一直不回，按停止
+    host.reply = () => ({ lines: [], hang: true });
+    const p = store.approveActions([{ id: a.id }], [b.id, pending(store)[2].id]);
+    await waitFor(() => expect(store.getState().streaming).not.toBeNull());
+    store.stop();
+    await p;
+    await waitFor(() => expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' }));
+    await store.undoAction(a.id);
+    script(host, [() => [text('好的'), done]]);
+    await store.retry();
+    await waitFor(() => expect(lastText(store)).toBe('好的'));
+    const note = net.chatBodies().at(-1).messages.at(-1);
+    expect(note.content).toContain('The user declined 「新增「親師座談會」」');
+    expect(note.content).toContain('pressed Undo on 「新增「校慶運動會」」');
+  });
+
   test('改壞了：一件都不做', async () => {
     const { store, cal } = await three();
     const [a, b] = pending(store);

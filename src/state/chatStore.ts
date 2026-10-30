@@ -1616,8 +1616,10 @@ export class ChatStore {
     const name = (a: Action) => this.itemOf(a).item ?? this.toolFor(a.tool)?.label ?? a.tool;
     const undone = messages.flatMap((m) => m.actions ?? []).filter((a) => a.status === 'undone').map(name);
     const notes = [undone.length > 0 ? undonePrompt(undone) : ''];
-    if (messages[messages.length - 1]?.role === 'tool') {
-      const round = [...messages].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
+    // 「你按了復原」的紀錄行不算：例如回答失敗、按了復原、再按「重新回答」時，最後一則其實還是工具結果
+    const real = messages.filter((m) => !isRecordNote(m));
+    if (real[real.length - 1]?.role === 'tool') {
+      const round = [...real].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
       const actions = round?.actions ?? [];
       // 選擇題按「不回答」也記成 declined，但不是「沒做」：另外一句
       const isQuestion = (a: Action) => this.toolFor(a.tool)?.kind === 'question';
