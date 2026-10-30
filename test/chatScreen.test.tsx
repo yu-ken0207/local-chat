@@ -245,13 +245,31 @@ describe('鍵盤與捲動', () => {
     expect(dismiss).toHaveBeenCalledTimes(2);
   });
 
+  test('捲到上面看舊訊息：出現「捲到最新」，按了捲到底', async () => {
+    const { store } = await setup();
+    await send(store, 'hi');
+    expect(screen.queryByLabelText('捲到最新')).toBeNull();
+    await fireEvent(screen.getByTestId('transcript'), 'endVisible', false);
+    const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
+    await fireEvent.press(screen.getByLabelText('捲到最新'));
+    expect(toEnd).toHaveBeenCalledWith({ animated: true });
+    await fireEvent(screen.getByTestId('transcript'), 'endVisible', true);
+    expect(screen.queryByLabelText('捲到最新')).toBeNull();
+  });
+
   test('手指在拖或放手後還在滑：內容變長也不自動捲到底；停下來在最底才跟著', async () => {
-    await setup();
+    // AI 回答中（內容一直變長）才會自動跟著捲
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    await send(store, '寫一篇長文', 'streaming');
     const toEnd = jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
     // 只算「跟著最新」的捲動（有動畫）；換對話時那次無動畫的不算
     const follows = () => toEnd.mock.calls.filter((c: any[]) => c[0]?.animated).length;
     const list = screen.getByTestId('transcript');
     const at = (y: number) => ({ nativeEvent: { contentOffset: { x: 0, y }, contentSize: { width: 390, height: 2000 }, layoutMeasurement: { width: 390, height: 600 } } });
+    // 送出時那次「多了新訊息就跟著捲」不算，從手指開始拖算起
+    await act(async () => {});
+    toEnd.mockClear();
     await fireEvent(list, 'scrollBeginDrag', at(1400));
     await fireEvent(list, 'contentSizeChange', 390, 2100);
     expect(follows()).toBe(0);
@@ -268,6 +286,7 @@ describe('鍵盤與捲動', () => {
     await fireEvent(list, 'scrollEndDrag', at(200));
     await fireEvent(list, 'contentSizeChange', 390, 2400);
     expect(follows()).toBe(1);
+    store.stop();
   });
 });
 

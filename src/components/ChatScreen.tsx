@@ -38,6 +38,9 @@ export function ChatScreen(p: ChatScreenProps) {
   const state = useChatState(store);
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  // 捲到上面看舊訊息時，右下角給「捲到最新」
+  const [atEnd, setAtEnd] = useState(true);
+  const messageCount = useRef(0);
   const nearBottom = useRef(true);
   const userScrolling = useRef(false);
   const updateNearBottom = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -275,8 +278,12 @@ export function ChatScreen(p: ChatScreenProps) {
               updateNearBottom(e);
               userScrolling.current = false;
             }}
+            onEndVisible={setAtEnd}
             onContentSizeChange={() => {
-              if (nearBottom.current && !userScrolling.current) scrollRef.current?.scrollToEnd({ animated: true });
+              // 只在 AI 正在回答、或多了新訊息時跟著捲；點開「思考過程」這類自己展開的內容不要把畫面拉走
+              const grew = state.messages.length !== messageCount.current;
+              messageCount.current = state.messages.length;
+              if (nearBottom.current && !userScrolling.current && (grew || !!state.streaming)) scrollRef.current?.scrollToEnd({ animated: true });
             }}>
             {state.messages.length === 0 ? (
               <EmptyState
@@ -310,6 +317,19 @@ export function ChatScreen(p: ChatScreenProps) {
 
           {/* 提示、復原提示、輸入列黏在鍵盤上，跟著鍵盤一起動 */}
           <KeyboardStickyView offset={{ closed: 0, opened: keyboardOffset }} onLayout={(e) => setStickyHeight(e.nativeEvent.layout.height)}>
+          {!atEnd && state.messages.length > 0 ? (
+            <Pressable
+              onPress={() => {
+                nearBottom.current = true;
+                scrollRef.current?.scrollToEnd({ animated: true });
+              }}
+              hitSlop={4}
+              accessibilityRole="button"
+              accessibilityLabel={t('捲到最新')}
+              style={({ pressed }) => [styles.toLatest, pressed && styles.pressed]}>
+              <SymbolView name="arrow.down" size={16} tintColor={C.label} />
+            </Pressable>
+          ) : null}
           {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
           {state.context && state.context.level !== 'ok' ? (
             <Banner
@@ -480,6 +500,8 @@ const styles = StyleSheet.create({
   headerTitle: { textAlign: 'center', ...TEXT.body, fontWeight: '700', color: C.label, flexShrink: 1 },
   titleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4 },
   headerButtonText: { fontSize: 15, fontWeight: '600', color: C.accent },
+  // 浮在輸入列右上方、跟著鍵盤走；圓形 40pt（可以按的範圍補到 44pt）
+  toLatest: { position: 'absolute', top: -52, right: 16, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, zIndex: 20, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
   toastAnchor: { height: 0, zIndex: 10 },
   headerButton: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 4 },
   pressed: { opacity: 0.4 },
