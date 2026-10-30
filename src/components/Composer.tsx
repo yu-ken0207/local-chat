@@ -58,6 +58,14 @@ export const COMPOSER_INPUT_ID = 'composer-input';
 
 export function Composer(p: Props) {
   const [draft, setDraft] = useState('');
+  // 程式換掉輸入框的字（編輯並重送放回訊息、送出後清空、沒送出去放回來）時換一個新的輸入框：
+  // RN 0.88 的多行輸入框被程式改字時，量高度用的還是改之前的字（放回四行的訊息時框只有一行高、
+  // 清空後還停在四行高），要等再打一個字才對。新的輸入框一開始就照現在的字量
+  const [inputKey, setInputKey] = useState(0);
+  const replaceDraft = (text: string) => {
+    setDraft(text);
+    setInputKey((k) => k + 1);
+  };
   const [photos, setPhotos] = useState<NewPhoto[]>([]);
   const [hint, setHint] = useState('');
   const [sending, setSending] = useState(false);
@@ -85,7 +93,7 @@ export function Composer(p: Props) {
 
   useEffect(() => {
     if (!p.injected) return;
-    setDraft(p.injected.text);
+    replaceDraft(p.injected.text);
     if (p.injected.photos) setPhotos(p.canAttach ? p.injected.photos : []);
   }, [p.injected?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -124,12 +132,12 @@ export function Composer(p: Props) {
     const pics = photos;
     setSending(true);
     setHint('');
-    setDraft('');
+    replaceDraft('');
     setPhotos([]);
     try {
       await p.onSend(text, pics);
     } catch (e: any) {
-      setDraft(text);
+      replaceDraft(text);
       setPhotos(pics);
       Alert.alert(t('沒有送出'), e?.message ?? String(e));
     } finally {
@@ -198,6 +206,7 @@ export function Composer(p: Props) {
             disabled={p.busy || photos.length >= MAX_PHOTOS}
           />
           <TextInput
+            key={inputKey}
             ref={inputRef}
             nativeID={COMPOSER_INPUT_ID}
             style={styles.input}

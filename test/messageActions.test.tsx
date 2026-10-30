@@ -128,9 +128,25 @@ describe('長按自己的訊息', () => {
     expect(inputValue()).toBe('原本');
     expect(screen.getByText('編輯中：送出後會取代這則訊息和之後的 3 則')).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改過');
+    // 自己打字不換輸入框（換了鍵盤會收起來）
+    const typing = screen.getByLabelText('訊息輸入框');
+    expect(screen.getByLabelText('訊息輸入框')).toBe(typing);
     await fireEvent.press(screen.getByLabelText('送出'));
     await waitFor(() => expect(store.getState().messages.map((m) => m.content)).toEqual(['改過', '回答：改過']));
     expect(screen.queryByText(/編輯中/)).toBeNull();
+  });
+
+  test('程式換掉輸入框的字（放回訊息、送出後清空）時換一個新的輸入框，高度才會照新的字量', async () => {
+    // RN 0.88 多行輸入框被程式改字時量的是改之前的字：放回四行的訊息只有一行高、清空後停在四行高
+    const { store } = await setup(['第一行\n第二行\n第三行\n第四行']);
+    const before = screen.getByLabelText('訊息輸入框');
+    pickActions(1);
+    await longPress(store, 0);
+    const filled = screen.getByLabelText('訊息輸入框');
+    expect(filled.props.value).toBe('第一行\n第二行\n第三行\n第四行');
+    expect(filled).not.toBe(before);
+    await fireEvent.press(screen.getByText('取消編輯'));
+    expect(screen.getByLabelText('訊息輸入框')).not.toBe(filled);
   });
 
   test('取消編輯：清空輸入框，不會動到原本的訊息', async () => {
