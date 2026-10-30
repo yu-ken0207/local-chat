@@ -1734,11 +1734,13 @@ export class ChatStore {
     const { repo } = this.deps;
     const a = await repo.getAgent(id);
     if (!a) return;
-    await repo.deleteAgent(id);
+    const members = await repo.deleteAgent(id);
     await this.loadMyAgents();
+    await this.refreshGroup();
     await this.offerUndo(t('已刪除「{p0}」', { p0: a.name }), async () => {
-      await repo.restoreAgent(id, a.mine);
+      await repo.restoreAgent(id, a.mine, members);
       await this.loadMyAgents();
+      await this.refreshGroup();
     });
   }
 

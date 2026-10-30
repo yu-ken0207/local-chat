@@ -1,7 +1,7 @@
 import type { ThinkSetting } from '../lib/ollama';
 import type { ToolCall, ToolInput } from '../lib/tools';
 import type { Db, SqlValue } from './db';
-import { localizeIntro, localizeName } from '../agents/catalog';
+import { getEntry, localizeIntro, localizeName } from '../agents/catalog';
 import { t } from '../i18n';
 
 // ---- 型別 ----
@@ -87,6 +87,8 @@ export type Agent = {
 /** 怎麼加入討論的：你加的、AI 自己加入、被 @ 拉進來、跟著原對話進討論串 */
 export type JoinedBy = 'user' | 'auto' | 'mention' | 'thread';
 export type Member = { agent: Agent; position: number; joinedBy: JoinedBy; joinedAt: number };
+/** session_members 的一列（刪掉 Agent 時記下來，復原時放回去） */
+export type MemberRow = { session_id: string; agent_id: string; position: number; joined_by: JoinedBy; joined_at: number };
 
 /** Agent 的筆記：收尾後寫下這次的立場與學到的事，下次討論帶著 */
 export type AgentNote = { id: string; agentId: string; sessionId: string | null; content: string; createdAt: number };
@@ -167,7 +169,7 @@ export const isRecordNote = (m: Pick<Message, 'role' | 'detail'>) => m.role === 
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
@@ -246,6 +248,9 @@ const MIGRATIONS: Record<number, string> = {
       ALTER TABLE sessions ADD COLUMN pinned_id TEXT;
       ALTER TABLE messages ADD COLUMN agent_id TEXT;
       ALTER TABLE messages ADD COLUMN reply_to TEXT;`,
+  // 從圖鑑來的 Agent：名字、介紹有沒有改過（沒改過的跟著 App 語言；舊資料一律當沒改過）
+  8: `ALTER TABLE agents ADD COLUMN name_custom INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE agents ADD COLUMN intro_custom INTEGER NOT NULL DEFAULT 0;`,
 };
 
 /** 最近刪除保留幾天 */
@@ -423,6 +428,8 @@ type AgentRow = {
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
+  name_custom: number;
+  intro_custom: number;
 };
 
 type ActionRow = {
@@ -485,8 +492,8 @@ const toAgent = (r: AgentRow): Agent => ({
   id: r.id,
   catalogId: r.catalog_id,
   // 從圖鑑來、沒改過的：跟著 App 語言
-  name: localizeName(r.catalog_id, r.name),
-  intro: localizeIntro(r.catalog_id, r.intro),
+  name: r.name_custom ? r.name : localizeName(r.catalog_id, r.name),
+  intro: r.intro_custom ? r.intro : localizeIntro(r.catalog_id, r.intro),
   prompt: r.prompt,
   card: parseJson<AgentCard | null>(r.card, null),
   emoji: r.emoji,
@@ -513,11 +520,17 @@ export class Repo {
     const row = await this.db.get<{ user_version: number }>('PRAGMA user_version');
     const version = row?.user_version ?? 0;
     if (version >= SCHEMA_VERSION) return;
-    if (version === 0) {
-      await this.db.exec(BASE_SCHEMA);
-    }
-    for (let v = Math.max(version, 1) + 1; v <= SCHEMA_VERSION; v++) await this.db.exec(MIGRATIONS[v]);
-    await this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    // 每一版連同版本號包在同一個交易裡：升級到一半被中斷，下次從那一版整個重來（不會卡在「欄位已經有了」）
+    const step = async (sql: string, v: number) => {
+      try {
+        await this.db.exec(`BEGIN;\n${sql.trim().replace(/;$/, '')};\nPRAGMA user_version = ${v};\nCOMMIT;`);
+      } catch (e) {
+        await this.db.exec('ROLLBACK').catch(() => {});
+        throw e;
+      }
+    };
+    if (version === 0) await step(BASE_SCHEMA, 1);
+    for (let v = Math.max(version, 1) + 1; v <= SCHEMA_VERSION; v++) await step(MIGRATIONS[v], v);
   }
 
   // ---- 主機 ----
@@ -737,10 +750,11 @@ export class Repo {
     );
   }
 
-  /** 刪掉沒有任何訊息的空白對話（開了新對話卻沒講話） */
+  /** 刪掉沒有任何訊息的空白對話（開了新對話卻沒講話）；已經加了成員、改過群組設定的留著 */
   async deleteEmptySessions(exceptId?: string): Promise<void> {
     await this.db.run(
-      'DELETE FROM sessions WHERE id != ? AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = sessions.id)',
+      `DELETE FROM sessions WHERE id != ? AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.session_id = sessions.id)
+         AND NOT EXISTS (SELECT 1 FROM session_members sm WHERE sm.session_id = sessions.id) AND group_settings IS NULL`,
       [exceptId ?? '']
     );
   }
@@ -973,19 +987,38 @@ export class Repo {
       updatedAt: now,
       deletedAt: null,
     };
+    // 從圖鑑來、名字介紹跟圖鑑不一樣的：一開始就算改過（不跟著語言換）
+    const e = a.catalogId ? getEntry(a.catalogId) : undefined;
+    const nameCustom = e && !e.n.includes(a.name) ? 1 : 0;
+    const introCustom = e && !e.d.includes(a.intro) ? 1 : 0;
     await this.db.run(
-      `INSERT INTO agents (id, catalog_id, name, intro, prompt, card, emoji, avatar, photo, talk, host_url, model, auto_join, mine, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [a.id, a.catalogId, a.name, a.intro, a.prompt, a.card ? JSON.stringify(a.card) : null, a.emoji, a.avatar, a.photo, a.talk, a.hostUrl, a.model, a.autoJoin ? 1 : 0, a.mine ? 1 : 0, now, now]
+      `INSERT INTO agents (id, catalog_id, name, intro, prompt, card, emoji, avatar, photo, talk, host_url, model, auto_join, mine, created_at, updated_at, name_custom, intro_custom)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [a.id, a.catalogId, a.name, a.intro, a.prompt, a.card ? JSON.stringify(a.card) : null, a.emoji, a.avatar, a.photo, a.talk, a.hostUrl, a.model, a.autoJoin ? 1 : 0, a.mine ? 1 : 0, now, now, nameCustom, introCustom]
     );
-    return a;
+    return { ...a, name: nameCustom ? a.name : localizeName(a.catalogId, a.name), intro: introCustom ? a.intro : localizeIntro(a.catalogId, a.intro) };
   }
 
-  /** 圖鑑裡的某個 Agent：用過就沿用同一份（筆記才接得上），沒用過就新建一份 */
+  /**
+   * 圖鑑裡的某個 Agent：用過就沿用同一份（筆記才接得上）；刪掉過的救回那一份；沒用過才新建。
+   * 連點兩下同時加：後到的撞到唯一索引就拿先建好的那份
+   */
   async agentFromCatalog(catalogId: string, fields: Pick<Agent, 'name' | 'intro' | 'emoji'>): Promise<Agent> {
-    const row = await this.db.get<AgentRow>('SELECT * FROM agents WHERE catalog_id = ? AND deleted_at IS NULL', [catalogId]);
+    const active = () => this.db.get<AgentRow>('SELECT * FROM agents WHERE catalog_id = ? AND deleted_at IS NULL', [catalogId]);
+    const row = await active();
     if (row) return toAgent(row);
-    return this.createAgent({ ...fields, catalogId });
+    const old = await this.db.get<{ id: string }>('SELECT id FROM agents WHERE catalog_id = ? ORDER BY deleted_at DESC LIMIT 1', [catalogId]);
+    if (old) {
+      await this.db.run('UPDATE OR IGNORE agents SET deleted_at = NULL, updated_at = ? WHERE id = ?', [this.now(), old.id]);
+      return toAgent((await active())!);
+    }
+    try {
+      return await this.createAgent({ ...fields, catalogId });
+    } catch (e) {
+      const again = await active();
+      if (again) return toAgent(again);
+      throw e;
+    }
   }
 
   async getAgent(id: string): Promise<Agent | null> {
@@ -1011,8 +1044,10 @@ export class Repo {
     patch: Partial<Pick<Agent, 'name' | 'intro' | 'prompt' | 'card' | 'emoji' | 'avatar' | 'photo' | 'talk' | 'hostUrl' | 'model' | 'autoJoin' | 'mine'>>
   ): Promise<void> {
     const cols: Record<string, SqlValue> = {};
-    if (patch.name !== undefined) cols.name = patch.name;
-    if (patch.intro !== undefined) cols.intro = patch.intro;
+    // 名字、介紹真的改了才記「改過」（編輯畫面整張存回來，沒動的那欄不算）
+    const cur = patch.name !== undefined || patch.intro !== undefined ? await this.getAgent(id) : null;
+    if (patch.name !== undefined && patch.name.trim() !== cur?.name.trim()) (cols.name = patch.name), (cols.name_custom = 1);
+    if (patch.intro !== undefined && patch.intro.trim() !== cur?.intro.trim()) (cols.intro = patch.intro), (cols.intro_custom = 1);
     if (patch.prompt !== undefined) cols.prompt = patch.prompt;
     if (patch.card !== undefined) cols.card = patch.card ? JSON.stringify(patch.card) : null;
     if (patch.emoji !== undefined) cols.emoji = patch.emoji;
@@ -1028,22 +1063,58 @@ export class Repo {
     await this.db.run(`UPDATE agents SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, [...keys.map((k) => cols[k]), this.now(), id]);
   }
 
-  /** 刪掉 Agent：先藏起來（說過的話照樣看得到名字、頭像），可以復原 */
-  async deleteAgent(id: string): Promise<void> {
+  /**
+   * 刪掉 Agent：先藏起來（說過的話照樣看得到名字、頭像），也退出所有對話（不再發言）。
+   * 回傳退出的成員紀錄，復原時放回去
+   */
+  async deleteAgent(id: string): Promise<MemberRow[]> {
+    const members = await this.db.all<MemberRow>('SELECT * FROM session_members WHERE agent_id = ?', [id]);
+    await this.db.run('DELETE FROM session_members WHERE agent_id = ?', [id]);
     await this.db.run('UPDATE agents SET deleted_at = ?, mine = 0 WHERE id = ?', [this.now(), id]);
+    return members;
   }
 
-  async restoreAgent(id: string, mine: boolean): Promise<void> {
+  /** 復原刪掉的 Agent；這段時間又從圖鑑加了同一個角色（另一份）的話，併回這一份 */
+  async restoreAgent(id: string, mine: boolean, members: MemberRow[] = []): Promise<void> {
+    const dup = await this.catalogTwin(id);
+    if (dup) await this.db.run('UPDATE agents SET deleted_at = ? WHERE id = ?', [this.now(), dup]);
     await this.db.run('UPDATE agents SET deleted_at = NULL, mine = ? WHERE id = ?', [mine ? 1 : 0, id]);
+    if (dup) await this.mergeAgent(dup, id);
+    for (const m of members) {
+      await this.db.run('INSERT OR IGNORE INTO session_members (session_id, agent_id, position, joined_by, joined_at) VALUES (?, ?, ?, ?, ?)', [
+        m.session_id,
+        m.agent_id,
+        m.position,
+        m.joined_by,
+        m.joined_at,
+      ]);
+    }
+  }
+
+  /** 同一個圖鑑角色、目前沒刪掉的另一份 */
+  private async catalogTwin(id: string): Promise<string | null> {
+    const row = await this.db.get<{ id: string }>(
+      'SELECT b.id FROM agents a JOIN agents b ON b.catalog_id = a.catalog_id AND b.id != a.id AND b.deleted_at IS NULL WHERE a.id = ? AND a.catalog_id IS NOT NULL',
+      [id]
+    );
+    return row?.id ?? null;
+  }
+
+  /** 把 from 併進 into：成員、筆記、說過的話都改成 into 的，再刪掉 from */
+  private async mergeAgent(from: string, into: string): Promise<void> {
+    await this.db.run('UPDATE OR IGNORE session_members SET agent_id = ? WHERE agent_id = ?', [into, from]);
+    await this.db.run('UPDATE agent_notes SET agent_id = ? WHERE agent_id = ?', [into, from]);
+    await this.db.run('UPDATE messages SET agent_id = ? WHERE agent_id = ?', [into, from]);
+    await this.db.run('DELETE FROM agents WHERE id = ?', [from]);
   }
 
   // ---- 對話成員 ----
 
-  /** 這段對話有哪些 Agent（照加入順序；刪掉的 Agent 也列出來，說過的話才對得上） */
+  /** 這段對話有哪些 Agent（照加入順序；刪掉的不算，說過的話的名字另外用 agentsByIds 拿） */
   async listMembers(sessionId: string): Promise<Member[]> {
     const rows = await this.db.all<AgentRow & { position: number; joined_by: JoinedBy; joined_at: number }>(
       `SELECT a.*, m.position, m.joined_by, m.joined_at FROM session_members m JOIN agents a ON a.id = m.agent_id
-       WHERE m.session_id = ? ORDER BY m.position`,
+       WHERE m.session_id = ? AND a.deleted_at IS NULL ORDER BY m.position`,
       [sessionId]
     );
     return rows.map((r) => ({ agent: toAgent(r), position: r.position, joinedBy: r.joined_by, joinedAt: r.joined_at }));
@@ -1202,18 +1273,33 @@ export class Repo {
     await this.db.exec('DELETE FROM hosts; DELETE FROM settings; DELETE FROM agent_notes;');
     for (const h of snap.hosts) await this.restoreHost(h);
     for (const s of snap.settings) await this.setSetting(s.key, s.value);
-    for (const [table, rows] of [['agents', snap.agents], ['agent_notes', snap.notes]] as const) {
-      for (const row of rows) {
-        const cols = Object.keys(row);
-        await this.db.run(`INSERT OR REPLACE INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map((c) => row[c]));
-      }
+    // Agent 用「有就更新」放回去：不能用 REPLACE（會先刪掉那一列，連帶刪掉它在所有對話的成員紀錄）
+    for (const row of snap.agents) {
+      const cols = Object.keys(row);
+      const id = String(row.id);
+      const dup = row.deleted_at === null && row.catalog_id !== null ? await this.db.get<{ id: string }>('SELECT id FROM agents WHERE catalog_id = ? AND deleted_at IS NULL AND id != ?', [row.catalog_id, id]) : null;
+      if (dup) await this.db.run('UPDATE agents SET deleted_at = ? WHERE id = ?', [this.now(), dup.id]);
+      await this.db.run(
+        `INSERT INTO agents (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})
+         ON CONFLICT(id) DO UPDATE SET ${cols.filter((c) => c !== 'id').map((c) => `${c} = excluded.${c}`).join(', ')}`,
+        cols.map((c) => row[c])
+      );
+      if (dup) await this.mergeAgent(dup.id, id);
+    }
+    for (const row of snap.notes) {
+      const cols = Object.keys(row);
+      await this.db.run(`INSERT OR REPLACE INTO agent_notes (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`, cols.map((c) => row[c]));
     }
   }
 
-  /** 清掉主機、設定、筆記，Agent 先藏起來（對話還在最近刪除，裡面說過的話要對得上），對話另外處理 */
+  /**
+   * 清掉主機、設定、筆記；Agent 不再列在「我的 Agent」，沒在任何對話裡的先藏起來（之後真的刪）。
+   * 還在對話（含最近刪除）裡的留著：從最近刪除救回那段時，成員照樣在
+   */
   async clearSettings(): Promise<void> {
     await this.db.exec('DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings; DELETE FROM agent_notes;');
-    await this.db.run('UPDATE agents SET deleted_at = COALESCE(deleted_at, ?), mine = 0', [this.now()]);
+    await this.db.run('UPDATE agents SET mine = 0');
+    await this.db.run('UPDATE agents SET deleted_at = COALESCE(deleted_at, ?) WHERE NOT EXISTS (SELECT 1 FROM session_members m WHERE m.agent_id = agents.id)', [this.now()]);
   }
 
   /** 對話有幾段 */

@@ -80,16 +80,16 @@ export const entryIntro = (e: CatalogEntry): string => pick(e.d);
 export const entryVibe = (e: CatalogEntry): string => pick(e.v);
 
 /**
- * 從圖鑑來的 Agent：名字、介紹還是圖鑑原樣（中文或英文任一個）就跟著 App 語言顯示；改過的照改過的。
- * （加入時存的是當時語言的版本，之後換語言才不會卡在舊的語言）
+ * 從圖鑑來、沒改過名字和介紹的 Agent：跟著 App 語言顯示圖鑑的版本（圖鑑改了字也跟著新的）；
+ * 圖鑑裡已經沒有這個角色就用存著的。改過沒有記在資料庫（name_custom、intro_custom），不靠字串比對
  */
 export function localizeName(catalogId: string | null, name: string): string {
   const e = catalogId ? byId.get(catalogId) : undefined;
-  return e && e.n.includes(name) ? entryName(e) : name;
+  return e ? entryName(e) : name;
 }
 export function localizeIntro(catalogId: string | null, intro: string): string {
   const e = catalogId ? byId.get(catalogId) : undefined;
-  return e && e.d.includes(intro) ? entryIntro(e) : intro;
+  return e ? entryIntro(e) : intro;
 }
 
 /** 搜尋圖鑑：每個詞都要出現在名字、介紹、個性或標籤裡（兩種語言都比，不分大小寫）；名字對到的排前面 */
@@ -106,17 +106,42 @@ export function searchCatalog(query: string, category?: CategoryKey | null): Cat
   return [...hits.filter((h) => h.name), ...hits.filter((h) => !h.name)].map((h) => h.e);
 }
 
+const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
+/** 英文名字裡不拿來找頭像的字 */
+const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'your', 'you', 'who', 'mr', 'mrs', 'dr']);
+
+/** 圖鑑名字裡有沒有這個詞：英文要整個字對到（Data 不會對到 Dad），中文照字串 */
+function inName(name: string, q: string): boolean {
+  const a = name.toLowerCase();
+  const b = q.toLowerCase();
+  if (CJK.test(b)) return a.includes(b);
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${b.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(a);
+}
+
 /**
- * 自己建的 Agent 用哪個圖鑑角色的頭像：先找「名字」對到的（全名、前兩三個字、專長的每一項），
- * 都沒有才用介紹裡提到的（不然「風險管理」會挑到介紹裡剛好有這幾個字的財務專家）
+ * 自己建的 Agent 用哪個圖鑑角色的頭像：先找「名字」對到的，都沒有才用介紹裡提到的（不然「風險管理」會挑到介紹裡剛好有這幾個字的財務專家）。
+ * 中文名字：全名、前兩三個字、專長的每一項。英文名字：全名、專長，再用名字裡的單字（整個字對；對到最多字的優先，一樣多時後面的字優先，
+ * 英文的主詞通常在後面：Data Detective 是偵探）
  */
 export function suggestAvatar(name: string, terms: string[]): string | null {
-  const queries = [...new Set([name, name.slice(0, 2), name.slice(0, 3), ...terms].map((q) => q.trim()).filter((q) => q.length >= 2))];
-  for (const q of queries) {
-    const hit = searchCatalog(q).find((e) => e.n.some((n) => n.toLowerCase().includes(q.toLowerCase())));
-    if (hit) return hit.id;
+  const clean = (list: string[]) => [...new Set(list.map((q) => q.trim()).filter((q) => q.length >= 2))];
+  const nameHit = (q: string) => searchCatalog(q).find((e) => e.n.some((n) => inName(n, q)))?.id;
+  const chars = [...name.trim()];
+  const cjk = CJK.test(name);
+  const words = cjk ? [] : name.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !STOP_WORDS.has(w.toLowerCase()));
+  const first = clean(cjk ? [name, chars.slice(0, 2).join(''), chars.slice(0, 3).join(''), ...terms] : [name, ...terms]);
+  for (const q of first) {
+    const hit = nameHit(q);
+    if (hit) return hit;
   }
-  for (const q of queries) {
+  let best: { id: string; n: number } | null = null;
+  const score = new Map<string, number>();
+  for (const w of [...words].reverse()) {
+    for (const e of searchCatalog(w)) if (e.n.some((n) => inName(n, w))) score.set(e.id, (score.get(e.id) ?? 0) + 1);
+  }
+  for (const [id, n] of score) if (!best || n > best.n) best = { id, n };
+  if (best) return best.id;
+  for (const q of clean([...first, ...words])) {
     const hit = searchCatalog(q)[0];
     if (hit) return hit.id;
   }

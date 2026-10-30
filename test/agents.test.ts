@@ -43,7 +43,7 @@ describe('Agent', () => {
     expect(eng.talk).toBe(0.5);
   });
 
-  test('圖鑑的 Agent 用過就沿用同一份（筆記才接得上）；刪掉後再用是新的一份', async () => {
+  test('圖鑑的 Agent 用過就沿用同一份（筆記才接得上）；刪掉後再用是救回同一份', async () => {
     const { repo } = await freshRepo();
     const fields = { name: '歷史學家', intro: '講脈絡', emoji: '📚' };
     const a = await repo.agentFromCatalog('agency:academic/academic-historian', fields);
@@ -51,7 +51,7 @@ describe('Agent', () => {
     expect(b.id).toBe(a.id);
     await repo.deleteAgent(a.id);
     const c = await repo.agentFromCatalog('agency:academic/academic-historian', fields);
-    expect(c.id).not.toBe(a.id);
+    expect(c).toMatchObject({ id: a.id, deletedAt: null });
   });
 
   test('從圖鑑來、沒改過的名字和介紹跟著 App 語言；改過的照改過的', async () => {
@@ -158,8 +158,8 @@ describe('清除全部資料', () => {
     return { db, repo, used, idle, s };
   }
 
-  test('那幾秒內按復原：Agent、筆記都回來', async () => {
-    const { repo, used } = await seeded();
+  test('那幾秒內按復原：Agent、筆記、對話成員都回來', async () => {
+    const { repo, used, s } = await seeded();
     const snap = await repo.snapshotSettings();
     const ids = await repo.trashAllSessions();
     await repo.clearSettings();
@@ -169,6 +169,8 @@ describe('清除全部資料', () => {
     await repo.restoreSessions(ids);
     expect((await repo.listMyAgents()).map((a) => a.name).sort()).toEqual(['在對話裡', '沒用過']);
     expect((await repo.listNotes(used.id)).map((n) => n.content)).toEqual(['上次的筆記']);
+    // 成員紀錄不能被連帶刪掉（REPLACE 會先刪那一列 Agent，觸發 ON DELETE CASCADE）
+    expect((await repo.listMembers(s.id)).map((m) => m.agent.id)).toEqual([used.id]);
   });
 
   test('時間到真的刪：沒人用的 Agent 刪掉；救回的對話裡的 Agent 留著（說過的話對得上）', async () => {
@@ -180,7 +182,7 @@ describe('清除全部資料', () => {
     expect(await repo.getAgent(idle.id)).toBeNull();
     expect((await repo.listMembers(s.id)).map((m) => m.agent.name)).toEqual(['在對話裡']);
     expect(await repo.listMyAgents()).toEqual([]);
-    expect((await repo.getAgent(used.id))!.deletedAt).not.toBeNull();
+    expect((await repo.getAgent(used.id))!.mine).toBe(false);
   });
 
   test('刪掉超過 30 天、也沒有對話用到的 Agent：開 App 時真的刪掉', async () => {
@@ -198,6 +200,124 @@ describe('清除全部資料', () => {
     await repo.purgeExpired();
     expect(await repo.getAgent(a.id)).toBeNull();
     expect(await repo.getAgent(b.id)).not.toBeNull();
+  });
+});
+
+describe('審查修正：Agent 資料', () => {
+  test('刪掉的 Agent 退出所有對話（不再發言）；復原時放回原本的位置', async () => {
+    const { repo } = await freshRepo();
+    const a = await repo.createAgent({ name: '財務長', mine: true });
+    const b = await repo.createAgent({ name: '工程師', mine: true });
+    const s = await repo.createSession();
+    await repo.addMember(s.id, a.id);
+    await repo.addMember(s.id, b.id);
+    const removed = await repo.deleteAgent(a.id);
+    expect((await repo.listMembers(s.id)).map((m) => m.agent.name)).toEqual(['工程師']);
+    await repo.restoreAgent(a.id, true, removed);
+    expect((await repo.listMembers(s.id)).map((m) => m.agent.name)).toEqual(['財務長', '工程師']);
+  });
+
+  test('圖鑑角色刪掉後再加：救回同一份（筆記接得上），不會變成兩個同名成員', async () => {
+    const { repo } = await freshRepo();
+    const e = getEntry('lobe:sous-chef')!;
+    const a = await repo.agentFromCatalog(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    await repo.addNote(a.id, null, '上次的筆記');
+    await repo.deleteAgent(a.id);
+    const again = await repo.agentFromCatalog(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    expect(again.id).toBe(a.id);
+    expect(again.deletedAt).toBeNull();
+    expect((await repo.listNotes(a.id)).map((n) => n.content)).toEqual(['上次的筆記']);
+  });
+
+  test('連點兩下從圖鑑加：同一份，不丟錯', async () => {
+    const { repo } = await freshRepo();
+    const e = getEntry('lobe:sous-chef')!;
+    const [a, b] = await Promise.all([1, 2].map(() => repo.agentFromCatalog(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e })));
+    expect(a.id).toBe(b.id);
+  });
+
+  test('復原時同一個圖鑑角色已經有另一份：併回原本那份（成員、說過的話跟著過來）', async () => {
+    const { repo, db } = await freshRepo();
+    const e = getEntry('lobe:sous-chef')!;
+    const a = await repo.agentFromCatalog(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    await repo.deleteAgent(a.id);
+    // 模擬舊版留下的另一份（現在的 agentFromCatalog 會救回原本那份）
+    await db.run("UPDATE agents SET catalog_id = 'tmp' WHERE id = ?", [a.id]);
+    const twin = await repo.agentFromCatalog(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    await db.run('UPDATE agents SET catalog_id = ? WHERE id = ?', [e.id, a.id]);
+    const s = await repo.createSession();
+    await repo.addMember(s.id, twin.id);
+    await repo.addMessage(s.id, { role: 'assistant', content: '我來切菜', agentId: twin.id });
+    await repo.restoreAgent(a.id, true);
+    expect(await repo.getAgent(twin.id)).toBeNull();
+    expect((await repo.listMembers(s.id)).map((m) => m.agent.id)).toEqual([a.id]);
+    expect((await repo.listMessages(s.id))[0].agentId).toBe(a.id);
+  });
+
+  test('空白對話：加了成員或改過群組設定的不會被當成沒講話刪掉', async () => {
+    const { repo } = await freshRepo();
+    const a = await repo.createAgent({ name: '財務長' });
+    const withMember = await repo.createSession();
+    await repo.addMember(withMember.id, a.id);
+    const withGroup = await repo.createSession();
+    await repo.updateSession(withGroup.id, { group: { ...DEFAULT_GROUP, mode: 'round' } });
+    const empty = await repo.createSession();
+    const current = await repo.createSession();
+    await repo.deleteEmptySessions(current.id);
+    expect(await repo.getSession(withMember.id)).not.toBeNull();
+    expect(await repo.getSession(withGroup.id)).not.toBeNull();
+    expect(await repo.getSession(empty.id)).toBeNull();
+  });
+
+  test('名字、介紹：沒改過的跟著語言（圖鑑改了字也跟新的）；真的改了才算改過；改成另一個語言的圖鑑名也照存', async () => {
+    const { repo, db } = await freshRepo();
+    const e = getEntry('agency:academic/academic-historian')!;
+    const a = await repo.agentFromCatalog(e.id, { name: e.n[0], intro: e.d[0], emoji: e.e });
+    // 圖鑑後來改了字：存著的還是舊字，照樣跟著語言換
+    await db.run("UPDATE agents SET name = '舊的名字', intro = '舊的介紹' WHERE id = ?", [a.id]);
+    expect(await repo.getAgent(a.id)).toMatchObject({ name: e.n[0], intro: e.d[0] });
+    // 編輯畫面整張存回來（介紹多了空白也算沒動）：還是跟著語言
+    await repo.updateAgent(a.id, { name: e.n[0], intro: `${e.d[0]} `, talk: 0.9 });
+    setLanguage('en');
+    expect(await repo.getAgent(a.id)).toMatchObject({ name: e.n[1], intro: e.d[1], talk: 0.9 });
+    // 英文介面下改成中文的圖鑑名：照存，不會被換回去
+    await repo.updateAgent(a.id, { name: e.n[0] });
+    expect((await repo.getAgent(a.id))!.name).toBe(e.n[0]);
+    setLanguage('zh-Hant');
+    expect(await repo.getAgent(a.id)).toMatchObject({ name: e.n[0], intro: e.d[0] });
+  });
+
+  test('升級做到一半失敗：整版退回，版本號不動', async () => {
+    const db = memoryDb();
+    await db.exec(BASE_SCHEMA);
+    await db.exec(`ALTER TABLE sessions ADD COLUMN deleted_at INTEGER;
+      ALTER TABLE messages ADD COLUMN deleted_at INTEGER;
+      ALTER TABLE messages ADD COLUMN alt_group TEXT;
+      ALTER TABLE messages ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE messages ADD COLUMN detail TEXT NOT NULL DEFAULT '';
+      ALTER TABLE hosts ADD COLUMN helper_id TEXT;
+      ALTER TABLE messages ADD COLUMN tool_calls TEXT;
+      ALTER TABLE messages ADD COLUMN tool_name TEXT;
+      ALTER TABLE messages ADD COLUMN tool_call_id TEXT;
+      ALTER TABLE sessions ADD COLUMN parent_id TEXT;
+      ALTER TABLE sessions ADD COLUMN parent_message_id TEXT;
+      ALTER TABLE messages ADD COLUMN reply_to TEXT;
+      PRAGMA user_version = 6;`);
+    const repo = new Repo(db);
+    // 第 7 版最後一句（加 reply_to）會撞到已經有的欄位
+    await expect(repo.migrate()).rejects.toThrow(/duplicate column/);
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
+    const cols = (await db.all<{ name: string }>('PRAGMA table_info(sessions)')).map((c) => c.name);
+    expect(cols).not.toContain('group_settings');
+  });
+});
+
+describe('自己建的 Agent 挑頭像（英文）', () => {
+  test('英文名字整個字對，不拿前兩三個字母去比', () => {
+    expect(suggestAvatar('Data Detective', [])).toBe('lobe:detective-game-assistant');
+    expect(suggestAvatar('Grumpy Chef', [])).toBe('lobe:sous-chef');
+    expect(suggestAvatar('Data Detective', [])).not.toBe('lobe:big-daddy');
+    expect(suggestAvatar('🤖 Bot', [])).not.toBe('lobe:all-knowing');
   });
 });
 
@@ -224,7 +344,7 @@ describe('備份與升級', () => {
       PRAGMA user_version = 1;`);
     const repo = new Repo(db);
     await repo.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 7 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 8 });
     expect((await repo.listMessages('s1')).map((m) => [m.content, m.agentId, m.replyTo])).toEqual([['舊訊息', null, null]]);
     expect((await repo.getSession('s1'))!.group).toBeNull();
     expect(await repo.listMembers('s1')).toEqual([]);
