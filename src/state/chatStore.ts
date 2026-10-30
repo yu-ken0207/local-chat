@@ -8,12 +8,12 @@ import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type Helpe
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
-import { PromptStore, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar, type CatalogEntry } from '../agents/catalog';
+import { PromptStore, avatarId, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar } from '../agents/catalog';
 import {
   AGENT_DRAFT_SCHEMA,
-  PICK_ROLES_SCHEMA,
+  PICK_AGENTS_SCHEMA,
   agentDraftMessages,
-  pickRolesMessages,
+  pickAgentsMessages,
   BID_SCHEMA,
   CONCLUSION,
   CONCLUSION_SCHEMA,
@@ -45,6 +45,7 @@ import {
   type Speaker,
 } from '../agents/discussion';
 import { askUserTool } from '../tools/ask';
+import { candidatesOf, candidatesToInput, inviteAgentsTool, inviteHintPrompt, type AgentCandidate } from '../tools/invite';
 import { setLanguage, t } from '../i18n';
 
 // 聊天的所有狀態與動作都在這裡；畫面只負責顯示與呼叫。這樣不用手機也能完整測試。
@@ -175,6 +176,8 @@ export type ChatState = {
   prefs: Prefs;
   /** 清單卡正在一件一件做：做到第幾件 */
   acting: { messageId: string; done: number; total: number } | null;
+  /** 「找 Agent」勾選卡正在換一批（確認動作的 id） */
+  findingAgents: string | null;
   /** 目前這段對話的討論串：key 是開討論串的那一題（使用者訊息的 id），count 是裡面問了幾次 */
   threads: Record<string, { id: string; count: number }>;
   /** 正在回答的對話（換到別段、關掉討論串都照樣在背景回答）：值是它掛在哪段對話底下（一般對話是 null） */
@@ -391,6 +394,7 @@ export class ChatStore {
     undo: null,
     prefs: DEFAULT_PREFS,
     acting: null,
+    findingAgents: null,
     threads: {},
     running: {},
     fresh: [],
@@ -1514,7 +1518,9 @@ export class ChatStore {
       vision: info ? info.vision : true,
       systemPrompt:
         REPLY_PROMPTS[this.appLanguage()] +
-        (tools.length > 0 ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') +
+        // 手機上的工具（行事曆等）才要現在時間與日期對照表；模型不會叫工具時，跟它說要找人去哪裡按
+        (tools.some((x) => x !== this.inviteTool) ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') +
+        (tools.length === 0 ? '\n\n' + inviteHintPrompt() : '') +
         (toolsOff.length > 0 ? '\n\n' + toolsOffPrompt(toolsOff) : ''),
     });
     // 這一輪使用者說「不要」、改過才做的：最後再提醒一次，不然模型常照自己原本提的講（「已經改好了」、原本的日期）
@@ -1604,7 +1610,7 @@ export class ChatStore {
       const used = result.promptEvalCount + result.evalCount;
       if (here()) this.set({ context: { used, limit, level: contextLevel(used, limit) } });
       // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
-      if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls);
+      if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls, signal);
       // 在背景答完的不震、不播報（使用者正在看別段，不要打擾）
       else if (here()) this.deps.onEvent?.('answered');
       // 有文字的回答出來、這段還沒有標題：請模型取標題（不擋住下一次輸入；第一個回答被停掉的話，下一個回答再取）
@@ -1823,35 +1829,134 @@ export class ChatStore {
     await this.discuss(s.id, { only: { agentId: m.agentId, replyTo: m.id, expand: true } });
   }
 
-  /** 「幫我挑」：照話題從圖鑑挑 3–4 個觀點互補的角色（模型先想要哪些職稱，再到圖鑑裡找） */
-  async suggestMembers(topic: string): Promise<CatalogEntry[]> {
+  /** 「幫我挑」：照話題挑 3–4 個觀點互補的人（「我的 Agent」有適合的優先，不夠再到圖鑑找），每位附一句為什麼 */
+  async suggestMembers(topic: string): Promise<AgentCandidate[]> {
     const s = this.state.session;
+    if (!s) throw new Error(t('請先選一個模型'));
+    const picked = await this.findAgents(s.id, topic);
+    if (picked.length === 0) throw new Error(t('沒有挑到合適的角色，換個說法再試一次。'));
+    return picked;
+  }
+
+  /** 把「幫我挑」挑到的一位加進目前這段對話 */
+  async addCandidate(c: AgentCandidate): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.addCandidateTo(s.id, c);
+    await this.refreshGroup();
+  }
+
+  private async addCandidateTo(sessionId: string, c: AgentCandidate): Promise<void> {
+    const { repo } = this.deps;
+    const [kind, id] = [c.key.slice(0, c.key.indexOf(':')), c.key.slice(c.key.indexOf(':') + 1)];
+    if (kind === 'mine') {
+      await repo.addMember(sessionId, id, 'user');
+      return;
+    }
+    const e = getEntry(id);
+    if (!e) return;
+    const a = await repo.agentFromCatalog(id, { name: entryName(e), intro: entryIntro(e), emoji: e.e });
+    await repo.addMember(sessionId, a.id, 'user');
+  }
+
+  /**
+   * 照話題找人：模型先挑（「我的 Agent」有適合的優先，不夠給職稱），職稱再到圖鑑找；已經在這段的、avoid 裡的（換一批時看過的）不再挑。
+   * 同一個圖鑑角色已經在「我的 Agent」裡，就用「我的 Agent」那一份（筆記接得上）
+   */
+  private async findAgents(sessionId: string, topic: string, avoid: string[] = [], signal?: AbortSignal): Promise<AgentCandidate[]> {
+    const { repo } = this.deps;
+    const s = await repo.getSession(sessionId);
     const m = s ? this.modelFor(null, s) : null;
     if (!m) throw new Error(t('請先選一個模型'));
-    const text = await this.collect(m.url, m.model, pickRolesMessages(topic), {
-      think: quickThink(m.info),
-      format: PICK_ROLES_SCHEMA,
-      options: { temperature: 0.5, num_predict: 300 },
-    });
-    let roles: { zh?: string; en?: string }[] = [];
-    try {
-      roles = JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}').roles ?? [];
-    } catch {
-      roles = [];
+    const members = (await repo.listMembers(sessionId)).map((x) => x.agent);
+    const taken = new Set([...avoid, ...members.flatMap((a) => [`mine:${a.id}`, ...(a.catalogId ? [`catalog:${a.catalogId}`] : [])])]);
+    const mine = (await repo.listMyAgents()).filter((a) => !taken.has(`mine:${a.id}`) && !(a.catalogId && taken.has(`catalog:${a.catalogId}`)));
+    // 換一批：跟模型說看過哪些（名字）
+    const seen: string[] = [];
+    for (const k of avoid) {
+      const e = k.startsWith('catalog:') ? getEntry(k.slice(8)) : undefined;
+      const name = e ? entryName(e) : k.startsWith('mine:') ? (await repo.getAgent(k.slice(5)))?.name : undefined;
+      if (name) seen.push(name);
     }
-    const members = new Set(this.state.members.flatMap((x) => (x.agent.catalogId ? [x.agent.catalogId] : [])));
-    const picked: CatalogEntry[] = [];
-    for (const r of roles) {
-      for (const q of [r.zh, r.en]) {
-        const hit = q?.trim() ? searchCatalog(q.trim()).find((e) => !members.has(e.id) && !picked.includes(e)) : undefined;
-        if (hit) {
-          picked.push(hit);
-          break;
-        }
+    const text = await this.collect(m.url, m.model, pickAgentsMessages(topic, mine, seen), {
+      think: quickThink(m.info),
+      format: PICK_AGENTS_SCHEMA,
+      options: { temperature: 0.5, num_predict: budget(500, m.info) },
+      signal,
+    });
+    let picks: { mine?: unknown; zh?: unknown; en?: unknown; why?: unknown }[] = [];
+    try {
+      picks = JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}').picks ?? [];
+    } catch {
+      picks = [];
+    }
+    const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+    const people = mentionPeople(mine);
+    const out: AgentCandidate[] = [];
+    const used = (key: string) => taken.has(key) || out.some((c) => c.key === key);
+    const fromAgent = (a: Agent, why: string): AgentCandidate => ({ key: `mine:${a.id}`, name: a.name, intro: a.intro, why, emoji: a.emoji, avatar: avatarId(a) });
+    for (const p of Array.isArray(picks) ? picks : []) {
+      if (out.length >= 4) break;
+      const why = str(p.why).slice(0, 60);
+      // 自己的 Agent：模型填的名字、或職稱剛好就是他的名字
+      const own = [str(p.mine), str(p.zh), str(p.en)].map((n) => (n ? idByName(n, people) : null)).find((id) => id && !used(`mine:${id}`));
+      const agent = own ? mine.find((a) => a.id === own) : undefined;
+      if (agent) {
+        out.push(fromAgent(agent, why));
+        continue;
+      }
+      for (const q of [str(p.zh), str(p.en)]) {
+        const e = q ? searchCatalog(q).find((x) => !used(`catalog:${x.id}`)) : undefined;
+        if (!e) continue;
+        const same = mine.find((a) => a.catalogId === e.id);
+        if (same && !used(`mine:${same.id}`)) out.push(fromAgent(same, why));
+        else if (!same) out.push({ key: `catalog:${e.id}`, name: entryName(e), intro: entryIntro(e), why, emoji: e.e, avatar: e.id });
+        break;
       }
     }
-    if (picked.length === 0) throw new Error(t('沒有挑到合適的角色，換個說法再試一次。'));
-    return picked.slice(0, 4);
+    return out;
+  }
+
+  /** 「找 Agent」勾選卡按「加入並開始」：勾的人加進這段，原本的 AI 退場，大家接著回你那句話 */
+  async approveAgents(id: string, keys: string[]): Promise<void> {
+    const { repo } = this.deps;
+    const action = await repo.getAction(id);
+    if (!action || action.status !== 'pending' || this.actionBusy.has(id) || keys.length === 0) return;
+    this.actionBusy.add(id);
+    try {
+      const chosen = candidatesOf(action.input).filter((c) => keys.includes(c.key));
+      for (const c of chosen) await this.addCandidateTo(action.sessionId, c);
+      const names = chosen.map((c) => c.name);
+      await repo.updateAction(id, { status: 'done', input: { ...action.input, chosen: chosen.map((c) => c.key) }, result: { invited: names }, summary: t('邀請了 {p0} 一起討論', { p0: names.join(t('、')) }) });
+      await this.addToolResult(action.sessionId, { id: action.callId, name: action.tool, arguments: action.input }, { ok: true, result: { invited: names } }, '');
+    } finally {
+      this.actionBusy.delete(id);
+    }
+    if (this.state.session?.id === action.sessionId) {
+      this.set({ messages: await repo.listMessages(action.sessionId) });
+      await this.refreshGroup();
+    }
+    await this.discuss(action.sessionId, { mustReply: true });
+  }
+
+  /** 「找 Agent」勾選卡按「換一批」：看過的不再挑；找不到別人就說一聲，卡片照舊 */
+  async moreAgents(id: string): Promise<void> {
+    const { repo } = this.deps;
+    const action = await repo.getAction(id);
+    if (!action || action.status !== 'pending' || this.state.findingAgents) return;
+    const shown = Array.isArray(action.input.shown) ? action.input.shown.map(String) : candidatesOf(action.input).map((c) => c.key);
+    this.set({ findingAgents: id });
+    try {
+      const picks = await this.findAgents(action.sessionId, String(action.input.topic ?? ''), shown);
+      if (picks.length === 0) {
+        if (this.state.session?.id === action.sessionId) this.set({ notice: t('沒有找到其他人選了。') });
+        return;
+      }
+      await repo.updateAction(id, { input: { topic: String(action.input.topic ?? ''), ...candidatesToInput(picks), shown: [...shown, ...picks.map((c) => c.key)] } });
+      if (this.state.session?.id === action.sessionId) this.set({ messages: await repo.listMessages(action.sessionId) });
+    } finally {
+      this.set({ findingAgents: null });
+    }
   }
 
   /** 收尾失敗或被停掉的對話：按「重試」是重新收尾，不是接著討論 */
@@ -2474,13 +2579,15 @@ export class ChatStore {
 
   /** App 內建、有其他工具時一起給的工具（問使用者選擇題） */
   private readonly builtinTools = [askUserTool()];
+  /** 找 Agent 一起討論：模型會叫工具就一直給（不碰個人資料，設定裡沒有開關） */
+  private readonly inviteTool = inviteAgentsTool();
 
-  /** 這次可以給模型的工具：模型要會叫工具才給；設定裡關掉的分類不給；有工具時加上「問使用者」 */
+  /** 這次可以給模型的工具：模型要會叫工具才給；設定裡關掉的分類不給；有工具時加上「問使用者」；「找 Agent」一直都在 */
   private toolsFor(info: ModelInfo | undefined): PhoneTool[] {
     if (!info?.tools) return [];
     const off = new Set(this.state.prefs.toolsOff ?? []);
     const tools = (this.deps.tools ?? []).filter((tool) => !tool.group || !off.has(tool.group));
-    return tools.length > 0 ? [...tools, ...this.builtinTools] : [];
+    return [...tools, ...(tools.length > 0 ? this.builtinTools : []), this.inviteTool];
   }
 
   /** 設定頁「AI 可以做的事」要列出的分類 */
@@ -2502,7 +2609,7 @@ export class ChatStore {
 
   /** 照名稱找工具（畫面顯示確認卡也用） */
   toolFor(name: string): PhoneTool | undefined {
-    return [...(this.deps.tools ?? []), ...this.builtinTools].find((tool) => tool.name === name);
+    return [...(this.deps.tools ?? []), ...this.builtinTools, this.inviteTool].find((tool) => tool.name === name);
   }
 
   /** 加一則工具結果（content 交給模型，detail 是給使用者看的一句話） */
@@ -2514,7 +2621,7 @@ export class ChatStore {
    * 處理 AI 這次叫的工具：先檢查名稱與輸入，只讀的直接做，會改東西的變成確認卡。
    * 回傳 continue（全部做完，接著問模型）或 wait（有確認卡在等使用者）。
    */
-  private async runToolCalls(sessionId: string, messageId: string, calls: ToolCall[]): Promise<'continue' | 'wait'> {
+  private async runToolCalls(sessionId: string, messageId: string, calls: ToolCall[], signal?: AbortSignal): Promise<'continue' | 'wait'> {
     const { repo } = this.deps;
     const ctx = { now: this.now() };
     const results: { call: ToolCall; run: Promise<Parameters<typeof toolResultContent>[0] & { summary: string }> }[] = [];
@@ -2539,6 +2646,19 @@ export class ChatStore {
       const problem = tool.check?.(checked.value, ctx);
       if (problem) {
         reject(problem);
+        continue;
+      }
+      // 找 Agent：先照話題找人，出勾選卡（找不到就交回模型自己回答）
+      if (tool.kind === 'agents') {
+        const topic = String(checked.value.topic ?? '');
+        const picks = await this.findAgents(sessionId, topic, [], signal).catch(() => [] as AgentCandidate[]);
+        if (signal?.aborted) continue;
+        if (picks.length === 0) {
+          reject('No suitable agents were found for this topic. Answer the user yourself.', t('沒有找到合適的 Agent'));
+          continue;
+        }
+        await repo.addAction({ sessionId, messageId, callId: call.id, tool: tool.name, input: { topic, ...candidatesToInput(picks), shown: picks.map((c) => c.key) }, guessed: [], status: 'pending' });
+        waiting++;
         continue;
       }
       if (!needsConfirmation(tool)) {
@@ -2687,7 +2807,10 @@ export class ChatStore {
       const actions = round?.actions ?? [];
       // 選擇題按「不回答」也記成 declined，但不是「沒做」：另外一句
       const isQuestion = (a: Action) => this.toolFor(a.tool)?.kind === 'question';
-      const declined = actions.filter((a) => a.status === 'declined' && !isQuestion(a)).map(name);
+      // 找 Agent 按「不用了」也不是「沒做」：請模型自己回答
+      const isInvite = (a: Action) => this.toolFor(a.tool)?.kind === 'agents';
+      if (actions.some((a) => a.status === 'declined' && isInvite(a))) notes.push("The user chose not to bring in other agents. Answer the user's message yourself.");
+      const declined = actions.filter((a) => a.status === 'declined' && !isQuestion(a) && !isInvite(a)).map(name);
       const unanswered = actions.filter((a) => a.status === 'declined' && isQuestion(a)).map((a) => String(a.input.question ?? ''));
       const edited = actions.filter((a) => a.status === 'done' && a.note).map((a) => ({ item: name(a), changes: a.note }));
       notes.push(declined.length > 0 ? declinedPrompt(declined) : '', unanswered.length > 0 ? unansweredPrompt(unanswered) : '', edited.length > 0 ? editedPrompt(edited) : '');
@@ -2719,10 +2842,13 @@ export class ChatStore {
       if (!action || action.status !== 'pending' || this.actionBusy.has(id)) continue;
       sessionId = action.sessionId;
       await repo.updateAction(id, { status: 'declined', note: reason.trim() });
+      const noInvite = this.toolFor(action.tool)?.kind === 'agents';
       await this.addToolResult(
         action.sessionId,
         { id: action.callId, name: action.tool, arguments: action.input },
-        { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}), ...this.itemOf(action) },
+        noInvite
+          ? { ok: false, error: 'The user chose not to bring in other agents. Answer the user yourself.' }
+          : { ok: false, error: 'The user declined this action.', ...(reason.trim() ? { reason: reason.trim() } : {}), ...this.itemOf(action) },
         ''
       );
     }

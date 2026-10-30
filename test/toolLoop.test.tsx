@@ -96,7 +96,7 @@ describe('送給模型的內容', () => {
     const { net, store } = await setup();
     await store.send('你好');
     const body = net.chatBodies()[0];
-    expect(body.tools.map((x: any) => x.function.name)).toEqual(['list_events', 'create_event', 'ask_user']);
+    expect(body.tools.map((x: any) => x.function.name)).toEqual(['list_events', 'create_event', 'ask_user', 'invite_agents']);
     expect(body.messages[0].content).toContain('2026-10-29 16:40 (Thursday), time zone Asia/Taipei');
   });
 

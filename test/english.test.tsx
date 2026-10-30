@@ -40,7 +40,7 @@ test('英文手機：AI 用英文回答、用英文取標題', async () => {
   const { net, store } = await setup();
   await store.addHost('192.168.1.20');
   await store.send('hello');
-  expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: 'Please reply in English.' });
+  expect(net.chatBodies().at(-1).messages[0].content).toMatch(/^Please reply in English\.\n\n/);
   expect(net.titleBodies()[0].messages[0].content).toMatch(/^Write a title/);
 });
 

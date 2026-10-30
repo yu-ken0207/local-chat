@@ -2,6 +2,7 @@
  * @jest-environment node
  */
 import { REPLY_PROMPTS } from '../src/lib/history';
+import { inviteHintPrompt } from '../src/tools/invite';
 import { ChatStore, HostOfflineError, type ChatEvent } from '../src/state/chatStore';
 import { waitFor } from '@testing-library/react-native';
 import { Repo } from '../src/store/repo';
@@ -415,7 +416,8 @@ describe('對話', () => {
     const { net, store, repo } = await ready();
     await repo.updateSession(store.getState().session!.id, { systemPrompt: '你是巡檢專家' });
     await store.send('hi');
-    expect(net.chatBodies()[0].messages[0]).toEqual({ role: 'system', content: REPLY_PROMPTS['zh-Hant'] });
+    // 不會叫工具的模型：多一句「要找 Agent 去哪裡按」
+    expect(net.chatBodies()[0].messages[0]).toEqual({ role: 'system', content: `${REPLY_PROMPTS['zh-Hant']}\n\n${inviteHintPrompt()}` });
   });
 
   test('重新開 App：回到最近的對話，記得模型', async () => {
@@ -489,7 +491,7 @@ describe('訊息操作', () => {
       ['assistant', '回答：第一題'],
     ]);
     expect(store.getState().messages[1].id).not.toBe(firstAnswer.id);
-    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual(['請用繁體中文（台灣用語）回答。', '第一題']);
+    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual([`${REPLY_PROMPTS['zh-Hant']}\n\n${inviteHintPrompt()}`, '第一題']);
   });
 
   test('換個模型重新產生：回答標上新模型，之後也用新模型', async () => {
@@ -735,7 +737,7 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(msgs[1].versions).toEqual({ index: 1, total: 2 });
 
     await store.send('追問');
-    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual(['請用繁體中文（台灣用語）回答。', '問題', '答案1', '追問']);
+    expect(net.chatBodies().at(-1).messages.map((m: any) => m.content)).toEqual([`${REPLY_PROMPTS['zh-Hant']}\n\n${inviteHintPrompt()}`, '問題', '答案1', '追問']);
   });
 
   test('重新產生中間的回答：後面的訊息先藏起來，可以復原', async () => {
@@ -1012,10 +1014,10 @@ describe('設定', () => {
   test('AI 用 App 的語言回答', async () => {
     const { net, store } = await ready();
     await store.send('hi');
-    expect(net.chatBodies().at(-1).messages[0]).toEqual({ role: 'system', content: REPLY_PROMPTS['zh-Hant'] });
+    expect(net.chatBodies().at(-1).messages[0].content).toMatch(/^請用繁體中文（台灣用語）回答。\n\n/);
     await store.setPref('language', 'en');
     await store.send('hi3');
-    expect(net.chatBodies().at(-1).messages[0].content).toBe('Please reply in English.');
+    expect(net.chatBodies().at(-1).messages[0].content).toMatch(/^Please reply in English\.\n\n.*「Pick for me」/s);
   });
 
   test('「跟著系統」用手機的語言', async () => {

@@ -21,8 +21,8 @@ const whoSpeaks = (body: any) => /^你是「(.+?)」，正在/.exec(body.message
 function script(net: FakeOllamaNet, bids: Record<string, number[]>, opts: { hold?: Promise<unknown>; conclude?: boolean; replyTo?: Record<string, string> } = {}) {
   const spoke: Record<string, number> = {};
   net.hosts.get(A)!.reply = (body: any) => {
-    if (body.format?.properties?.roles) {
-      return { lines: [{ message: { content: JSON.stringify({ roles: [{ zh: '歷史學家', en: 'Historian' }, { zh: '統計學家', en: 'Statistician' }] }) }, done: false }, done] };
+    if (body.format?.properties?.picks) {
+      return { lines: [{ message: { content: JSON.stringify({ picks: [{ zh: '歷史學家', en: 'Historian', why: '看過去的脈絡' }, { zh: '統計學家', en: 'Statistician', why: '看數字' }] }) }, done: false }, done] };
     }
     if (body.format) {
       const name = whoBids(body);
@@ -182,7 +182,7 @@ test('成員面板：改發言方式、拿掉成員；幫我挑照話題從圖�
   expect(await screen.findByLabelText(`加入 ${hist}`)).toBeTruthy();
   await fireEvent.press(screen.getByLabelText(`加入 ${hist}`));
   await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toContain(hist));
-  expect(net.chatBodies().some((b) => b.format?.properties?.roles)).toBe(true);
+  expect(net.chatBodies().some((b) => b.format?.properties?.picks)).toBe(true);
 });
 
 test('收尾：按「收尾」出結論卡（票數、共識、待辦），可以投你的一票；釘在最上面可以取消', async () => {

@@ -148,6 +148,12 @@ export function suggestAvatar(name: string, terms: string[]): string | null {
   return null;
 }
 
+/** 頭像選「用 emoji」時存的值（從圖鑑來的也不會落回圖鑑的像素頭像） */
+export const EMOJI_AVATAR = 'emoji';
+
+/** 頭像用的 id：自己挑過的、從圖鑑來的用圖鑑 id（同一個角色同一個頭像、同一個顏色），都沒有用自己的 id；選了 emoji 就用 emoji（底色照樣固定） */
+export const avatarId = (a: { id: string; catalogId: string | null; avatar: string | null }) => (a.avatar === EMOJI_AVATAR ? `emoji:${a.id}` : (a.avatar ?? a.catalogId ?? a.id));
+
 /** 一個分片：Agent id 對到各語言的角色原文 */
 export type PromptShard = Record<string, { zh?: string; en?: string }>;
 export type ShardLoader = (index: number) => Promise<PromptShard>;

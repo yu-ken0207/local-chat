@@ -5,9 +5,11 @@ import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type Tex
 
 import { fmtEventTime } from '../lib/format';
 import { parseLocal, toLocalText, type PhoneTool, type ToolInput } from '../lib/tools';
+import { candidatesOf } from '../tools/invite';
 import type { Action } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { chooseOption } from './Composer';
+import { AgentAvatar } from './AgentAvatar';
 import { ActionButton } from './Messages';
 import { getLanguage, t } from '../i18n';
 
@@ -15,6 +17,8 @@ type Handlers = {
   onApprove: (id: string, edited?: ToolInput) => Promise<void>;
   onDecline: (id: string, reason: string) => Promise<void>;
   onUndo: (id: string) => Promise<void>;
+  /** 找 Agent 的勾選卡：加入並開始、換一批、正在換一批的是哪一張 */
+  agents?: { approve: (id: string, keys: string[]) => Promise<void>; more: (id: string) => Promise<void>; finding: string | null };
 };
 
 type ToolOf = (name: string) => PhoneTool | undefined;
@@ -24,7 +28,11 @@ type ToolOf = (name: string) => PhoneTool | undefined;
  * 做完之後縮成一行（做了什麼、可以復原）。選擇題是一排選項按鈕。
  */
 export function ActionView({ action, tool, ...h }: { action: Action; tool: PhoneTool | undefined } & Handlers) {
-  if (action.status === 'pending') return tool?.kind === 'question' ? <QuestionCard action={action} {...h} /> : <ActionCard action={action} tool={tool} {...h} />;
+  if (action.status === 'pending') {
+    if (tool?.kind === 'question') return <QuestionCard action={action} {...h} />;
+    if (tool?.kind === 'agents') return <AgentsCard action={action} {...h} />;
+    return <ActionCard action={action} tool={tool} {...h} />;
+  }
   const title = typeof action.input.title === 'string' ? action.input.title.trim() : '';
   // 沒做的那行也要看得出是哪一件（清單卡取消勾選時，同一張卡會有好幾行）
   const label = title ? t('{p0}「{p1}」', { p0: tool?.label ?? action.tool, p1: title }) : (tool?.label ?? action.tool);
@@ -39,7 +47,9 @@ export function ActionView({ action, tool, ...h }: { action: Action; tool: Phone
         : action.status === 'undone'
           ? t('已復原：{p0}', { p0: what })
           : action.status === 'declined'
-            ? t('沒有做：{p0}', { p0: label })
+            ? tool?.kind === 'agents'
+              ? t('沒有找 Agent')
+              : t('沒有做：{p0}', { p0: label })
             : action.status === 'skipped'
               ? t('跳過：{p0}（你直接打字了）', { p0: label })
               : t('沒有做成：{p0}', { p0: label }) + (action.note ? t('（{p0}）', { p0: action.note }) : '');
@@ -537,6 +547,76 @@ function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Han
   );
 }
 
+/**
+ * 找 Agent 一起討論：AI 照話題找到的人，預設全勾，每位一句為什麼；「換一批」換掉看過的；「不用了」由 AI 自己回答
+ */
+function AgentsCard({ action, onDecline, agents }: { action: Action } & Handlers) {
+  const list = candidatesOf(action.input);
+  const listKey = list.map((c) => c.key).join(',');
+  const [off, setOff] = useState<{ list: string; keys: string[] }>({ list: listKey, keys: [] });
+  // 換了一批：重新全勾
+  const unchecked = off.list === listKey ? off.keys : [];
+  const chosen = list.filter((c) => !unchecked.includes(c.key)).map((c) => c.key);
+  const [busy, setBusy] = useState(false);
+  const finding = agents?.finding === action.id;
+  const topic = toText(action.input.topic);
+  const toggle = (key: string) => setOff({ list: listKey, keys: unchecked.includes(key) ? unchecked.filter((k) => k !== key) : [...unchecked, key] });
+  const run = async (f: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await f();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={styles.card} testID={`action-${action.id}`}>
+      <Text style={styles.title} accessibilityRole="header">
+        {t('找了這幾位一起討論')}
+      </Text>
+      {topic ? <Text style={[styles.small, styles.dim]}>{topic}</Text> : null}
+      {list.map((c) => {
+        const on = chosen.includes(c.key);
+        return (
+          <Pressable
+            key={c.key}
+            onPress={() => toggle(c.key)}
+            disabled={busy || finding}
+            hitSlop={4}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: on }}
+            accessibilityLabel={t('{p0}，{p1}', { p0: c.name, p1: c.why || c.intro })}
+            style={styles.agentRow}>
+            <Text style={[styles.check, on && { color: C.accent }]}>{on ? '☑' : '☐'}</Text>
+            <AgentAvatar id={c.avatar} emoji={c.emoji} size={32} />
+            <View style={styles.flex}>
+              <Text style={[styles.text, !on && styles.off]} numberOfLines={1}>
+                {c.name}
+              </Text>
+              <Text style={[styles.small, styles.dim]} numberOfLines={2}>
+                {c.why || c.intro}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+      <View style={styles.buttons}>
+        <ActionButton
+          text={chosen.length > 0 ? t('加入並開始') : t('至少勾一位')}
+          primary
+          disabled={chosen.length === 0 || busy || finding || !agents}
+          onPress={() => void run(() => agents!.approve(action.id, chosen))}
+        />
+        <ActionButton text={finding ? t('找人中…') : t('換一批')} disabled={busy || finding || !agents} onPress={() => void agents?.more(action.id)} />
+        <Pressable onPress={() => void run(() => onDecline(action.id, ''))} disabled={busy} accessibilityRole="button" hitSlop={{ top: 0, bottom: 12, left: 4, right: 12 }} style={styles.skip}>
+          <Text style={[styles.small, styles.dim]}>{t('不用了')}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   card: { gap: 6, padding: 12, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, backgroundColor: C.bg },
   title: { ...TEXT.small, color: C.label, fontWeight: '700' },
@@ -567,4 +647,5 @@ const styles = StyleSheet.create({
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   itemMain: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   check: { ...TEXT.body, color: C.secondary },
+  agentRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 },
 });

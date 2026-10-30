@@ -514,7 +514,8 @@ export function ChatScreen(p: ChatScreenProps) {
   const actionsOf = (m: Message) => {
     const actions = m.actions ?? [];
     if (actions.length === 0) return undefined;
-    const listed = actions.filter((a) => a.status === 'pending' && store.toolFor(a.tool)?.kind !== 'question');
+    // 選擇題、找 Agent 的勾選卡各自一張，不合進清單卡
+    const listed = actions.filter((a) => a.status === 'pending' && !store.toolFor(a.tool)?.kind);
     const grouped = listed.length >= 2;
     return (
       <>
@@ -528,6 +529,11 @@ export function ChatScreen(p: ChatScreenProps) {
               onApprove={(id, edited) => store.approveAction(id, edited).catch(failed(t('沒有做成')))}
               onDecline={(id, reason) => store.declineAction(id, reason)}
               onUndo={(id) => store.undoAction(id).catch(failed(t('沒辦法復原')))}
+              agents={{
+                approve: (id, keys) => store.approveAgents(id, keys).catch(failed(t('沒有加進來'))),
+                more: (id) => store.moreAgents(id).catch(failed(t('沒有找到人'))),
+                finding: state.findingAgents,
+              }}
             />
           ))}
         {grouped ? (

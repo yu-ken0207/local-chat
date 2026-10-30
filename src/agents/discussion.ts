@@ -448,23 +448,46 @@ export function agentDraftMessages(idea: string, avoid?: string): ChatMessage[] 
 
 // ---- 幫我挑 ----
 
-export const PICK_ROLES_SCHEMA = {
+export const PICK_AGENTS_SCHEMA = {
   type: 'object',
-  properties: { roles: { type: 'array', items: { type: 'object', properties: { zh: { type: 'string' }, en: { type: 'string' } }, required: ['zh', 'en'] } } },
-  required: ['roles'],
+  properties: {
+    picks: {
+      type: 'array',
+      items: { type: 'object', properties: { mine: { type: 'string' }, zh: { type: 'string' }, en: { type: 'string' }, why: { type: 'string' } }, required: ['zh', 'en', 'why'] },
+    },
+  },
+  required: ['picks'],
 };
 
-/** 照話題想 3–4 個觀點互補的職稱（中英文都給，拿去圖鑑搜尋） */
-export function pickRolesMessages(topic: string): ChatMessage[] {
+/** 「找 Agent」「幫我挑」挑人時看得到的使用者自己的 Agent（最多幾個） */
+export const MAX_MINE_SHOWN = 30;
+
+/**
+ * 照話題挑 3–4 個觀點互補的人：使用者自己的 Agent 有適合的優先（mine 填他的名字），不夠再給職稱（中英文，拿去圖鑑搜尋）；
+ * 每個附一句「為什麼找他」
+ */
+export function pickAgentsMessages(topic: string, mine: { name: string; intro: string }[], avoid: string[] = []): ChatMessage[] {
+  const list = mine.slice(0, MAX_MINE_SHOWN).map((a) => `- ${a.name}${a.intro ? `：${clip(a.intro, 60, '…')}` : ''}`).join('\n'); // i18n-ignore
   const system = zh()
-    ? '使用者要開一個多人討論。照話題列出 3–4 個適合參加、觀點互補（有人支持、有人質疑、有人看實務）的職稱或角色。每個給 zh（繁體中文，2–6 個字，例如「財務分析師」）和 en（英文職稱，例如 Financial Analyst）。只回 JSON。' // i18n-ignore
-    : 'The user is starting a group discussion. List 3–4 job titles or roles that should take part, with complementary views (someone in favor, someone skeptical, someone practical). Give each as zh (Traditional Chinese, 2–6 characters) and en (English title, e.g. Financial Analyst). Reply with JSON only.';
+    ? [
+        '使用者要找幾個人一起討論一個話題。挑 3–4 個適合參加、觀點互補（有人支持、有人質疑、有人看實務）的角色。', // i18n-ignore
+        list ? `使用者自己的 Agent 有適合的優先用（mine 填他的名字，一字不差）：\n${list}` : '', // i18n-ignore
+        '不夠的再想職稱：zh 是繁體中文職稱（2–6 個字，例如「財務分析師」），en 是英文職稱（例如 Financial Analyst）；用自己的 Agent 時 zh、en 也照他的身分填。', // i18n-ignore
+        avoid.length ? `不要再挑這些：${avoid.join('、')}` : '', // i18n-ignore
+        'why：一句話說為什麼找他（20 個字以內，繁體中文，台灣用語）。只回 JSON。', // i18n-ignore
+      ]
+    : [
+        'The user wants a few people to discuss a topic together. Pick 3–4 roles with complementary views (someone in favor, someone skeptical, someone practical).',
+        list ? `Prefer the user's own agents when they fit (put their exact name in mine):\n${list}` : '',
+        'Otherwise give a job title: zh in Traditional Chinese (2–6 characters) and en in English (e.g. Financial Analyst); fill zh and en for the user\'s own agents too.',
+        avoid.length ? `Do not pick these again: ${avoid.join(', ')}` : '',
+        'why: one short sentence on why this person should join (under 12 words). Reply with JSON only.',
+      ];
   return [
-    { role: 'system', content: system },
+    { role: 'system', content: system.filter(Boolean).join('\n') },
     { role: 'user', content: topic.trim() },
   ];
 }
-
 
 // ---- 收尾：列方案、投票、結論卡、筆記 ----
 

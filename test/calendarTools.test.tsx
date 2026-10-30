@@ -326,12 +326,12 @@ describe('接上 App', () => {
     expect(screen.getByText('沒有做：「看行事曆、加行程」在設定裡關掉了')).toBeTruthy();
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])).toEqual([]);
     const [first, second] = net.chatBodies();
-    expect(first.tools.map((x: any) => x.function.name)).toEqual(['create_reminder', 'ask_user']);
+    expect(first.tools.map((x: any) => x.function.name)).toEqual(['create_reminder', 'ask_user', 'invite_agents']);
     expect(first.messages[0].content).toContain('turned off these');
     expect(JSON.parse(second.messages.at(-1).content).error).toContain('create_event is turned off');
   });
 
-  test('全部關掉：不送工具，但模型還是叫了也要接住，不會變成空的回答', async () => {
+  test('全部關掉：手機上的工具都不送（只剩找 Agent），但模型還是叫了也要接住，不會變成空的回答', async () => {
     const { net, host, store } = await setup();
     await store.setToolGroup('calendar', false);
     await store.setToolGroup('reminders', false);
@@ -340,7 +340,7 @@ describe('接上 App', () => {
     await store.send('幫我加入日曆');
     await waitFor(() => expect(store.getState().messages.at(-1)?.content).toBe('都關掉了'));
     const [first, second] = net.chatBodies();
-    expect(first.tools).toBeUndefined();
+    expect(first.tools.map((x: any) => x.function.name)).toEqual(['invite_agents']);
     expect(first.messages[0].content).toContain('turned off these');
     expect(JSON.parse(second.messages.at(-1).content).error).toContain('turned off');
   });
@@ -357,7 +357,7 @@ describe('接上 App', () => {
     host.reply = () => ({ lines: n++ === 0 ? [toolCall('create_event', { title: '看牙醫', start: '2026-11-04T15:00' }), done] : [{ message: { role: 'assistant', content: '好了' }, done: false }, done] });
     await store.send('加行程');
     await waitFor(() => expect(store.getState().streaming).toBeNull());
-    expect(net.chatBodies()[0].tools.map((x: any) => x.function.name)).toEqual(['list_calendars', 'list_events', 'create_event', 'ask_user']);
+    expect(net.chatBodies()[0].tools.map((x: any) => x.function.name)).toEqual(['list_calendars', 'list_events', 'create_event', 'ask_user', 'invite_agents']);
     const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     await store.approveAction(action.id);
     await waitFor(() => expect(api.created).toHaveLength(1));

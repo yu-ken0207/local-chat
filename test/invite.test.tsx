@@ -1,13 +1,14 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { ActionSheetIOS } from 'react-native';
 
+import { getEntry } from '../src/agents/catalog';
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
 import { Repo, type Agent } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
 import { memoryDb } from './helpers/nodeDb';
 
-// 一般聊天也能 @ 拉人；討論串有自己的成員
+// 找 Agent 一起討論：一般聊天裡說「找懂的人來討論」，AI 叫工具、出勾選卡；一般聊天也能 @ 拉人；討論串有自己的成員
 
 const A = 'http://192.168.1.20:11434';
 jest.setTimeout(20_000);
@@ -16,6 +17,7 @@ const done = { message: { role: 'assistant', content: '' }, done: true, eval_cou
 const say = (content: string) => ({ lines: [{ message: { role: 'assistant', content }, done: false }, done] });
 const whoBids = (body: any) => /^你是「(.+?)」：/.exec(body.messages[0].content)?.[1] ?? '';
 const whoSpeaks = (body: any) => /^你是「(.+?)」，正在/.exec(body.messages[0].content)?.[1] ?? '';
+const hist = getEntry('agency:academic/academic-historian')!;
 
 /**
  * 劇本：一般聊天第一次回答叫 invite_agents，之後照常回答「AI 自己回答」；
@@ -55,6 +57,88 @@ const said = (store: ChatStore) =>
     .messages.filter((m) => (m.role === 'assistant' && m.content) || m.role === 'user')
     .map((m) => (m.role === 'user' ? `你：${m.content}` : `${m.agentId ? store.getState().agents[m.agentId]?.name : 'AI'}：${m.content}`));
 
+describe('找 Agent 一起討論', () => {
+  test('AI 叫工具：出勾選卡（我的 Agent 優先、每位一句為什麼）；勾了加入，原本的 AI 退場，Agent 接著回你那句', async () => {
+    const { net, store, cfo } = await setup();
+    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去的經驗' }]], bids: { 財務長: [8, 0], [hist.n[0]]: [0, 0] } });
+    await store.send('我想討論要不要換伺服器，找懂的人一起討論');
+    const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    expect(action).toMatchObject({ tool: 'invite_agents', status: 'pending' });
+    expect(action.input).toMatchObject({ keys: [`mine:${cfo.id}`, `catalog:${hist.id}`], names: ['財務長', hist.n[0]], whys: ['管預算', '看過去的經驗'] });
+    // 找人時給模型看「我的 Agent」
+    expect(net.chatBodies().find((b) => b.format?.properties?.picks).messages[0].content).toContain('- 財務長：看預算');
+    await store.approveAgents(action.id, action.input.keys as string[]);
+    expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', hist.n[0]]);
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0]).toMatchObject({ status: 'done', summary: `邀請了 財務長、${hist.n[0]} 一起討論` });
+    expect(said(store)).toEqual(['你：我想討論要不要換伺服器，找懂的人一起討論', '財務長：財務長說了']);
+    const ask = store.getState().messages[0];
+    expect(store.getState().messages.at(-1)!.replyTo).toBe(ask.id);
+  });
+
+  test('只勾一位：只加那一位', async () => {
+    const { net, store, cfo } = await setup();
+    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去' }]], bids: { 財務長: [8, 0] } });
+    await store.send('找人討論要不要換伺服器');
+    const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    await store.approveAgents(action.id, [`mine:${cfo.id}`]);
+    expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長']);
+  });
+
+  test('按「不用了」：AI 照一般聊天自己回答，不會說「沒有做」', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[{ zh: '歷史學家', en: 'Historian', why: '看過去' }]] });
+    await store.send('找人討論要不要換伺服器');
+    const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    await store.declineAction(action.id);
+    expect(said(store).at(-1)).toBe('AI：AI 自己回答');
+    expect(store.getState().members).toEqual([]);
+    const last = net.chatBodies().at(-1);
+    expect(last.messages.at(-1).content).toContain('chose not to bring in other agents');
+    expect(JSON.stringify(last.messages)).not.toContain('NOT done');
+  });
+
+  test('換一批：看過的不再挑，跟模型說看過誰；找不到別人就說一聲，卡片照舊', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[{ zh: '歷史學家', en: 'Historian', why: '看過去' }], [{ zh: '統計學家', en: 'Statistician', why: '看數字' }], []] });
+    await store.send('找人討論要不要換伺服器');
+    const id = store.getState().messages.flatMap((m) => m.actions ?? [])[0].id;
+    await store.moreAgents(id);
+    const after = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    expect(after.input.names).not.toContain(hist.n[0]);
+    expect((after.input.names as string[]).length).toBe(1);
+    expect(net.chatBodies().filter((b) => b.format?.properties?.picks).at(-1).messages[0].content).toContain(`不要再挑這些：${hist.n[0]}`);
+    await store.moreAgents(id);
+    expect(store.getState().notice).toBe('沒有找到其他人選了。');
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0].input.names).toEqual(after.input.names);
+  });
+
+  test('找不到合適的人：不出卡片，AI 自己回答', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[]] });
+    await store.send('找人討論');
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])).toEqual([]);
+    expect(said(store).at(-1)).toBe('AI：AI 自己回答');
+  });
+
+  test('不會叫工具的模型：系統提示詞說要找人去哪裡按', async () => {
+    const { net, store } = await setup({ name: 'llama3:latest', tools: false });
+    script(net, {});
+    await store.send('找人討論');
+    expect(net.chatBodies()[0].tools).toBeUndefined();
+    expect(net.chatBodies()[0].messages[0].content).toContain('「成員與討論設定」, then 「幫我挑」');
+  });
+
+  test('「幫我挑」也是我的 Agent 優先', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去' }]] });
+    const picks = await store.suggestMembers('要不要換伺服器');
+    expect(picks.map((c) => [c.name, c.why])).toEqual([
+      ['財務長', '管預算'],
+      [hist.n[0], '看過去'],
+    ]);
+  });
+});
+
 describe('一般聊天 @ 我的 Agent', () => {
   test('一般聊天打 @財務長：拉進來變成多人討論，由他回答（原本的 AI 不答）', async () => {
     const { net, store } = await setup();
@@ -85,6 +169,23 @@ describe('討論串有自己的成員', () => {
 describe('畫面', () => {
   const screenOf = (store: ChatStore) => render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
   afterEach(() => jest.restoreAllMocks());
+
+  test('勾選卡：預設全勾、每位一句為什麼；取消勾一位再按「加入並開始」，討論用氣泡接著進行', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去的經驗' }]], bids: { 財務長: [8, 0] } });
+    await screenOf(store);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '找人討論要不要換伺服器');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('找了這幾位一起討論')).toBeTruthy();
+    expect(screen.getByLabelText('財務長，管預算').props.accessibilityState).toMatchObject({ checked: true });
+    await fireEvent.press(screen.getByLabelText(`${hist.n[0]}，看過去的經驗`));
+    expect(screen.getByLabelText(`${hist.n[0]}，看過去的經驗`).props.accessibilityState).toMatchObject({ checked: false });
+    await fireEvent.press(screen.getByText('加入並開始'));
+    expect(await screen.findByText('財務長說了')).toBeTruthy();
+    expect(screen.getByText('邀請了 財務長 一起討論')).toBeTruthy();
+    expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長']);
+    expect(await screen.findByText('1 位成員 · 自由搶話')).toBeTruthy();
+  });
 
   test('一般聊天打 @ 也跳出「我的 Agent」名單', async () => {
     const { net, store } = await setup();

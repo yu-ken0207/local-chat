@@ -2,9 +2,10 @@ import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
-import { entryIntro, entryName, getEntry, type CatalogEntry } from '../agents/catalog';
+import { entryIntro, entryName, getEntry } from '../agents/catalog';
 import { CONCLUSION, parseConclusion, type Conclusion } from '../agents/discussion';
 import { ROLE_MISSING, ROLE_TRUNCATED, type ChatState, type ChatStore, type DiscussionPhase, type Streaming } from '../state/chatStore';
+import type { AgentCandidate } from '../tools/invite';
 import { DEFAULT_GROUP, isRecordNote, type Agent, type Attachment, type GroupSettings, type JoinedBy, type Member, type Message, type SpeakMode } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
 import { AgentAvatar, avatarId } from './AgentAvatar';
@@ -87,7 +88,8 @@ export function BubbleView({
       </Text>
     );
   }
-  if (m.role !== 'assistant') return <>{fallback}</>;
+  // 叫工具的那幾則（確認卡、找 Agent 的勾選卡掛在上面）照原本的樣式畫
+  if (m.role !== 'assistant' || m.toolCalls?.length || m.actions?.length) return <>{fallback}</>;
 
   const content = live ? live.content : m.content;
   const thinking = live ? live.thinking : m.thinking;
@@ -405,7 +407,7 @@ export function MentionPicker({ query, members, mine, onPick }: { query: string;
 export function MembersSheet({ store, state, topic, onClose }: { store: ChatStore; state: ChatState; topic: string; onClose: () => void }) {
   const g = { ...DEFAULT_GROUP, ...state.session?.group };
   const [adding, setAdding] = useState<'mine' | 'catalog' | null>(null);
-  const [picks, setPicks] = useState<CatalogEntry[] | null>(null);
+  const [picks, setPicks] = useState<AgentCandidate[] | null>(null);
   const [picking, setPicking] = useState(false);
   const memberIds = new Set(state.members.map((m) => m.agent.id));
   const memberCatalog = new Set(state.members.flatMap((m) => (m.agent.catalogId ? [m.agent.catalogId] : [])));
@@ -497,40 +499,40 @@ export function MembersSheet({ store, state, topic, onClose }: { store: ChatStor
           <View style={styles.separator} />
           <AddRow icon="sparkles" text={t('幫我挑')} onPress={() => void suggest()} busy={picking} />
           {picks ? (
-            picks.map((e) => (
-              // 讀螢幕：整列一個元素（唸名字、介紹、已加入），「加入」是這一列的動作
-              <View
-                key={e.id}
-                style={[styles.row, styles.indent]}
-                accessible
-                accessibilityLabel={t('{p0}，{p1}', { p0: entryName(e), p1: entryIntro(e) }) + (memberCatalog.has(e.id) ? t('，已加入') : '')}
-                accessibilityActions={memberCatalog.has(e.id) ? [] : [{ name: 'add', label: t('加入 {p0}', { p0: entryName(e) }) }]}
-                onAccessibilityAction={(ev) => ev.nativeEvent.actionName === 'add' && void store.addCatalogMember(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e })}>
-                <AgentAvatar id={e.id} emoji={e.e} size={28} />
-                <View style={styles.flex}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>
-                    {entryName(e)}
-                  </Text>
-                  <Text style={styles.sub} numberOfLines={1}>
-                    {entryIntro(e)}
-                  </Text>
+            picks.map((c) => {
+              // 已經在這段：「我的 Agent」看 id，圖鑑看圖鑑 id
+              const added = c.key.startsWith('mine:') ? memberIds.has(c.key.slice(5)) : memberCatalog.has(c.key.slice(8));
+              return (
+                // 讀螢幕：整列一個元素（唸名字、為什麼找他、已加入），「加入」是這一列的動作
+                <View
+                  key={c.key}
+                  style={[styles.row, styles.indent]}
+                  accessible
+                  accessibilityLabel={t('{p0}，{p1}', { p0: c.name, p1: c.why || c.intro }) + (added ? t('，已加入') : '')}
+                  accessibilityActions={added ? [] : [{ name: 'add', label: t('加入 {p0}', { p0: c.name }) }]}
+                  onAccessibilityAction={(ev) => ev.nativeEvent.actionName === 'add' && void store.addCandidate(c)}>
+                  <AgentAvatar id={c.avatar} emoji={c.emoji} size={28} />
+                  <View style={styles.flex}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text style={styles.sub} numberOfLines={2}>
+                      {c.why || c.intro}
+                    </Text>
+                  </View>
+                  {added ? (
+                    <SymbolView name="checkmark.circle.fill" size={22} tintColor={C.secondary} accessibilityLabel={t('已加入')} />
+                  ) : (
+                    <Pressable onPress={() => void store.addCandidate(c)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('加入 {p0}', { p0: c.name })}>
+                      <SymbolView name="plus.circle" size={22} tintColor={C.accent} />
+                    </Pressable>
+                  )}
                 </View>
-                {memberCatalog.has(e.id) ? (
-                  <SymbolView name="checkmark.circle.fill" size={22} tintColor={C.secondary} accessibilityLabel={t('已加入')} />
-                ) : (
-                  <Pressable
-                    onPress={() => void store.addCatalogMember(e.id, { name: entryName(e), intro: entryIntro(e), emoji: e.e })}
-                    hitSlop={10}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('加入 {p0}', { p0: entryName(e) })}>
-                    <SymbolView name="plus.circle" size={22} tintColor={C.accent} />
-                  </Pressable>
-                )}
-              </View>
-            ))
+              );
+            })
           ) : null}
         </View>
-        <Text style={styles.footnote}>{t('「幫我挑」會照目前的話題，從圖鑑挑幾個觀點不同的角色。')}</Text>
+        <Text style={styles.footnote}>{t('「幫我挑」會照目前的話題挑幾個觀點不同的角色：「我的 Agent」有適合的優先，不夠再從圖鑑找。')}</Text>
 
         <Text style={styles.section}>{t('討論設定')}</Text>
         <View style={styles.card}>

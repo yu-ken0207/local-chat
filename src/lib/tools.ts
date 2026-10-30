@@ -56,8 +56,8 @@ export type PhoneTool = {
   undo?(data: unknown): Promise<void>;
   /** 設定頁「AI 可以做的事」的分類（關掉就不給模型這個工具） */
   group?: ToolGroup;
-  /** question：問使用者選擇題（確認卡換成選項按鈕，回答放在 answer） */
-  kind?: 'question';
+  /** question：問使用者選擇題（確認卡換成選項按鈕，回答放在 answer）；agents：找 Agent 一起討論（勾選卡） */
+  kind?: 'question' | 'agents';
 };
 
 export type ToolGroup = 'calendar' | 'reminders';

@@ -76,4 +76,30 @@ const prompts = new PromptStore(async (i) => JSON.parse(readFileSync(join(__dirn
     expect(card.options.reduce((n, o) => n + o.votes.length, 0)).toBe(s.members.length);
     expect(card.consensus.length).toBeGreaterThan(0);
   });
+
+  test('一般聊天說「找懂的人一起討論」：模型叫找 Agent，勾選卡有 2–4 位、每位一句為什麼；加入後 Agent 接著回', async () => {
+    const repo = new Repo(memoryDb());
+    const store = new ChatStore({ repo, client: (url) => new OllamaClient(url, { fetch: nodeFetch }), wifiIp: async () => null, autoScan: false, prompts, probeTimeoutMs: 10_000 });
+    await store.init();
+    const url = (await store.addHost(new URL(HOST).host)).url;
+    await store.loadModels(url);
+    await store.selectModel(url, MODEL);
+    await store.setGroupSettings({ maxStreak: 3 });
+    await repo.createAgent({ name: '財務長', intro: '管公司預算、在意投資報酬', mine: true });
+    const t0 = Date.now();
+    await store.send(process.env.LIVE_INVITE_ASK ?? '我想討論公司那台用了 7 年的伺服器要不要今年換掉，幫我找幾個懂這方面的 Agent 一起討論');
+    const action = store.getState().messages.flatMap((m) => m.actions ?? []).find((a) => a.tool === 'invite_agents');
+    console.log(`找人 ${((Date.now() - t0) / 1000).toFixed(0)} 秒：${JSON.stringify(action?.input ?? null, null, 1)}`);
+    expect(action?.status).toBe('pending');
+    const keys = action!.input.keys as string[];
+    expect(keys.length).toBeGreaterThanOrEqual(2);
+    expect((action!.input.whys as string[]).every((w) => w.length > 0)).toBe(true);
+    const t1 = Date.now();
+    await store.approveAgents(action!.id, keys);
+    const s = store.getState();
+    const spoken = s.messages.filter((m) => m.role === 'assistant' && m.agentId);
+    console.log(`加入後討論 ${((Date.now() - t1) / 1000).toFixed(0)} 秒\n${spoken.map((m) => `【${s.agents[m.agentId!]?.name}】${m.content}`).join('\n\n')}`);
+    expect(spoken.length).toBeGreaterThanOrEqual(1);
+    expect(s.messages.some((m) => m.role === 'error')).toBe(false);
+  });
 });
