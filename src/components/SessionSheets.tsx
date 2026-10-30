@@ -233,14 +233,17 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
 
   return (
     <View style={styles.sheet}>
+      {/* 兩邊一樣寬（各佔一半剩下的空間），標題才會在正中間；英文的「‹ Settings」比較寬也一樣 */}
       <View style={styles.header}>
-        <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('返回設定')} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
-          <SymbolView name="chevron.left" size={16} tintColor={C.accent} />
-          <Text style={styles.cancel}>{t('設定')}</Text>
-        </Pressable>
+        <View style={styles.headerSide}>
+          <Pressable onPress={onBack} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('返回設定')} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
+            <SymbolView name="chevron.left" size={16} tintColor={C.accent} />
+            <Text style={styles.cancel}>{t('設定')}</Text>
+          </Pressable>
+        </View>
         <Text style={styles.title}>{t('最近刪除')}</Text>
         {/* 右邊在其他面板是「完成」：不放危險的「全部清空」，改到清單下面 */}
-        <View style={styles.back} />
+        <View style={styles.headerSide} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
@@ -251,7 +254,17 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
               const name = s.title || s.preview || t('對話');
               return (
                 <SwipeRow key={s.id} label={t('永久刪除')} testID={`swipe-trash-${s.id}`} onDelete={() => forever(s, name)}>
-                  <Pressable onPress={() => menu(s, name)} accessibilityRole="button" accessibilityLabel={t('已刪除的對話 {p0}', { p0: name })} style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+                  {/* VoiceOver 把整列合成一個元素，裡面的「救回」摸不到：用動作補上（上下滑選「救回」或「永久刪除」） */}
+                  <Pressable
+                    onPress={() => menu(s, name)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('已刪除的對話 {p0}，還會保留 {n} 天', { p0: name, n: daysLeft(s.deletedAt) })}
+                    accessibilityActions={[{ name: 'restore', label: t('救回') }, { name: 'delete', label: t('永久刪除') }]}
+                    onAccessibilityAction={(e) => {
+                      if (e.nativeEvent.actionName === 'restore') void restore(s);
+                      if (e.nativeEvent.actionName === 'delete') forever(s, name);
+                    }}
+                    style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
                     <View style={styles.row}>
                       <View style={styles.flex}>
                         <Text style={styles.rowTitle} numberOfLines={1}>
@@ -318,6 +331,7 @@ const styles = StyleSheet.create({
   empty: { ...TEXT.small, color: C.secondary, padding: 16 },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   back: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  headerSide: { flex: 1, alignItems: 'flex-start' },
   restore: { ...TEXT.small, color: C.accent, fontWeight: '700' },
   drawer: { flex: 1 },
   drawerTitle: { fontSize: 28, fontWeight: '700', color: C.label, marginHorizontal: 16, marginBottom: 10 },
