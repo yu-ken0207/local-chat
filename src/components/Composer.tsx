@@ -34,6 +34,8 @@ type Props = {
   accessory?: ReactNode;
   /** 還不能送出時輸入框的提示（例如「先連接你的電腦」） */
   notReadyHint?: string;
+  /** 輸入框的字變了（多 AI 討論打 @ 時跳出成員清單） */
+  onDraftChange?: (text: string) => void;
 };
 
 /** 選項清單：iOS 用系統的動作表，其他平台用對話框；destructive 是刪除這類危險選項的位置（顯示成紅色） */
@@ -69,6 +71,7 @@ export function Composer(p: Props) {
   const refocus = useRef(false);
   const replaceDraft = (text: string, keepFocus = true) => {
     setDraft(text);
+    p.onDraftChange?.(text);
     refocus.current = keepFocus && focused.current;
     setInputKey((k) => k + 1);
   };
@@ -233,7 +236,10 @@ export function Composer(p: Props) {
             nativeID={COMPOSER_INPUT_ID}
             style={styles.input}
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={(text) => {
+              setDraft(text);
+              p.onDraftChange?.(text);
+            }}
             onFocus={() => {
               focused.current = true;
               p.onInputFocus?.();

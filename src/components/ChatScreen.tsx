@@ -20,6 +20,7 @@ import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Co
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
+import { BubbleView, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, replyTargets } from './GroupChat';
 import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
@@ -85,6 +86,15 @@ export function ChatScreen(p: ChatScreenProps) {
   const [editing, setEditing] = useState<{ id: string; later: number } | null>(null);
   const [injected, setInjected] = useState<{ text: string; photos?: NewPhoto[]; nonce: number } | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
+  // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [draftText, setDraftText] = useState('');
+  const messageY = useRef(new Map<string, number>());
+  const group = state.members.length > 0;
+  const discussing = !!state.session && state.session.id in state.running && group;
+  useEffect(() => {
+    if (group || membersOpen) void store.loadMyAgents();
+  }, [store, group, membersOpen, state.session?.id]);
 
   function showToast(text: string, action?: ToastData['action']) {
     setToast({ id: Date.now(), text, action });
@@ -142,8 +152,8 @@ export function ChatScreen(p: ChatScreenProps) {
 
   /** 長按訊息的選單：真的要開才輕震一下（跟 iPhone 長按一樣的手感）；AI 回答中先不開，說一聲 */
   function messageMenu(m: Message, pageY?: number) {
-    if (state.streaming) {
-      const busy = t('AI 正在回答，答完再試一次。');
+    if (state.streaming || discussing) {
+      const busy = discussing ? t('大家正在討論，按「暫停」後再試一次。') : t('AI 正在回答，答完再試一次。');
       // 「復原」提示還在時一般提示排不上（會等它消失才跳，那時可能已經答完了）：改成輕震＋讀螢幕播報
       if (state.undo) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -164,6 +174,17 @@ export function ChatScreen(p: ChatScreenProps) {
     const thread: [string, () => void][] = session?.parentId ? [] : [[state.threads[threadQuestionId(m)]?.count ? t('打開討論串') : t('開討論串'), () => void openThread(m.id, pageY, true)]];
     if (m.role === 'user') {
       menu(t('你的訊息'), [[t('複製'), () => copy(m.content)], [t('編輯並重送'), () => startEdit(m)], ...thread, [t('刪除'), () => confirmDeleteMessage(m)]]);
+    } else if (m.role === 'assistant' && m.agentId) {
+      // 多 AI 討論裡某個 Agent 說的
+      const name = state.agents[m.agentId]?.name ?? 'AI';
+      menu(name, [
+        [t('複製'), () => copy(m.content)],
+        [t('分享'), () => void Share.share({ message: m.content })],
+        [t('請他展開講'), () => void store.expandMessage(m.id)],
+        [t('重新產生'), () => confirmLater(m, () => store.regenerate(m.id))],
+        [t('詳細資訊'), () => showDetails(m)],
+        [t('刪除'), () => confirmDeleteMessage(m)],
+      ]);
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
@@ -366,7 +387,19 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect;
+  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen;
+  // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
+  const replies = group ? replyTargets(state.messages, state.agents, t('你')) : null;
+  const mention = group ? /(?:^|\s)@([^\s@]*)$/.exec(draftText) : null;
+  const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim());
+  const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant';
+  const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftText;
+  const jumpTo = (id: string) => {
+    const y = messageY.current.get(id);
+    if (y === undefined) return;
+    follow(false);
+    scrollRef.current?.scrollTo({ y: Math.max(0, y - 80), animated: true });
+  };
   // 模型在前、電腦在後：放不下時截掉的是電腦名，不會截掉 31B／12B 這種最重要的差別
   // 只有一台電腦時不寫電腦名（不會搞混，省下空間給模型名）
   const modelLabel =
@@ -422,10 +455,11 @@ export function ChatScreen(p: ChatScreenProps) {
       chooseOption(title, [t('刪除這個討論串')], () => void store.deleteSession(session.id), 0);
       return;
     }
-    chooseOption(title, [t('重新命名'), t('刪除這段對話')], (i) => {
+    chooseOption(title, [t('重新命名'), t('成員與討論設定'), t('刪除這段對話')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, (text) => void store.renameSession(session.id, text), 'plain-text', session.title);
-      if (i === 1) void deleteSession(store, session.id);
-    }, 1);
+      if (i === 1) setMembersOpen(true);
+      if (i === 2) void deleteSession(store, session.id);
+    }, 2);
   }
 
   const header = (
@@ -460,6 +494,8 @@ export function ChatScreen(p: ChatScreenProps) {
   );
 
   const conversation = (
+    <>
+    {group ? <MembersBar members={state.members} group={session?.group ?? null} onPress={() => setMembersOpen(true)} /> : null}
     <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
     {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
     <RevealContext.Provider value={revealField}>
@@ -508,25 +544,51 @@ export function ChatScreen(p: ChatScreenProps) {
           onConnect={() => setConnect({ help: false })}
           onHelp={() => setConnect({ help: true })}
           onPickModel={() => setSheetOpen(true)}
+          onInvite={() => setMembersOpen(true)}
+          members={state.members.length}
         />
       ) : (
-        state.messages.map((m, i) => (
+        state.messages.map((m, i) => {
+          const plain = (
+            <MessageView
+              message={m}
+              streaming={state.streaming}
+              isLast={i === lastIndex}
+              showMeta={metaShown.has(m.id)}
+              onOpenImage={(images, index) => setViewer({ images, index })}
+              onCopyCode={copy}
+              onLongPress={messageMenu}
+              onRetry={() => void store.retry()}
+              onHelp={() => setConnect({ help: true })}
+              onCopy={() => copy(m.content)}
+              onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
+              onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+              extra={actionsOf(m)}
+            />
+          );
+          return (
           <Fragment key={m.id}>
-          <MessageView
-            message={m}
-            streaming={state.streaming}
-            isLast={i === lastIndex}
-            showMeta={metaShown.has(m.id)}
-            onOpenImage={(images, index) => setViewer({ images, index })}
-            onCopyCode={copy}
-            onLongPress={messageMenu}
-            onRetry={() => void store.retry()}
-            onHelp={() => setConnect({ help: true })}
-            onCopy={() => copy(m.content)}
-            onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
-            onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
-            extra={actionsOf(m)}
-          />
+          {group ? (
+            <View onLayout={(e) => messageY.current.set(m.id, e.nativeEvent.layout.y)}>
+              <BubbleView
+                message={m}
+                streaming={state.streaming}
+                agent={m.agentId ? (state.agents[m.agentId] ?? null) : null}
+                replyTarget={replies?.get(m.id) ?? null}
+                fallback={plain}
+                isLast={i === lastIndex && !discussing}
+                onOpenImage={(images, index) => setViewer({ images, index })}
+                onCopyCode={copy}
+                onLongPress={messageMenu}
+                onJump={jumpTo}
+                onCopy={() => copy(m.content)}
+                onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
+                onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+              />
+            </View>
+          ) : (
+            plain
+          )}
           {threadAfter.has(i) ? (
                   <ThreadLink
                     count={threadAfter.get(i)!.count}
@@ -537,7 +599,8 @@ export function ChatScreen(p: ChatScreenProps) {
                 ) : null}
           {isThreadRoot(m) && !(state.messages[i + 1] && isThreadRoot(state.messages[i + 1])) ? <ThreadDivider /> : null}
           </Fragment>
-        ))
+          );
+        })
       )}
     </KeyboardChatScrollView>
     </RevealContext.Provider>
@@ -565,6 +628,18 @@ export function ChatScreen(p: ChatScreenProps) {
         <SymbolView name="arrow.down" size={16} tintColor={C.label} />
       </Pressable>
     ) : null}
+    {group ? (
+      <DiscussionStatus
+        phase={state.discussion}
+        running={discussing}
+        agents={state.agents}
+        suggest={!!session && state.suggestConclude.includes(session.id)}
+        canContinue={canContinue}
+        onPause={() => store.stop()}
+        onContinue={() => void store.continueDiscussion()}
+        onDismissSuggest={() => store.dismissConclude()}
+      />
+    ) : null}
     {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
     {state.context && state.context.level !== 'ok' ? (
       <Banner
@@ -588,8 +663,9 @@ export function ChatScreen(p: ChatScreenProps) {
       modelKnown={!!model}
       think={model?.think ?? null}
       thinkValue={session?.think ?? null}
-      busy={!!state.streaming}
+      busy={group ? false : !!state.streaming}
       bottomInset={bottomInset}
+      onDraftChange={setDraftText}
       onInputFocus={() => setCardTyping(false)}
       onSend={async (text, photos) => {
         follow(true);
@@ -606,7 +682,8 @@ export function ChatScreen(p: ChatScreenProps) {
             throw e;
           }
         } else {
-          await store.send(text, photos);
+          // 多 AI 討論：送出就好，討論在背景跑（大家在講的時候也能接著插話）
+          await store.send(text, photos, group);
         }
       }}
       onStop={() => store.stop()}
@@ -615,7 +692,14 @@ export function ChatScreen(p: ChatScreenProps) {
       pickPhotos={p.pickPhotos}
       injected={injected}
       accessory={
-        editing ? (
+        mention && !editing ? (
+          <MentionPicker
+            query={mention[1]}
+            members={state.members.map((x) => x.agent)}
+            mine={state.myAgents}
+            onPick={(name) => setInjected({ text: draftText.replace(/@[^\s@]*$/, `@${name} `), nonce: Date.now() })}
+          />
+        ) : editing ? (
           <Banner
             tone="info"
             text={t('編輯中：送出後會取代這則訊息{p0}', { p0: editing.later > 0 ? t('和之後的 {n} 則', { n: editing.later }) : '' })}
@@ -627,6 +711,7 @@ export function ChatScreen(p: ChatScreenProps) {
     />
     </KeyboardStickyView>
     </KeyboardGestureArea>
+    </>
   );
 
   // ---- 討論串：浮在原對話上的卡片（apple-design：從來源長出來、怎麼出來就怎麼回去、可以抓住往下拉）----
@@ -725,6 +810,9 @@ export function ChatScreen(p: ChatScreenProps) {
               }}
             />
           </Modal>
+          <Modal visible={membersOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setMembersOpen(false)}>
+            <MembersSheet store={store} state={state} topic={topic} onClose={() => setMembersOpen(false)} />
+          </Modal>
           <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
         </View>
       </SideDrawer>
@@ -748,6 +836,8 @@ function EmptyState({
   onConnect,
   onHelp,
   onPickModel,
+  onInvite,
+  members,
 }: {
   phase: 'noComputer' | 'noModel' | 'ready';
   scanning: string;
@@ -761,6 +851,10 @@ function EmptyState({
   onConnect: () => void;
   onHelp: () => void;
   onPickModel: () => void;
+  /** 邀請 Agent 一起討論 */
+  onInvite?: () => void;
+  /** 已經有幾位成員 */
+  members?: number;
 }) {
   const offline = hostState === 'offline';
   const checking = hostState === 'checking';
@@ -806,9 +900,21 @@ function EmptyState({
           <Text style={styles.hint}>{t('已經連上電腦，選一個模型就能開始聊天。')}</Text>
         </>
       ) : (
-        <Text style={styles.ready}>
-          {t('已經連上')} <Text style={styles.readyModel}>{modelLabel}</Text>{t('，直接在下面輸入問題就可以開始。')}
-        </Text>
+        <>
+          <Text style={styles.ready}>
+            {members ? t('{p0} 位 Agent 已經準備好，說說要討論什麼。', { p0: members }) : (
+              <>
+                {t('已經連上')} <Text style={styles.readyModel}>{modelLabel}</Text>{t('，直接在下面輸入問題就可以開始。')}
+              </>
+            )}
+          </Text>
+          {onInvite ? (
+            <Pressable onPress={onInvite} accessibilityRole="button" style={({ pressed }) => [styles.invite, pressed && styles.pressed]}>
+              <SymbolView name="person.3" size={16} tintColor={C.accent} />
+              <Text style={styles.inviteText}>{members ? t('成員與討論設定') : t('邀請幾個 Agent 一起討論')}</Text>
+            </Pressable>
+          ) : null}
+        </>
       )}
     </View>
   );
@@ -906,6 +1012,8 @@ const styles = StyleSheet.create({
   hint: { ...TEXT.meta, color: C.secondary, textAlign: 'center' },
   ready: { ...TEXT.small, color: C.label, marginTop: 4 },
   readyModel: { color: C.accent },
+  invite: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', minHeight: 40, paddingHorizontal: 14, marginTop: 8, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  inviteText: { ...TEXT.small, color: C.accent, fontWeight: '600' },
   primary: { height: 52, borderRadius: 14, backgroundColor: C.accentFill, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   primaryPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
   primaryText: { ...TEXT.body, fontWeight: '700', color: '#ffffff' },

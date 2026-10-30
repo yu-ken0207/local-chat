@@ -375,3 +375,22 @@ export function agentDraftMessages(idea: string, avoid?: string): ChatMessage[] 
   ];
 }
 
+// ---- 幫我挑 ----
+
+export const PICK_ROLES_SCHEMA = {
+  type: 'object',
+  properties: { roles: { type: 'array', items: { type: 'object', properties: { zh: { type: 'string' }, en: { type: 'string' } }, required: ['zh', 'en'] } } },
+  required: ['roles'],
+};
+
+/** 照話題想 3–4 個觀點互補的職稱（中英文都給，拿去圖鑑搜尋） */
+export function pickRolesMessages(topic: string): ChatMessage[] {
+  const system = zh()
+    ? '使用者要開一個多人討論。照話題列出 3–4 個適合參加、觀點互補（有人支持、有人質疑、有人看實務）的職稱或角色。每個給 zh（繁體中文，2–6 個字，例如「財務分析師」）和 en（英文職稱，例如 Financial Analyst）。只回 JSON。' // i18n-ignore
+    : 'The user is starting a group discussion. List 3–4 job titles or roles that should take part, with complementary views (someone in favor, someone skeptical, someone practical). Give each as zh (Traditional Chinese, 2–6 characters) and en (English title, e.g. Financial Analyst). Reply with JSON only.';
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: topic.trim() },
+  ];
+}
+

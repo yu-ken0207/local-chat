@@ -177,7 +177,7 @@ test('點標題：可以改名；新對話沒內容時點了沒反應', async ()
 
 test('點標題：刪除這段對話，不用先確認，切到另一段，可以復原', async () => {
   const { store } = await setup();
-  pickAction(1);
+  pickAction(2);
   const alert = jest.spyOn(Alert, 'alert');
   await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名或刪除'));
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));

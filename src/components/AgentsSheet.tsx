@@ -113,7 +113,7 @@ function AgentRow({ agent, onPress }: { agent: Agent; onPress: () => void }) {
 }
 
 /** 圖鑑：搜尋、分類、清單；右邊直接加到「我的 Agent」 */
-function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry) => void; added: Set<string>; onAdd: (id: string) => void }) {
+export function CatalogList({ onOpen, added, onAdd }: { onOpen: (e: CatalogEntry) => void; added: Set<string>; onAdd: (id: string) => void }) {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState<CategoryKey | null>(null);
   const list = useMemo(() => searchCatalog(query, cat), [query, cat]);

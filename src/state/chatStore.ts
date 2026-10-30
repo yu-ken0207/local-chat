@@ -8,10 +8,12 @@ import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type Helpe
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
-import { PromptStore, entryIntro, entryName, getEntry } from '../agents/catalog';
+import { PromptStore, entryIntro, entryName, getEntry, searchCatalog, type CatalogEntry } from '../agents/catalog';
 import {
   AGENT_DRAFT_SCHEMA,
+  PICK_ROLES_SCHEMA,
   agentDraftMessages,
+  pickRolesMessages,
   BID_SCHEMA,
   HOST_SCHEMA,
   bidMessages,
@@ -1227,7 +1229,8 @@ export class ChatStore {
   }
 
   /** 送出一則訊息並開始串流回答。照片只有模型看得懂圖時才能附 */
-  async send(text: string, images: Omit<Attachment, 'id'>[] = []): Promise<void> {
+  /** 送出你說的話。多 AI 討論時 background＝true 只等訊息存好，討論在背景跑（畫面用，才能接著插話） */
+  async send(text: string, images: Omit<Attachment, 'id'>[] = [], background = false): Promise<void> {
     const { repo } = this.deps;
     const s = this.state.session;
     if (!s) return;
@@ -1248,7 +1251,9 @@ export class ChatStore {
       run.interject = true;
       return;
     }
-    await this.discuss(s.id, { mustReply: true });
+    const task = this.discuss(s.id, { mustReply: true });
+    if (background) void task.catch(() => {});
+    else await task;
   }
 
   /**
@@ -1694,6 +1699,37 @@ export class ChatStore {
     const m = this.state.messages.find((x) => x.id === messageId);
     if (!s || !m?.agentId || this.runs.has(s.id)) return;
     await this.discuss(s.id, { only: { agentId: m.agentId, replyTo: m.id, expand: true } });
+  }
+
+  /** 「幫我挑」：照話題從圖鑑挑 3–4 個觀點互補的角色（模型先想要哪些職稱，再到圖鑑裡找） */
+  async suggestMembers(topic: string): Promise<CatalogEntry[]> {
+    const s = this.state.session;
+    const m = s ? this.modelFor(null, s) : null;
+    if (!m) throw new Error(t('請先選一個模型'));
+    const text = await this.collect(m.url, m.model, pickRolesMessages(topic), {
+      think: quickThink(m.info),
+      format: PICK_ROLES_SCHEMA,
+      options: { temperature: 0.5, num_predict: 300 },
+    });
+    let roles: { zh?: string; en?: string }[] = [];
+    try {
+      roles = JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}').roles ?? [];
+    } catch {
+      roles = [];
+    }
+    const members = new Set(this.state.members.flatMap((x) => (x.agent.catalogId ? [x.agent.catalogId] : [])));
+    const picked: CatalogEntry[] = [];
+    for (const r of roles) {
+      for (const q of [r.zh, r.en]) {
+        const hit = q?.trim() ? searchCatalog(q.trim()).find((e) => !members.has(e.id) && !picked.includes(e)) : undefined;
+        if (hit) {
+          picked.push(hit);
+          break;
+        }
+      }
+    }
+    if (picked.length === 0) throw new Error(t('沒有挑到合適的角色，換個說法再試一次。'));
+    return picked.slice(0, 4);
   }
 
   /** 不收尾（關掉「要收尾嗎？」） */

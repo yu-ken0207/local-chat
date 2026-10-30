@@ -271,7 +271,7 @@ export function Thumbnails({ images, onOpen }: { images: Attachment[]; onOpen: (
 }
 
 /** 思考過程：預設收起來，只顯示一行；點了展開 */
-function Thinking({ text, live, press, onCopyCode }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: (e?: { nativeEvent?: { pageY?: number } }) => void }; onCopyCode: (code: string) => void }) {
+export function Thinking({ text, live, press, onCopyCode }: { text: string; live: boolean; press: { onPress: () => void; onLongPress: (e?: { nativeEvent?: { pageY?: number } }) => void }; onCopyCode: (code: string) => void }) {
   const [open, setOpen] = useState(false);
   const lastLine = text.trim().split('\n').filter(Boolean).at(-1) ?? '';
   return (
@@ -300,7 +300,7 @@ function Thinking({ text, live, press, onCopyCode }: { text: string; live: boole
 }
 
 /** 「等待模型 (3s)」「回答中 (12s)」，文字上有一道微光掃過（照 Codex 的 shimmer 做法） */
-function Working({ streaming }: { streaming: Streaming }) {
+export function Working({ streaming }: { streaming: Streaming }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 80);
