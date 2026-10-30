@@ -117,6 +117,13 @@ test('往右滑一點點就放開，會彈回去不打開', async () => {
   await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
 });
 
+test('側邊欄最下面的「設定」不放「›」（它是從下面升起的面板，不是新的一頁）', async () => {
+  await setup();
+  await fireEvent.press(screen.getByLabelText('對話清單'));
+  expect(await screen.findByText('設定')).toBeTruthy();
+  expect(screen.queryByTestId('symbol-chevron.right', { includeHiddenElements: true })).toBeNull();
+});
+
 test('點右邊變暗的地方關上；按「對話」也能打開', async () => {
   await setup();
   await fireEvent.press(screen.getByLabelText('對話清單'));

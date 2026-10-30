@@ -161,7 +161,7 @@ export function SessionList({
         style={({ pressed }) => [styles.settingsBar, { paddingBottom: Math.max(insets.bottom, 10) }, pressed && { backgroundColor: C.pressed }]}>
         <SymbolView name="gearshape" size={18} tintColor={C.accent} />
         <Text style={[styles.rowTitle, styles.flex]}>{t('設定')}</Text>
-        <SymbolView name="chevron.right" size={13} tintColor={C.tertiary} />
+        {/* 設定是從下面升起的面板，不是推進新的一頁：不放「›」（跟設定頁的規則一樣） */}
       </Pressable>
       {showUndo ? <UndoToast store={store} /> : null}
     </View>
