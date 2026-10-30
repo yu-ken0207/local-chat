@@ -268,6 +268,19 @@ describe('傳送與串流', () => {
     expect(events).toEqual(['stopped']);
   });
 
+  test('回答中在對話清單點目前這段：不會把回答停掉', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    const p = store.send('寫一篇長文');
+    await flush();
+    await store.openSession(store.getState().session!.id);
+    await flush();
+    expect(store.getState().streaming?.content).toBe('寫到一半');
+    expect(store.getState().messages.some((m) => m.role === 'note')).toBe(false);
+    store.stop();
+    await p;
+  });
+
   test('回答中換到別段對話：畫面只顯示那段，收到一半的字留在原本那段', async () => {
     const { net, store, repo } = await ready();
     await store.send('第一段');
@@ -395,6 +408,21 @@ describe('標題與匯出', () => {
     expect(JSON.stringify(titleReq)).not.toContain('IMG');
     await store.send('那晚餐呢');
     expect(net.titleBodies()).toHaveLength(1);
+  });
+
+  test('第一個回答被停掉：下一個回答出來時再取標題', async () => {
+    const { net, store } = await ready();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
+    const p = store.send('寫一篇長文');
+    await flush();
+    store.stop();
+    await p;
+    expect(net.titleBodies()).toHaveLength(0);
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '好的' }, done: false }, { message: { content: '' }, done: true }] });
+    await store.send('那短一點');
+    await store.titleTask;
+    expect(net.titleBodies()).toHaveLength(1);
+    expect(store.getState().session?.title).toBe('測試對話');
   });
 
   test('模型取不到標題：用第一句話', async () => {

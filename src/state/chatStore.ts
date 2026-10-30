@@ -984,6 +984,8 @@ export class ChatStore {
 
   async openSession(id: string): Promise<void> {
     const { repo } = this.deps;
+    // 點的就是目前這段：什麼都不用做（不要把回答停掉）
+    if (this.state.session?.id === id) return;
     this.stop();
     const session = await repo.getSession(id);
     if (!session) return;
@@ -1267,9 +1269,9 @@ export class ChatStore {
       // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
       if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls);
       else this.deps.onEvent?.('answered');
-      // 第一個回答出來後，請模型幫這段對話取標題（不擋住下一次輸入）
+      // 有文字的回答出來、這段還沒有標題：請模型取標題（不擋住下一次輸入；第一個回答被停掉的話，下一個回答再取）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
-      if (answered === 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
+      if (answered >= 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
     } catch (e) {
       await this.notePairingLost(url, e);
       const cancelled = e instanceof OllamaError && e.kind === 'cancelled' && !unreachable;
