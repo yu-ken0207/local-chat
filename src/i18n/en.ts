@@ -370,6 +370,7 @@ export const en: Record<string, string> = {
   "拿掉{p0}": "Remove {p0}",
   "結束要比開始晚": "End must be after start",
   "備註": "Notes",
+  "你按了復原：{p0}": "You pressed Undo: {p0}",
   "{p0}日期": "{p0} date",
   "{p0}時間": "{p0} time",
   "{p0}「{p1}」": "{p0} \"{p1}\"",

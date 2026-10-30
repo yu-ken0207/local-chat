@@ -80,6 +80,15 @@ export function declinedPrompt(items: string[]): string {
   return `The user declined ${items.map((x) => `「${x}」`).join(', ')}, so ${it} NOT done: nothing was added or changed. Your reply must say ${it} not done.`;
 }
 
+/**
+ * 這段對話裡做了又按「復原」的：只在中間的工具結果加註，31B 還是當作行程還在（實測 3/3），
+ * 每次回答都在最後提醒；跟它無關的問題它不會硬提（實測 2/2）
+ */
+export function undonePrompt(items: string[]): string {
+  const many = items.length > 1;
+  return `Earlier in this conversation the user pressed Undo on ${items.map((x) => `「${x}」`).join(', ')}, so ${many ? 'they were' : 'it was'} removed and no longer exist${many ? '' : 's'}. If your reply touches on ${many ? 'them' : 'it'}, say ${many ? 'they were' : 'it was'} removed.`;
+}
+
 /** 使用者按「修改」改過才確認的：模型常照自己原本提的講（例如日期），要明講用改過的 */
 export function editedPrompt(items: { item: string; changes: string }[]): string {
   return items

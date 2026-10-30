@@ -6,7 +6,7 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
+import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
@@ -1531,16 +1531,23 @@ export class ChatStore {
     }
   }
 
-  /** 剛按完確認卡（最後一則是工具結果）：那一輪使用者按「不要」、取消勾選、改過才做的，要再提醒模型的話 */
+  /**
+   * 送給模型時最後補的提醒：這段對話裡按過「復原」的；
+   * 剛按完確認卡（最後一則是工具結果）時，再加那一輪按「不要」、取消勾選、改過才做的
+   */
   private lastRoundNote(): string {
     const messages = this.state.messages;
-    if (messages[messages.length - 1]?.role !== 'tool') return '';
-    const round = [...messages].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
-    const actions = round?.actions ?? [];
     const name = (a: Action) => this.itemOf(a).item ?? this.toolFor(a.tool)?.label ?? a.tool;
-    const declined = actions.filter((a) => a.status === 'declined').map(name);
-    const edited = actions.filter((a) => a.status === 'done' && a.note).map((a) => ({ item: name(a), changes: a.note }));
-    return [declined.length > 0 ? declinedPrompt(declined) : '', edited.length > 0 ? editedPrompt(edited) : ''].filter(Boolean).join('\n');
+    const undone = messages.flatMap((m) => m.actions ?? []).filter((a) => a.status === 'undone').map(name);
+    const notes = [undone.length > 0 ? undonePrompt(undone) : ''];
+    if (messages[messages.length - 1]?.role === 'tool') {
+      const round = [...messages].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
+      const actions = round?.actions ?? [];
+      const declined = actions.filter((a) => a.status === 'declined').map(name);
+      const edited = actions.filter((a) => a.status === 'done' && a.note).map((a) => ({ item: name(a), changes: a.note }));
+      notes.push(declined.length > 0 ? declinedPrompt(declined) : '', edited.length > 0 ? editedPrompt(edited) : '');
+    }
+    return notes.filter(Boolean).join('\n');
   }
 
   /** 沒做成的是哪一件（交給模型：只有順序的話，有些模型會把沒做的說成做了） */
@@ -1592,6 +1599,8 @@ export class ChatStore {
     if (!action || action.status !== 'done' || !tool?.undo) return;
     await tool.undo(action.result);
     await repo.updateAction(id, { status: 'undone' });
+    // 照時間順序在最下面記一行：上面 AI 說「已經加好了」的那件，後來被你復原了
+    await repo.addMessage(action.sessionId, { role: 'note', content: t('你按了復原：{p0}', { p0: action.summary || (tool.label ?? action.tool) }) });
     if (this.state.session?.id === action.sessionId) this.set({ messages: await repo.listMessages(action.sessionId) });
   }
 

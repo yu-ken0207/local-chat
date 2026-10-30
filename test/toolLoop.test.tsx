@@ -233,6 +233,20 @@ describe('會改東西的工具', () => {
     expect(net.titleBodies()[0].messages[1].content).toBe('使用者：下週三下午三點帶小孩看牙醫');
   });
 
+  test('按復原：最下面記一行；之後每次回答都在最後提醒模型那件已經不在了', async () => {
+    const { store, net } = await askToAdd();
+    await store.approveAction(pending(store)[0].id);
+    await waitFor(() => expect(lastText(store)).toBe('已經加好了（ok）'));
+    const done = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    await store.undoAction(done.id);
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '你按了復原：新增 1 個行程' });
+    await store.send('那個行程我要準備什麼');
+    await waitFor(() => expect(net.chatBodies()).toHaveLength(3));
+    const sent = net.chatBodies()[2].messages;
+    expect(sent.at(-1)).toEqual({ role: 'system', content: expect.stringContaining('pressed Undo on 「新增「帶小孩看牙醫」」') });
+    expect(JSON.parse(sent.find((m: any) => m.role === 'tool').content).undone).toContain('Undo');
+  });
+
   test('修改後加入：照改過的做，並告訴模型改了什麼', async () => {
     const { store, cal, net } = await askToAdd();
     await store.approveAction(pending(store)[0].id, { start: '2026-11-05T15:00' });

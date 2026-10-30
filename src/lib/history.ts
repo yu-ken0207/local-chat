@@ -8,6 +8,16 @@ export const REPLY_PROMPTS = { 'zh-Hant': DEFAULT_SYSTEM_PROMPT, en: 'Please rep
 /** 只附照片沒打字時，代替使用者問的問題 */
 export const defaultImageQuestion = () => t('這張照片裡有什麼？');
 
+const UNDONE = 'The user pressed Undo afterwards, so this was reversed and no longer exists.';
+/** 工具結果加註「使用者後來按了復原」 */
+function withUndone(content: string): string {
+  try {
+    return JSON.stringify({ ...JSON.parse(content), undone: UNDONE });
+  } catch {
+    return `${content} (${UNDONE})`;
+  }
+}
+
 /**
  * 把存起來的對話整理成要送給 Ollama 的訊息。
  * - 錯誤、提示這類訊息不送
@@ -21,7 +31,7 @@ export function buildChatMessages(
 ): { messages: ChatMessage[]; droppedImages: number } {
   const out: ChatMessage[] = [{ role: 'system', content: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT }];
   let droppedImages = 0;
-  const toolMessage = (m: Message): ChatMessage => ({ role: 'tool', content: m.content, ...(m.toolName ? { tool_name: m.toolName } : {}), ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}) });
+  const toolMessage = (m: Message, undone = false): ChatMessage => ({ role: 'tool', content: undone ? withUndone(m.content) : m.content, ...(m.toolName ? { tool_name: m.toolName } : {}), ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}) });
   const sent = new Set<Message>();
   for (const [i, m] of messages.entries()) {
     if (sent.has(m)) continue;
@@ -45,7 +55,8 @@ export function buildChatMessages(
         return k < 0 ? m.toolCalls!.length : k;
       };
       for (const r of [...results].sort((a, b) => order(a) - order(b))) {
-        out.push(toolMessage(r));
+        // 做了又按「復原」的：照實告訴模型，不然它以為行程還在
+        out.push(toolMessage(r, m.actions?.find((a) => a.callId === r.toolCallId)?.status === 'undone'));
         sent.add(r);
       }
     } else if (m.role === 'assistant' && m.content.trim()) {
