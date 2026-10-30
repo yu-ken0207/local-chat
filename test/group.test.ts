@@ -324,3 +324,94 @@ describe('Agent（設定頁）', () => {
     expect(store.getState().myAgents.map((a) => a.name).sort()).toEqual(['工程師', '財務長'].sort());
   });
 });
+
+describe('收尾', () => {
+  /** 收尾的劇本：列方案、投票（照名字）、結論卡、筆記 */
+  function concludeScript(net: FakeOllamaNet, votes: Record<string, number>) {
+    net.hosts.get(A)!.reply = (body: any) => {
+      const sys: string = body.messages[0].content;
+      const reply = (content: string) => ({ lines: [{ message: { content }, done: false }, done] });
+      if (body.format?.properties?.options) return reply(JSON.stringify({ question: '要不要換伺服器？', options: ['今年換', '先修再說'] }));
+      if (body.format?.properties?.choice) {
+        const name = /^你是「(.+?)」：/.exec(sys)![1];
+        return reply(JSON.stringify({ choice: votes[name], reason: `${name}的理由` }));
+      }
+      if (body.format?.properties?.consensus) return reply(JSON.stringify({ consensus: '先修再說，明年再評估', disagreements: ['預算要不要先保留'], todos: ['找廠商估修理費'] }));
+      if (body.format) return reply('{"score":0,"reply_to":"","conclude":false}');
+      if (sys.includes('這次討論結束了')) return reply(`${/^你是「(.+?)」：/.exec(sys)![1]}：這次主張先修`);
+      return reply(`${whoSpeaks(body)}說了話`);
+    };
+  }
+
+  test('列方案、每個人投票附理由、寫結論卡並釘在最上面；每個人寫筆記', async () => {
+    const { net, repo, store, agents } = await setup();
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('要換伺服器嗎');
+    concludeScript(net, { 財務長: 2, 工程師: 1 });
+    await store.conclude();
+    const card = store.getState().messages.at(-1)!;
+    expect(card).toMatchObject({ role: 'note', detail: 'conclusion' });
+    expect(JSON.parse(card.content)).toEqual({
+      question: '要不要換伺服器？',
+      options: [
+        { text: '今年換', votes: [{ who: agents['工程師'].id, name: '工程師', reason: '工程師的理由' }] },
+        { text: '先修再說', votes: [{ who: agents['財務長'].id, name: '財務長', reason: '財務長的理由' }] },
+      ],
+      consensus: '先修再說，明年再評估',
+      disagreements: ['預算要不要先保留'],
+      todos: ['找廠商估修理費'],
+    });
+    expect(store.getState().session!.pinnedId).toBe(card.id);
+    expect((await repo.listNotes(agents['財務長'].id)).map((n) => n.content)).toEqual(['財務長：這次主張先修']);
+    expect(store.getState().running).toEqual({});
+    // 你補投一票；再投是換票
+    await store.voteConclusion(card.id, 0);
+    await store.voteConclusion(card.id, 1);
+    const after = JSON.parse(store.getState().messages.at(-1)!.content);
+    expect(after.options.map((o: any) => o.votes.map((v: any) => v.name))).toEqual([['工程師'], ['財務長', '你']]);
+    await store.pinConclusion(null);
+    expect(store.getState().session!.pinnedId).toBeNull();
+  });
+
+  test('之後接著討論：大家看得到結論', async () => {
+    const { net, store } = await setup();
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('要換伺服器嗎');
+    concludeScript(net, { 財務長: 2, 工程師: 2 });
+    await store.conclude();
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('那預算呢');
+    const speech = net.chatBodies().filter((b) => whoSpeaks(b) === '財務長').at(-1)!;
+    expect(JSON.stringify(speech.messages)).toContain('【結論】先修再說，明年再評估');
+  });
+
+  test('全自動：聊到沒人想講就自己收尾', async () => {
+    const { net, store } = await setup();
+    await store.setGroupSettings({ autopilot: true });
+    let phase = 'discuss';
+    const bids = { 財務長: [8, 0], 工程師: [0, 0] } as Record<string, number[]>;
+    net.hosts.get(A)!.reply = (body: any) => {
+      if (body.format?.properties?.score && phase === 'discuss') {
+        const name = /^你是「(.+?)」：/.exec(body.messages[0].content)![1];
+        return { lines: [{ message: { content: JSON.stringify({ score: bids[name].shift() ?? 0, reply_to: '', conclude: false }) }, done: false }, done] };
+      }
+      if (!body.format && whoSpeaks(body)) return { lines: [{ message: { content: '講完了' }, done: false }, done] };
+      phase = 'conclude';
+      concludeScript(net, { 財務長: 1, 工程師: 1 });
+      return net.hosts.get(A)!.reply!(body);
+    };
+    await store.send('開始');
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', detail: 'conclusion' });
+  });
+
+  test('收尾中暫停：記「已停止」，沒有結論卡', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '{' }, done: false }], hang: true });
+    const p = store.conclude();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(store.getState().discussion).toEqual({ phase: 'concluding', agentId: null });
+    store.stop();
+    await p;
+    expect(store.getState().messages.at(-1)).toMatchObject({ role: 'note', content: '已停止' });
+  });
+});

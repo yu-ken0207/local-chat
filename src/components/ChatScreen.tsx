@@ -20,7 +20,8 @@ import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Co
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
-import { BubbleView, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, replyTargets } from './GroupChat';
+import { parseConclusion } from '../agents/discussion';
+import { BubbleView, ConclusionCard, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, PinnedConclusion, conclusionText, replyTargets } from './GroupChat';
 import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
@@ -394,6 +395,8 @@ export function ChatScreen(p: ChatScreenProps) {
   const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim());
   const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant';
   const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftText;
+  const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
+  const pinnedCard = pinnedMessage ? parseConclusion(pinnedMessage.content) : null;
   const jumpTo = (id: string) => {
     const y = messageY.current.get(id);
     if (y === undefined) return;
@@ -496,6 +499,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const conversation = (
     <>
     {group ? <MembersBar members={state.members} group={session?.group ?? null} onPress={() => setMembersOpen(true)} /> : null}
+    {pinnedCard && pinnedMessage ? <PinnedConclusion card={pinnedCard} onPress={() => jumpTo(pinnedMessage.id)} onUnpin={() => void store.pinConclusion(null)} /> : null}
     <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
     {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}
     <RevealContext.Provider value={revealField}>
@@ -584,6 +588,16 @@ export function ChatScreen(p: ChatScreenProps) {
                 onCopy={() => copy(m.content)}
                 onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
                 onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
+                conclusion={(cm, card) => (
+                  <ConclusionCard
+                    card={card}
+                    agents={state.agents}
+                    pinned={session?.pinnedId === cm.id}
+                    onVote={(index) => void store.voteConclusion(cm.id, index)}
+                    onPin={(on) => void store.pinConclusion(on ? cm.id : null)}
+                    onCopy={() => copy(conclusionText(card))}
+                  />
+                )}
               />
             </View>
           ) : (
@@ -637,6 +651,7 @@ export function ChatScreen(p: ChatScreenProps) {
         canContinue={canContinue}
         onPause={() => store.stop()}
         onContinue={() => void store.continueDiscussion()}
+        onConclude={() => void store.conclude()}
         onDismissSuggest={() => store.dismissConclude()}
       />
     ) : null}

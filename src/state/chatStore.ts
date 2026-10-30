@@ -15,7 +15,16 @@ import {
   agentDraftMessages,
   pickRolesMessages,
   BID_SCHEMA,
+  CONCLUSION,
+  CONCLUSION_SCHEMA,
   HOST_SCHEMA,
+  OPTIONS_SCHEMA,
+  VOTE_SCHEMA,
+  conclusionMessages,
+  noteMessages,
+  optionsMessages,
+  parseConclusion,
+  voteMessages,
   bidMessages,
   cardPrompt,
   chooseSpeaker,
@@ -31,6 +40,7 @@ import {
   toLines,
   wantsConclusion,
   type Bid,
+  type Conclusion,
   type Line,
   type Speaker,
 } from '../agents/discussion';
@@ -1325,7 +1335,7 @@ export class ChatStore {
     const s = this.state.session;
     const msgs = this.state.messages.filter((m) => !isRecordNote(m));
     const last = msgs.at(-1);
-    if (!s || !last || this.state.streaming || (last.role !== 'error' && last.role !== 'note')) return;
+    if (!s || !last || this.state.streaming || (last.role !== 'error' && last.role !== 'note') || last.detail === CONCLUSION) return;
     if (!msgs.some((m) => m.role === 'user')) return;
     // 還有卡片等你按：先不問模型（跟 continueAfterTools 一樣）
     if (msgs.some((m) => m.actions?.some((a) => a.status === 'pending'))) return;
@@ -1732,6 +1742,113 @@ export class ChatStore {
     return picked.slice(0, 4);
   }
 
+  /**
+   * 收尾：整理者列出要決定的問題和 2–4 個方案、每個成員同時投一票（附理由）、寫結論卡（共識、分歧、待辦），
+   * 結論卡釘在對話最上面；最後每個 Agent 寫自己的筆記（下次討論帶著）
+   */
+  async conclude(sessionId = this.state.session?.id): Promise<void> {
+    const { repo } = this.deps;
+    if (!sessionId || this.runs.has(sessionId)) return;
+    const s = await repo.getSession(sessionId);
+    const sm = s ? this.modelFor(null, s) : null;
+    const members = await repo.listMembers(sessionId);
+    if (!s || !sm || members.length === 0) return;
+    const abort = new AbortController();
+    const signal = abort.signal;
+    const run: Run = { abort, streaming: null, parentId: s.parentId, phase: null };
+    this.runs.set(sessionId, run);
+    this.publishRuns();
+    this.set({ suggestConclude: this.state.suggestConclude.filter((x) => x !== sessionId) });
+    this.setPhase(sessionId, run, { phase: 'concluding', agentId: null });
+    const json = (text: string, info: ModelInfo | undefined): any => {
+      try {
+        return JSON.parse((info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+      } catch {
+        return {};
+      }
+    };
+    const strings = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!x.trim()).map((x) => x.trim()).slice(0, max) : []);
+    try {
+      const names = new Map(members.map((m) => [m.agent.id, m.agent.name]));
+      const lines = toLines(await repo.listMessages(sessionId), names);
+      // 1. 要決定什麼、有哪些方案
+      const o = json(await this.collect(sm.url, sm.model, optionsMessages(lines, s.summary), { think: quickThink(sm.info), format: OPTIONS_SCHEMA, options: { num_predict: 500 }, signal }), sm.info);
+      let options = strings(o.options, 4);
+      if (options.length < 2) options = [t('同意目前的結論'), t('不同意')];
+      const question = typeof o.question === 'string' && o.question.trim() ? o.question.trim() : t('結論是什麼？');
+      // 2. 每個人同時投票
+      const card: Conclusion = { question, options: options.map((text) => ({ text, votes: [] })), consensus: '', disagreements: [], todos: [] };
+      await Promise.all(
+        members.map(async (m) => {
+          const mm = this.modelFor(m.agent, s);
+          if (!mm) return;
+          try {
+            const v = json(await this.collect(mm.url, mm.model, voteMessages(this.toSpeaker(m), question, options, lines, s.summary), { think: quickThink(mm.info), format: VOTE_SCHEMA, options: { num_predict: 200 }, signal }), mm.info);
+            const i = Math.round(Number(v.choice)) - 1;
+            if (i >= 0 && i < options.length) card.options[i].votes.push({ who: m.agent.id, name: m.agent.name, reason: typeof v.reason === 'string' ? v.reason.trim() : '' });
+          } catch {
+            // 這個人沒投到：結論照樣寫
+          }
+        })
+      );
+      if (signal.aborted) throw new OllamaError('cancelled', t('已取消。'));
+      // 3. 結論卡
+      const c = json(await this.collect(sm.url, sm.model, conclusionMessages(card, lines, s.summary), { think: quickThink(sm.info), format: CONCLUSION_SCHEMA, options: { num_predict: 800 }, signal }), sm.info);
+      card.consensus = typeof c.consensus === 'string' ? c.consensus.trim() : '';
+      card.disagreements = strings(c.disagreements, 3);
+      card.todos = strings(c.todos, 4);
+      const msg = await repo.addMessage(sessionId, { role: 'note', content: JSON.stringify(card), detail: CONCLUSION });
+      await repo.updateSession(sessionId, { pinnedId: msg.id });
+      if (this.state.session?.id === sessionId) {
+        this.set({ session: (await repo.getSession(sessionId)) ?? this.state.session, messages: await repo.listMessages(sessionId) });
+        this.deps.onEvent?.('answered');
+      }
+      // 4. 每個人寫筆記（下次討論帶著）
+      await Promise.all(
+        members.map(async (m) => {
+          const mm = this.modelFor(m.agent, s);
+          if (!mm) return;
+          try {
+            const text = await this.collect(mm.url, mm.model, noteMessages(this.toSpeaker(m), card, lines), { think: quickThink(mm.info), options: { num_predict: 250 }, signal });
+            const note = (mm.info?.think ? (splitThink(text)?.content ?? text) : text).trim().slice(0, 400);
+            if (note) await repo.addNote(m.agent.id, sessionId, note);
+          } catch {
+            // 沒寫到筆記不影響結論
+          }
+        })
+      );
+    } catch (e) {
+      if (signal.aborted) await repo.addMessage(sessionId, { role: 'note', content: t('已停止') });
+      else await this.discussionError(sessionId, e);
+    } finally {
+      this.setPhase(sessionId, run, null);
+      if (this.runs.get(sessionId) === run) this.runs.delete(sessionId);
+      this.publishRuns();
+      if (this.state.session?.id === sessionId) this.set({ messages: await repo.listMessages(sessionId) });
+    }
+  }
+
+  /** 在結論卡上投你的一票（再投一次是換票） */
+  async voteConclusion(messageId: string, index: number): Promise<void> {
+    const { repo } = this.deps;
+    const s = this.state.session;
+    const m = this.state.messages.find((x) => x.id === messageId && x.detail === CONCLUSION);
+    const card = m ? parseConclusion(m.content) : null;
+    if (!s || !m || !card || !card.options[index]) return;
+    for (const o of card.options) o.votes = o.votes.filter((v) => v.who !== 'user');
+    card.options[index].votes.push({ who: 'user', name: t('你'), reason: '' });
+    await repo.updateMessage(messageId, { content: JSON.stringify(card) });
+    this.set({ messages: await repo.listMessages(s.id) });
+  }
+
+  /** 結論卡釘在最上面／取消釘選 */
+  async pinConclusion(messageId: string | null): Promise<void> {
+    const s = this.state.session;
+    if (!s) return;
+    await this.deps.repo.updateSession(s.id, { pinnedId: messageId });
+    this.set({ session: { ...s, pinnedId: messageId } });
+  }
+
   /** 不收尾（關掉「要收尾嗎？」） */
   dismissConclude(): void {
     const s = this.state.session;
@@ -1895,8 +2012,10 @@ export class ChatStore {
       }
       if (first.parentId && this.state.session?.id !== sessionId && !this.state.fresh.includes(sessionId)) this.set({ fresh: [...this.state.fresh, sessionId] });
     }
-    // 自然停下來（沒人想講、到上限）：AI 覺得差不多了就提議收尾
-    if ((reason === 'quiet' || reason === 'cap') && !opts.only && suggest && !this.state.suggestConclude.includes(sessionId)) {
+    // 自然停下來（沒人想講、到上限）：全自動就直接收尾；不然 AI 覺得差不多了就提議收尾
+    const naturally = (reason === 'quiet' || reason === 'cap') && !opts.only && streak > 0;
+    if (naturally && (await repo.getSession(sessionId))?.group?.autopilot) await this.conclude(sessionId);
+    else if (naturally && suggest && !this.state.suggestConclude.includes(sessionId)) {
       this.set({ suggestConclude: [...this.state.suggestConclude, sessionId] });
     }
     if (reason === 'quiet' && this.state.session?.id === sessionId && streak > 0) this.deps.onEvent?.('answered');

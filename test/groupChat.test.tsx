@@ -182,3 +182,29 @@ test('成員面板：改發言方式、拿掉成員；幫我挑照話題從圖�
   await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toContain(hist));
   expect(net.chatBodies().some((b) => b.format?.properties?.roles)).toBe(true);
 });
+
+test('收尾：按「收尾」出結論卡（票數、共識、待辦），可以投你的一票；釘在最上面可以取消', async () => {
+  const { net, store, agents } = await setup();
+  for (const a of Object.values(agents)) await store.addMember(a.id);
+  script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+  await store.send('要換伺服器嗎');
+  net.hosts.get(A)!.reply = (body: any) => {
+    const reply = (content: string) => ({ lines: [{ message: { content }, done: false }, done] });
+    if (body.format?.properties?.options) return reply(JSON.stringify({ question: '要不要換？', options: ['今年換', '先修再說'] }));
+    if (body.format?.properties?.choice) return reply(JSON.stringify({ choice: 2, reason: '省錢' }));
+    if (body.format?.properties?.consensus) return reply(JSON.stringify({ consensus: '先修再說', disagreements: [], todos: ['估修理費'] }));
+    return reply('筆記');
+  };
+  await screenOf(store);
+  await fireEvent.press(await screen.findByText('收尾'));
+  expect(await screen.findByText('要不要換？')).toBeTruthy();
+  expect(screen.getByLabelText('方案 2：先修再說，2 票')).toBeTruthy();
+  expect(screen.getByText('先修再說', { exact: true })).toBeTruthy();
+  expect(screen.getByText('• 估修理費')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('投方案 1'));
+  expect(await screen.findByLabelText('你投了方案 1')).toBeTruthy();
+  expect(screen.getByLabelText('方案 1：今年換，1 票')).toBeTruthy();
+  expect(screen.getByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeTruthy();
+  await fireEvent.press(screen.getAllByLabelText('取消釘選')[0]);
+  await waitFor(() => expect(screen.queryByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeNull());
+});

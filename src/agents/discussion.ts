@@ -16,10 +16,18 @@ const zh = () => getLanguage() !== 'en';
 export const userName = () => (zh() ? '使用者' : 'User'); // i18n-ignore
 const plainAiName = () => 'AI';
 
-/** 存起來的訊息整理成討論的一行行（錯誤、提示、工具結果、空的都不算） */
+/** 結論卡那則訊息的 detail */
+export const CONCLUSION = 'conclusion';
+
+/** 存起來的訊息整理成討論的一行行（錯誤、提示、工具結果、空的都不算；結論卡算一行，之後接著討論才知道結論是什麼） */
 export function toLines(messages: Message[], names: Map<string, string>): Line[] {
   const out: Line[] = [];
   for (const m of messages) {
+    if (m.role === 'note' && m.detail === CONCLUSION) {
+      const c = parseConclusion(m.content);
+      if (c) out.push({ id: m.id, seq: m.seq, who: 'conclusion', name: zh() ? '結論' : 'Conclusion', content: [c.consensus, ...c.todos.map((x) => `- ${x}`)].join('\n'), replyTo: null }); // i18n-ignore
+      continue;
+    }
     if ((m.role !== 'user' && m.role !== 'assistant') || !m.content.trim()) continue;
     const who = m.role === 'user' ? null : (m.agentId ?? 'ai');
     const name = who === null ? userName() : who === 'ai' ? plainAiName() : (names.get(who) ?? plainAiName());
@@ -394,3 +402,95 @@ export function pickRolesMessages(topic: string): ChatMessage[] {
   ];
 }
 
+
+// ---- 收尾：列方案、投票、結論卡、筆記 ----
+
+/** 結論卡（存在一則 note 訊息的 content，JSON） */
+export type Conclusion = {
+  question: string;
+  /** who：Agent id，你投的是 'user' */
+  options: { text: string; votes: { who: string; name: string; reason: string }[] }[];
+  consensus: string;
+  disagreements: string[];
+  todos: string[];
+};
+
+export function parseConclusion(text: string): Conclusion | null {
+  try {
+    const v = JSON.parse(text);
+    return v && Array.isArray(v.options) ? (v as Conclusion) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 收尾時給模型看的討論：前情摘要＋最近 30 則（每則最多 300 字） */
+function digest(lines: Line[], summary: string): string {
+  const recent = lines.slice(-30).map((l) => quote({ ...l, content: l.content.slice(0, 300) }, lines)).join('\n');
+  return (summary ? (zh() ? `前情摘要：${summary}\n\n` : `Summary so far: ${summary}\n\n`) : '') + recent; // i18n-ignore
+}
+
+export const OPTIONS_SCHEMA = {
+  type: 'object',
+  properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 4 } },
+  required: ['question', 'options'],
+};
+
+export function optionsMessages(lines: Line[], summary: string): ChatMessage[] {
+  const system = zh()
+    ? '你是群組討論的整理者。根據討論，寫出要決定的問題（question），以及 2–4 個具體的方案（options，每個 30 字以內，彼此不同）。如果沒有明顯的選項，就用「同意：目前的主要結論」和「不同意」兩個。用繁體中文（台灣用語），只回 JSON。' // i18n-ignore
+    : 'You organize a group discussion. Based on it, write the question to decide (question) and 2–4 concrete, distinct options (options, each under 20 words). If there are no obvious options, use "Agree: <the main conclusion so far>" and "Disagree". Reply with JSON only.';
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: digest(lines, summary) },
+  ];
+}
+
+export const VOTE_SCHEMA = {
+  type: 'object',
+  properties: { choice: { type: 'integer', minimum: 1 }, reason: { type: 'string' } },
+  required: ['choice', 'reason'],
+};
+
+export function voteMessages(me: Speaker, question: string, options: string[], lines: Line[], summary: string): ChatMessage[] {
+  const list = options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+  const system = zh()
+    ? `你是「${me.name}」：${me.intro}\n討論要做結論了。問題：${question}\n方案：\n${list}\n\n照你在討論裡的立場投一票。只回 JSON：choice＝方案編號、reason＝一句話理由（30 字以內，繁體中文）。` // i18n-ignore
+    : `You are "${me.name}": ${me.intro}\nThe discussion is wrapping up. Question: ${question}\nOptions:\n${list}\n\nVote according to your position in the discussion. Reply with JSON only: choice = option number, reason = one-sentence reason (under 20 words).`;
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: digest(lines, summary) },
+  ];
+}
+
+export const CONCLUSION_SCHEMA = {
+  type: 'object',
+  properties: {
+    consensus: { type: 'string' },
+    disagreements: { type: 'array', items: { type: 'string' }, maxItems: 3 },
+    todos: { type: 'array', items: { type: 'string' }, maxItems: 4 },
+  },
+  required: ['consensus', 'disagreements', 'todos'],
+};
+
+export function conclusionMessages(c: Pick<Conclusion, 'question' | 'options'>, lines: Line[], summary: string): ChatMessage[] {
+  const votes = c.options.map((o, i) => `${i + 1}. ${o.text}（${o.votes.length}）${o.votes.map((v) => `\n   - ${v.name}：${v.reason}`).join('')}`).join('\n');
+  const system = zh()
+    ? `你是群組討論的整理者，要寫結論卡。問題：${c.question}\n投票結果：\n${votes}\n\n只回 JSON：consensus＝大家的共識與決定（2–3 句）、disagreements＝還有分歧的地方（條列，最多 3 點，沒有就空陣列）、todos＝接下來要做的事（條列，最多 4 點）。用繁體中文（台灣用語）。` // i18n-ignore
+    : `You organize a group discussion and are writing the conclusion card. Question: ${c.question}\nVotes:\n${votes}\n\nReply with JSON only: consensus = what the group agreed and decided (2–3 sentences), disagreements = remaining disagreements (list, at most 3, empty if none), todos = next steps (list, at most 4).`;
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: digest(lines, summary) },
+  ];
+}
+
+export function noteMessages(me: Speaker, conclusion: Conclusion, lines: Line[]): ChatMessage[] {
+  const system = zh()
+    ? `你是「${me.name}」：${me.intro}\n這次討論結束了，結論：${conclusion.consensus}\n用 1–3 行寫下給下次討論的自己看的筆記：你這次的立場、被說服或新想到的事。只回筆記本身，繁體中文。` // i18n-ignore
+    : `You are "${me.name}": ${me.intro}\nThis discussion has ended. Conclusion: ${conclusion.consensus}\nWrite a 1–3 line note for your future self: your position this time and anything you were persuaded of or newly realized. Reply with the note only.`;
+  const mine = lines.filter((l) => l.who === me.id).slice(-6).map((l) => `- ${l.content.slice(0, 300)}`).join('\n');
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: mine || (zh() ? '（這次你沒有發言）' : '(You did not speak this time)') }, // i18n-ignore
+  ];
+}

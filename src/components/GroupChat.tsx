@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { entryIntro, entryName, getEntry, type CatalogEntry } from '../agents/catalog';
+import { CONCLUSION, parseConclusion, type Conclusion } from '../agents/discussion';
 import { ROLE_TRUNCATED, type ChatState, type ChatStore, type DiscussionPhase, type Streaming } from '../state/chatStore';
 import { DEFAULT_GROUP, isRecordNote, type Agent, type Attachment, type GroupSettings, type JoinedBy, type Member, type Message, type SpeakMode } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
@@ -28,6 +29,8 @@ type BubbleHandlers = {
   onRegenerate?: () => void;
   onSwitchVersion?: (delta: number) => void;
   isLast?: boolean;
+  /** 結論卡怎麼畫（要用到 store：投票、釘選） */
+  conclusion?: (m: Message, card: Conclusion) => ReactNode;
 };
 
 /** 一則訊息（聊天氣泡）。錯誤、停止這類提示交給原本的樣式（fallback） */
@@ -69,6 +72,10 @@ export function BubbleView({
         </View>
       </Pressable>
     );
+  }
+  if (m.role === 'note' && m.detail === CONCLUSION) {
+    const card = parseConclusion(m.content);
+    return card ? <View testID={`message-${m.id}`}>{h.conclusion?.(m, card)}</View> : null;
   }
   if (m.role === 'note' && isRecordNote(m)) {
     return (
@@ -127,6 +134,151 @@ export function BubbleView({
         ) : null}
       </View>
     </Pressable>
+  );
+}
+
+/** 結論卡的文字版（複製、分享用） */
+export function conclusionText(c: Conclusion): string {
+  const lines = [`${t('結論')}：${c.question}`, ''];
+  c.options.forEach((o, i) => {
+    lines.push(`${i + 1}. ${o.text}（${t('{p0} 票', { p0: o.votes.length })}）`);
+    for (const v of o.votes) lines.push(`   - ${v.name}${v.reason ? `：${v.reason}` : ''}`);
+  });
+  if (c.consensus) lines.push('', `${t('共識')}：${c.consensus}`);
+  if (c.disagreements.length) lines.push('', `${t('還有分歧')}：`, ...c.disagreements.map((x) => `- ${x}`));
+  if (c.todos.length) lines.push('', `${t('接下來')}：`, ...c.todos.map((x) => `- ${x}`));
+  return lines.join('\n');
+}
+
+/** 結論卡：問題、各方案的票數與理由、共識、分歧、待辦；可以投你的一票、釘選、複製 */
+export function ConclusionCard({
+  card,
+  agents,
+  pinned,
+  onVote,
+  onPin,
+  onCopy,
+}: {
+  card: Conclusion;
+  agents: Record<string, Agent>;
+  pinned: boolean;
+  onVote: (index: number) => void;
+  onPin: (on: boolean) => void;
+  onCopy: () => void;
+}) {
+  const [open, setOpen] = useState<number | null>(null);
+  const total = card.options.reduce((n, o) => n + o.votes.length, 0);
+  const top = Math.max(...card.options.map((o) => o.votes.length));
+  return (
+    <View style={styles.conclusion}>
+      <View style={styles.conclusionHead}>
+        <SymbolView name="checkmark.seal.fill" size={18} tintColor={C.accent} />
+        <Text style={[styles.conclusionTitle, styles.flex]} accessibilityRole="header">
+          {t('結論')}
+        </Text>
+        <Pressable onPress={() => onPin(!pinned)} hitSlop={10} accessibilityRole="button" accessibilityLabel={pinned ? t('取消釘選') : t('釘在最上面')}>
+          <SymbolView name={pinned ? 'pin.fill' : 'pin'} size={16} tintColor={C.secondary} />
+        </Pressable>
+      </View>
+      <Text style={styles.rowTitle}>{card.question}</Text>
+      {card.options.map((o, i) => {
+        const mine = o.votes.some((v) => v.who === 'user');
+        const lead = o.votes.length > 0 && o.votes.length === top;
+        return (
+          <View key={i} style={[styles.option, lead && styles.optionLead]}>
+            <Pressable
+              onPress={() => setOpen(open === i ? null : i)}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: open === i }}
+              accessibilityLabel={t('方案 {p0}：{p1}，{p2} 票', { p0: i + 1, p1: o.text, p2: o.votes.length })}
+              style={styles.optionHead}>
+              <Text style={[styles.optionText, styles.flex]}>
+                {i + 1}. {o.text}
+              </Text>
+              <Text style={[styles.votes, lead && styles.accent]}>{t('{p0} 票', { p0: o.votes.length })}</Text>
+            </Pressable>
+            {total > 0 ? (
+              <View style={styles.meter}>
+                <View style={[styles.meterFill, { width: `${(o.votes.length / total) * 100}%` }]} />
+              </View>
+            ) : null}
+            <View style={styles.voters}>
+              {o.votes.map((v) => {
+                const a = agents[v.who];
+                return v.who === 'user' ? (
+                  <Text key="user" style={styles.voterYou}>
+                    {t('你')}
+                  </Text>
+                ) : (
+                  <View key={v.who} style={styles.voter}>
+                    <AgentAvatar id={a ? avatarId(a) : v.who} emoji={a?.emoji ?? '🙂'} photo={a?.photo} size={18} />
+                    <Text style={styles.voterName}>{v.name}</Text>
+                  </View>
+                );
+              })}
+              <Pressable onPress={() => onVote(i)} disabled={mine} hitSlop={8} accessibilityRole="button" accessibilityLabel={mine ? t('你投了方案 {p0}', { p0: i + 1 }) : t('投方案 {p0}', { p0: i + 1 })} style={({ pressed }) => [styles.voteButton, mine && styles.voteMine, pressed && styles.pressed]}>
+                <Text style={[styles.voteText, mine && styles.voteTextMine]}>{mine ? t('你投了這個') : t('投這個')}</Text>
+              </Pressable>
+            </View>
+            {open === i
+              ? o.votes
+                  .filter((v) => v.reason)
+                  .map((v) => (
+                    <Text key={v.who} style={styles.reason}>
+                      {v.name}：{v.reason}
+                    </Text>
+                  ))
+              : null}
+          </View>
+        );
+      })}
+      {card.consensus ? (
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{t('共識')}</Text>
+          <Text style={styles.rowTitle}>{card.consensus}</Text>
+        </View>
+      ) : null}
+      {card.disagreements.length ? (
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{t('還有分歧')}</Text>
+          {card.disagreements.map((x, i) => (
+            <Text key={i} style={styles.rowTitle}>
+              • {x}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {card.todos.length ? (
+        <View style={styles.block}>
+          <Text style={styles.blockTitle}>{t('接下來')}</Text>
+          {card.todos.map((x, i) => (
+            <Text key={i} style={styles.rowTitle}>
+              • {x}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.actions}>
+        <ActionButton text={t('複製')} onPress={onCopy} />
+      </View>
+    </View>
+  );
+}
+
+/** 釘在最上面的結論：一行，點了跳到結論卡 */
+export function PinnedConclusion({ card, onPress, onUnpin }: { card: Conclusion; onPress: () => void; onUnpin: () => void }) {
+  return (
+    <View style={styles.pinned}>
+      <SymbolView name="pin.fill" size={13} tintColor={C.accent} />
+      <Pressable onPress={onPress} style={styles.flex} accessibilityRole="button" accessibilityLabel={t('釘選的結論：{p0}，點一下看完整內容', { p0: card.consensus || card.question })}>
+        <Text style={styles.pinnedText} numberOfLines={1}>
+          {t('結論')}：{card.consensus || card.question}
+        </Text>
+      </Pressable>
+      <Pressable onPress={onUnpin} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('取消釘選')}>
+        <SymbolView name="xmark" size={11} tintColor={C.secondary} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -491,4 +643,27 @@ const styles = StyleSheet.create({
   accent: { color: C.accent },
   separator: { height: StyleSheet.hairlineWidth, backgroundColor: C.separator, marginLeft: 62 },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
+  conclusion: { marginHorizontal: 4, padding: 14, gap: 10, borderRadius: 16, backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  conclusionHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  conclusionTitle: { ...TEXT.body, fontWeight: '700', color: C.label },
+  option: { gap: 6, padding: 10, borderRadius: 12, backgroundColor: C.bg },
+  optionLead: { borderWidth: 1, borderColor: C.accent },
+  optionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  optionText: { ...TEXT.body, color: C.label },
+  votes: { ...TEXT.small, color: C.secondary, fontWeight: '600' },
+  meter: { height: 4, borderRadius: 2, backgroundColor: C.pressed, overflow: 'hidden' },
+  meterFill: { height: 4, backgroundColor: C.accentFill },
+  voters: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
+  voter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  voterName: { ...TEXT.meta, color: C.secondary },
+  voterYou: { ...TEXT.meta, color: C.accent, fontWeight: '700' },
+  voteButton: { marginLeft: 'auto', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  voteMine: { borderColor: C.accent },
+  voteText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
+  voteTextMine: { color: C.accent },
+  reason: { ...TEXT.small, color: C.secondary },
+  block: { gap: 4 },
+  blockTitle: { ...TEXT.meta, color: C.secondary, fontWeight: '700' },
+  pinned: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 6, backgroundColor: C.surface },
+  pinnedText: { ...TEXT.small, color: C.label },
 });
