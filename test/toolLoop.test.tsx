@@ -145,7 +145,7 @@ describe('只讀的工具', () => {
 describe('會改東西的工具', () => {
   async function askToAdd(args: unknown = { title: '帶小孩看牙醫', start: '2026-11-04T15:00' }) {
     const ctx = await setup();
-    script(ctx.host, [() => [toolCall('create_event', args), done], (body) => [text(`已經加好了（${JSON.parse(body.messages.at(-1).content).ok ? 'ok' : 'no'}）`), done]]);
+    script(ctx.host, [() => [toolCall('create_event', args), done], (body) => [text(`已經加好了（${JSON.parse(body.messages.filter((m: any) => m.role === 'tool').at(-1).content).ok ? 'ok' : 'no'}）`), done]]);
     await ctx.store.send('下週三下午三點帶小孩看牙醫');
     await waitFor(() => expect(ctx.store.getState().streaming).toBeNull());
     return ctx;
@@ -197,7 +197,11 @@ describe('會改東西的工具', () => {
     await store.declineAction(pending(store)[0].id, '改成週四');
     await waitFor(() => expect(lastText(store)).toBe('已經加好了（no）'));
     expect(cal.created).toEqual([]);
-    expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content)).toEqual({ ok: false, error: 'The user declined this action.', reason: '改成週四', item: '新增「帶小孩看牙醫」' });
+    const sent = net.chatBodies()[1].messages;
+    expect(JSON.parse(sent.at(-2).content)).toEqual({ ok: false, error: 'The user declined this action.', reason: '改成週四', item: '新增「帶小孩看牙醫」' });
+    // 只寫在工具結果裡，模型常照剛剛的要求說「已經改好了」：最後再提醒一次
+    expect(sent.at(-1)).toEqual({ role: 'system', content: expect.stringContaining('The user declined 「新增「帶小孩看牙醫」」') });
+    expect(sent.at(-1).content).toContain('Your reply must say it was not done.');
   });
 
   test('App 規則擋掉的（時間在過去）：不出確認卡，原因交回模型', async () => {
@@ -295,7 +299,7 @@ describe('畫面', () => {
     await fireEvent.press(screen.getByText('送出'));
     expect(await screen.findByText('沒有做：加行程「帶小孩看牙醫」')).toBeTruthy();
     expect(cal.created).toEqual([]);
-    await waitFor(() => expect(JSON.parse(net.chatBodies()[1].messages.at(-1).content).reason).toBe('改成週四'));
+    await waitFor(() => expect(JSON.parse(net.chatBodies()[1].messages.at(-2).content).reason).toBe('改成週四'));
   });
 });
 
@@ -365,6 +369,10 @@ describe('清單卡（一次好幾件）', () => {
     const results = net.chatBodies()[1].messages.filter((m: any) => m.role === 'tool').map((m: any) => JSON.parse(m.content));
     expect(results.map((r: any) => r.ok)).toEqual([true, false, true]);
     expect(results[1]).toMatchObject({ error: expect.stringContaining('unchecked'), item: expect.stringContaining('親師座談會') });
+    // 最後提醒只講取消勾選的那件
+    const note = net.chatBodies()[1].messages.at(-1);
+    expect(note).toMatchObject({ role: 'system', content: expect.stringContaining('親師座談會') });
+    expect(note.content).not.toMatch(/校慶運動會|戶外教學/);
   });
 
   test('改壞了：一件都不做', async () => {

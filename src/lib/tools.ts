@@ -70,6 +70,16 @@ export function toolOffError(name: string, g: ToolGroup): string {
   return `${name} is turned off: the user switched off 「${toolGroupName(g)}」 in the app's Settings. Do not call it again. Tell the user they can turn it on in Settings > 「${t('AI 可以做的事')}」.`;
 }
 
+/**
+ * 這一輪使用者按了「不要」或取消勾選的：加在送給模型的最後面。
+ * 只寫在工具結果裡，模型常照使用者剛剛的要求說「已經改好了」；
+ * 要明講「回答必須說沒做」才有用（只說「不要說做了」沒用）。
+ */
+export function declinedPrompt(items: string[]): string {
+  const it = items.length > 1 ? 'they were' : 'it was';
+  return `The user declined ${items.map((x) => `「${x}」`).join(', ')}, so ${it} NOT done: nothing was added or changed. Your reply must say ${it} not done.`;
+}
+
 /** 使用者沒給權限（行事曆、提醒事項）：畫面給「打開設定」，交給模型的是 permission_denied */
 export class ToolPermissionError extends Error {
   readonly code = 'permission_denied';

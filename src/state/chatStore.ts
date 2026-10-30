@@ -6,7 +6,7 @@ import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/h
 import { pickDefaultModel } from '../lib/modelPick';
 import { OllamaError, splitThink, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
-import { ToolPermissionError, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
+import { ToolPermissionError, declinedPrompt, describeChanges, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import type { Action, Attachment, Host, Message, Repo, Session } from '../store/repo';
 import { askUserTool } from '../tools/ask';
 import { setLanguage, t } from '../i18n';
@@ -1177,6 +1177,9 @@ export class ChatStore {
         (tools.length > 0 ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') +
         (toolsOff.length > 0 ? '\n\n' + toolsOffPrompt(toolsOff) : ''),
     });
+    // 這一輪使用者說「不要」的：最後再提醒一次，不然模型常照剛剛的要求說「已經改好了」
+    const declined = this.declinedInLastRound();
+    if (declined.length > 0) history.push({ role: 'system', content: declinedPrompt(declined) });
     if (droppedImages > 0) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
     const hostLabel = this.hostLabel(url);
@@ -1503,6 +1506,14 @@ export class ChatStore {
     } finally {
       this.actionBusy.delete(id);
     }
+  }
+
+  /** 剛按完確認卡（最後一則是工具結果）：那一輪使用者按「不要」或取消勾選的是哪幾件 */
+  private declinedInLastRound(): string[] {
+    const messages = this.state.messages;
+    if (messages[messages.length - 1]?.role !== 'tool') return [];
+    const round = [...messages].reverse().find((m) => m.role === 'assistant' && m.toolCalls?.length);
+    return (round?.actions ?? []).filter((a) => a.status === 'declined').map((a) => this.itemOf(a).item ?? this.toolFor(a.tool)?.label ?? a.tool);
   }
 
   /** 沒做成的是哪一件（交給模型：只有順序的話，有些模型會把沒做的說成做了） */
