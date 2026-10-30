@@ -55,9 +55,10 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   const screenReader = useScreenReader();
   const live = streaming?.messageId === m.id ? streaming : null;
   // 程式碼、表格的左右捲裡面要自己接手指（見 Markdown 的 HScroll），點一下、長按做的事跟整則訊息一樣。
-  // 函式要固定同一個（Markdown 有 memo，每次換新函式整段都要重畫），內容從 ref 拿最新的
-  const latest = useRef({ m, onLongPress: h.onLongPress });
-  latest.current = { m, onLongPress: h.onLongPress };
+  // 傳給 Markdown 的函式都要固定同一個（它有 memo，每次換新函式整段都要重畫，AI 串流時每一則舊回答都跟著重畫），
+  // 內容從 ref 拿最新的
+  const latest = useRef({ m, onLongPress: h.onLongPress, onCopyCode: h.onCopyCode });
+  latest.current = { m, onLongPress: h.onLongPress, onCopyCode: h.onCopyCode };
   const press = useMemo(
     () => ({
       onPress: () => Keyboard.dismiss(),
@@ -66,6 +67,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     }),
     [],
   );
+  const copyCode = useMemo(() => (code: string) => latest.current.onCopyCode(code), []);
   if (m.role === 'user') {
     return (
       <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
@@ -111,8 +113,8 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
         <View style={styles.aiBlock}>
           <Text style={styles.aiMark} {...decorative}>•</Text>
           <View style={styles.body}>
-            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} onCopyCode={h.onCopyCode} /> : null}
-            {content ? <Markdown text={content} onCopyCode={h.onCopyCode} {...press} /> : null}
+            {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} onCopyCode={copyCode} /> : null}
+            {content ? <Markdown text={content} onCopyCode={copyCode} {...press} /> : null}
             {/* 模型回了空白（不是只叫工具）：說清楚，最後一則還可以重新產生 */}
             {!live && !content && !toolTurn ? <Text style={styles.emptyAnswer}>{t('AI 沒有回答。')}</Text> : null}
             {h.extra}
