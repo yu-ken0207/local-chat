@@ -432,6 +432,11 @@ export class ChatStore {
     this.state = { ...this.state, prefs };
     setLanguage(this.appLanguage()); // 先換語言再通知畫面，重畫時就是新語言
     this.set({ prefs });
+    // 從圖鑑來的 Agent 名字跟著語言：成員、我的 Agent 重讀一次
+    if (key === 'language') {
+      await this.refreshGroup();
+      if (this.state.myAgents.length) await this.loadMyAgents();
+    }
   }
 
   /** 目前實際的 App 語言 */

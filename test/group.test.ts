@@ -1,4 +1,4 @@
-import { PromptStore, suggestAvatar } from '../src/agents/catalog';
+import { PromptStore, getEntry, suggestAvatar } from '../src/agents/catalog';
 import { ChatStore, ROLE_TRUNCATED } from '../src/state/chatStore';
 import { DEFAULT_GROUP, Repo, type Agent } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -462,3 +462,17 @@ test('Agent 之間互 @ 只加分不強制：兩個人互 @ 時，第三個人�
   await store.send('@SRE 要換伺服器嗎');
   expect(said.slice(0, 3)).toEqual(['SRE', '產品經理', '財務']);
 });
+
+test('換語言：從圖鑑來的成員和「我的 Agent」名字馬上跟著換', async () => {
+  const { store } = await setup({ members: [] });
+  const e = getEntry('agency:academic/academic-historian')!;
+  await store.addCatalogMember(e.id, { name: e.n[0], intro: e.d[0], emoji: e.e });
+  await store.addCatalogToMine(e.id);
+  expect(store.getState().members.map((m) => m.agent.name)).toEqual([e.n[0]]);
+  await store.setPref('language', 'en');
+  expect(store.getState().members.map((m) => m.agent.name)).toEqual(['Historian']);
+  expect(store.getState().myAgents.map((a) => a.name)).toEqual(['Historian']);
+  await store.setPref('language', 'zh-Hant');
+  expect(store.getState().members.map((m) => m.agent.name)).toEqual([e.n[0]]);
+});
+
