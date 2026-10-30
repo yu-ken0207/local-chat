@@ -222,6 +222,15 @@ describe('鍵盤與捲動', () => {
 });
 
 describe('對話', () => {
+  test('AI 回了空白：寫「AI 沒有回答」，可以按重新產生', async () => {
+    const { net, store } = await setup();
+    net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '' }, done: true }] });
+    await send(store, 'hi');
+    expect(screen.getByText('AI 沒有回答。')).toBeTruthy();
+    expect(screen.getByText('重新產生')).toBeTruthy();
+    expect(screen.queryByText('複製')).toBeNull();
+  });
+
   test('送出後顯示自己的話、AI 的 Markdown 回答與白話的模型名稱', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.reply = () => ({

@@ -77,6 +77,8 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
           <View style={styles.body}>
             {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} /> : null}
             {content ? <Markdown text={content} onCopyCode={h.onCopyCode} /> : null}
+            {/* 模型回了空白（不是只叫工具）：說清楚，最後一則還可以重新產生 */}
+            {!live && !content && !toolTurn ? <Text style={styles.emptyAnswer}>{t('AI 沒有回答。')}</Text> : null}
             {h.extra}
             {live ? (
               <Working streaming={live} />
@@ -86,9 +88,9 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
                 <Text style={[styles.meta, styles.flex]}>{metaLine(m)}</Text>
               </View>
             )}
-            {!live && h.isLast && content ? (
+            {!live && h.isLast && !toolTurn ? (
               <View style={styles.actions}>
-                {h.onCopy ? <ActionButton text={t('複製')} onPress={h.onCopy} /> : null}
+                {content && h.onCopy ? <ActionButton text={t('複製')} onPress={h.onCopy} /> : null}
                 {h.onRegenerate ? <ActionButton text={t('重新產生')} onPress={h.onRegenerate} /> : null}
               </View>
             ) : null}
@@ -302,6 +304,7 @@ const styles = StyleSheet.create({
   errorActions: { gap: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   actionButton: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
+  emptyAnswer: { ...TEXT.body, color: C.secondary },
   actionDisabled: { opacity: 0.35 },
   actionPrimary: { backgroundColor: C.accent, borderColor: C.accent },
   actionText: { ...TEXT.meta, color: C.label, fontWeight: '600' },
