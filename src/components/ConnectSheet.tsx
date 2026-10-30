@@ -124,7 +124,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   }
 
   function hostMenu(url: string, label: string) {
-    chooseOption(label, [t('移除這台電腦')], () => void store.removeHost(url));
+    chooseOption(label, [t('移除這台電腦')], () => void store.removeHost(url), 0);
   }
 
   /** 改用這台電腦；連不到就直接說，並打開「連不上嗎？」 */

@@ -32,14 +32,17 @@ type Props = {
   notReadyHint?: string;
 };
 
-/** 選項清單：iOS 用系統的動作表，其他平台用對話框 */
-export function chooseOption(title: string, options: string[], onPick: (index: number) => void) {
+/** 選項清單：iOS 用系統的動作表，其他平台用對話框；destructive 是刪除這類危險選項的位置（顯示成紅色） */
+export function chooseOption(title: string, options: string[], onPick: (index: number) => void, destructive?: number) {
   if (Platform.OS === 'ios') {
-    ActionSheetIOS.showActionSheetWithOptions({ title, options: [...options, t('取消')], cancelButtonIndex: options.length }, (i) => {
+    ActionSheetIOS.showActionSheetWithOptions({ title, options: [...options, t('取消')], cancelButtonIndex: options.length, destructiveButtonIndex: destructive }, (i) => {
       if (i < options.length) onPick(i);
     });
   } else {
-    Alert.alert(title, undefined, [...options.map((text, i) => ({ text, onPress: () => onPick(i) })), { text: t('取消'), style: 'cancel' as const }]);
+    Alert.alert(title, undefined, [
+      ...options.map((text, i) => ({ text, onPress: () => onPick(i), style: i === destructive ? ('destructive' as const) : undefined })),
+      { text: t('取消'), style: 'cancel' as const },
+    ]);
   }
 }
 

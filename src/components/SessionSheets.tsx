@@ -66,7 +66,7 @@ export function SessionList({
     chooseOption(name, [t('重新命名'), t('刪除')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, async (t) => (await store.renameSession(s.id, t), reload()), 'plain-text', s.title);
       if (i === 1) void deleteSession(store, s.id, reload);
-    });
+    }, 1);
   }
 
   const now = Date.now();
@@ -213,7 +213,7 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
         reload();
       }
       if (i === 1) forever(s, name);
-    });
+    }, 1);
   }
 
   function emptyAll() {

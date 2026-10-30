@@ -103,7 +103,7 @@ export function ChatScreen(p: ChatScreenProps) {
   function messageMenu(m: Message) {
     if (state.streaming) return;
     if (m.role === 'user') {
-      chooseOption(t('你的訊息'), [t('複製'), t('編輯並重送'), t('刪除')], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i]());
+      chooseOption(t('你的訊息'), [t('複製'), t('編輯並重送'), t('刪除')], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i](), 2);
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
@@ -118,10 +118,11 @@ export function ChatScreen(p: ChatScreenProps) {
               : Alert.alert(t('沒有其他模型'), t('這台電腦上只有一個模型。')),
           () => showDetails(m),
           () => confirmDeleteMessage(m),
-        ][i]()
+        ][i](),
+        5
       );
     } else {
-      chooseOption(m.role === 'error' ? t('錯誤訊息') : t('提示'), [t('複製'), t('刪除')], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i]());
+      chooseOption(m.role === 'error' ? t('錯誤訊息') : t('提示'), [t('複製'), t('刪除')], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i](), 1);
     }
   }
   const [viewer, setViewer] = useState<{ images: Attachment[]; index: number } | null>(null);
@@ -189,7 +190,7 @@ export function ChatScreen(p: ChatScreenProps) {
     chooseOption(title, [t('重新命名'), t('刪除這段對話')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, (text) => void store.renameSession(session.id, text), 'plain-text', session.title);
       if (i === 1) void deleteSession(store, session.id);
-    });
+    }, 1);
   }
 
   return (

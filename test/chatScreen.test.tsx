@@ -198,6 +198,18 @@ describe('VoiceOver', () => {
   });
 });
 
+describe('選單', () => {
+  test('長按訊息：選單裡的「刪除」顯示成紅色（危險選項）', async () => {
+    const { store } = await setup();
+    await send(store, 'hi');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+    const mine = store.getState().messages.find((m) => m.role === 'user')!;
+    await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
+    const opts = sheet.mock.calls[0][0];
+    expect(opts.options[opts.destructiveButtonIndex as number]).toBe('刪除');
+  });
+});
+
 describe('鍵盤與捲動', () => {
   test('點訊息、用按鈕打開對話清單，都會收鍵盤', async () => {
     const { store } = await setup();
