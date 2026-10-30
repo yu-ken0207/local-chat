@@ -781,9 +781,14 @@ export class Repo {
     return ids;
   }
 
-  /** 清除全部資料，回到第一次打開的樣子；永久刪除，之後壓縮檔案（templates 是舊版留下的資料表） */
-  async resetAll(): Promise<void> {
-    await this.db.exec('DELETE FROM sessions; DELETE FROM hosts; DELETE FROM templates; DELETE FROM settings;');
+  /**
+   * 清除全部資料的最後一步：這些對話還在最近刪除的才永久刪掉（可以復原的那幾秒內救回的、之後新開的都留著），
+   * 電腦、設定全刪，之後壓縮檔案
+   */
+  async wipe(sessionIds: string[]): Promise<void> {
+    const trashed = new Set((await this.db.all<{ id: string }>('SELECT id FROM sessions WHERE deleted_at IS NOT NULL')).map((r) => r.id));
+    for (const id of sessionIds) if (trashed.has(id)) await this.deleteSession(id);
+    await this.clearSettings();
     await this.db.exec('VACUUM');
   }
 

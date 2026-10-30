@@ -768,14 +768,41 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(await repo.listHosts()).toEqual([]);
   });
 
-  test('清除全部資料後還在可以復原的時候就關掉 App：下次打開時真的刪掉', async () => {
+  test('清除全部資料後幾秒內從最近刪除救回的對話：時間到也留著（電腦、設定照樣清掉）', async () => {
+    const { store, repo } = await ready();
+    await store.send('a');
+    await store.newSession();
+    await store.send('b');
+    // 本來就在最近刪除的也一起清掉
+    await store.send('c');
+    const old = store.getState().session!.id;
+    await store.deleteSession(old);
+    await store.dismissUndo();
+    await store.resetAll();
+    const keep = (await store.listTrash()).find((s) => s.preview === '回答：a')!;
+    await store.restoreSession(keep.id);
+    await store.dismissUndo(); // 提示時間到
+    expect((await store.listSessions()).map((s) => s.preview)).toContain('回答：a');
+    expect((await store.listSessions()).map((s) => s.preview)).not.toContain('回答：b');
+    expect(await repo.countTrash()).toBe(0);
+    expect(await repo.listHosts()).toEqual([]);
+    // 目前那段（清除後新開的）沒被換掉
+    expect(await repo.getSession(store.getState().session!.id)).not.toBeNull();
+  });
+
+  test('清除全部資料後還在可以復原的時候就關掉 App：下次打開時真的刪掉（救回的留著）', async () => {
     const { net, store, repo } = await ready();
     await store.send('a');
+    await store.newSession();
+    await store.send('b');
     await store.resetAll();
+    const keep = (await store.listTrash()).find((s) => s.preview === '回答：a')!;
+    await store.restoreSession(keep.id);
     const again = new ChatStore({ repo, client: net.client, wifiIp: async () => null, autoScan: false });
     await again.init();
     expect(await repo.countTrash()).toBe(0);
     expect(await repo.listHosts()).toEqual([]);
+    expect((await repo.listSessions()).map((s) => s.preview)).toContain('回答：a');
   });
 
   test('下一個操作開始時，上一個沒按復原的就確定了', async () => {

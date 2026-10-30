@@ -242,10 +242,13 @@ describe('使用者自己移除資料', () => {
     expect(await repo.sizeBytes()).toBeLessThan(before / 2);
   });
 
-  test('清除全部資料：什麼都不留', async () => {
+  test('清除全部資料：還在最近刪除的對話、電腦、設定都不留；已經救回的留著', async () => {
     const { repo } = await seeded();
-    await repo.resetAll();
-    expect(await repo.countSessions()).toBe(0);
+    const ids = await repo.trashAllSessions();
+    await repo.restoreSessions([ids[1]]);
+    await repo.wipe(ids);
+    expect((await repo.listSessions()).map((s) => s.id)).toEqual([ids[1]]);
+    expect(await repo.countTrash()).toBe(0);
     expect(await repo.listHosts()).toEqual([]);
     expect(await repo.getSetting('lastModel')).toBeNull();
   });

@@ -388,10 +388,7 @@ export class ChatStore {
     await repo.migrate();
     await repo.purgeExpired();
     const pendingWipe = await repo.getSetting(SETTING_PENDING_WIPE);
-    if (pendingWipe) {
-      for (const id of JSON.parse(pendingWipe) as string[]) await repo.deleteSession(id);
-      await repo.clearSettings();
-    }
+    if (pendingWipe) await repo.wipe(JSON.parse(pendingWipe) as string[]);
     const hosts = await repo.listHosts();
     await this.loadTokens(hosts);
     try {
@@ -1680,9 +1677,12 @@ export class ChatStore {
     this.stop();
     this.stopScan();
     const snapshot = await repo.snapshotSettings();
+    // 本來就在最近刪除的也一起清掉；按「復原」只救回這次移過去的
+    const before = (await repo.listTrash()).map((s) => s.id);
     const ids = await repo.trashAllSessions();
+    const wipe = [...before, ...ids];
     await repo.clearSettings();
-    await repo.setSetting(SETTING_PENDING_WIPE, JSON.stringify(ids));
+    await repo.setSetting(SETTING_PENDING_WIPE, JSON.stringify(wipe));
     const saved = { hosts: this.state.hosts, hostStatus: this.state.hostStatus, models: this.state.models, loaded: this.state.loaded };
     this.set({
       hosts: [],
@@ -1707,11 +1707,12 @@ export class ChatStore {
         await this.openLatestOrNew();
       },
       async () => {
-        for (const id of ids) await repo.deleteSession(id);
-        await repo.setSetting(SETTING_PENDING_WIPE, '');
-        await repo.resetAll();
+        // 這幾秒內從「最近刪除」救回的對話留著（之前會被整張表一起刪掉）
+        await repo.wipe(wipe);
         for (const h of saved.hosts) if (h.helperId) await this.forgetToken(h.helperId);
-        this.set({ session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
+        if (!this.state.session || !(await repo.getSession(this.state.session.id))) {
+          this.set({ session: (await repo.listSessions())[0] ?? (await repo.createSession()), messages: [] });
+        }
       }
     );
   }
