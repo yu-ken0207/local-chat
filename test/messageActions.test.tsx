@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, Share } from 'react-native';
+import { ActionSheetIOS, Alert, Share, TextInput } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
@@ -131,13 +131,37 @@ describe('長按自己的訊息', () => {
     await longPress(store, 0);
     expect(inputValue()).toBe('原本');
     expect(screen.getByText('編輯中：送出後會取代這則訊息和之後的 3 則')).toBeTruthy();
-    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '改過');
-    // 自己打字不換輸入框（換了鍵盤會收起來）
+    // 自己打字不換輸入框（換了鍵盤會收起來）：打字前後是同一個
     const typing = screen.getByLabelText('訊息輸入框');
+    await fireEvent.changeText(typing, '改過');
     expect(screen.getByLabelText('訊息輸入框')).toBe(typing);
     await fireEvent.press(screen.getByLabelText('送出'));
     await waitFor(() => expect(store.getState().messages.map((m) => m.content)).toEqual(['改過', '回答：改過']));
     expect(screen.queryByText(/編輯中/)).toBeNull();
+  });
+
+  test('正在打字時編輯並重送、取消編輯：換了輸入框也把游標放回去，鍵盤不會收起來', async () => {
+    const { store } = await setup(['原本']);
+    const focus = (TextInput.prototype as any).focus as jest.Mock;
+    focus.mockClear();
+    await fireEvent(screen.getByLabelText('訊息輸入框'), 'focus');
+    pickActions('編輯並重送');
+    await longPress(store, 0);
+    expect(inputValue()).toBe('原本');
+    expect(focus).toHaveBeenCalledTimes(1);
+    await fireEvent(screen.getByLabelText('訊息輸入框'), 'focus');
+    await fireEvent.press(screen.getByText('取消編輯'));
+    expect(focus).toHaveBeenCalledTimes(2);
+  });
+
+  test('沒在打字時編輯並重送：不自己叫出鍵盤', async () => {
+    const { store } = await setup(['原本']);
+    const focus = (TextInput.prototype as any).focus as jest.Mock;
+    focus.mockClear();
+    pickActions('編輯並重送');
+    await longPress(store, 0);
+    expect(inputValue()).toBe('原本');
+    expect(focus).not.toHaveBeenCalled();
   });
 
   test('程式換掉輸入框的字（放回訊息、送出後清空）時換一個新的輸入框，高度才會照新的字量', async () => {

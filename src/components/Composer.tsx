@@ -62,10 +62,19 @@ export function Composer(p: Props) {
   // RN 0.88 的多行輸入框被程式改字時，量高度用的還是改之前的字（放回四行的訊息時框只有一行高、
   // 清空後還停在四行高），要等再打一個字才對。新的輸入框一開始就照現在的字量
   const [inputKey, setInputKey] = useState(0);
-  const replaceDraft = (text: string) => {
+  // 換之前正在打字（鍵盤開著）：新的掛好後把游標放回去，不然鍵盤會收起來（送出時本來就要收，不用）
+  const focused = useRef(false);
+  const refocus = useRef(false);
+  const replaceDraft = (text: string, keepFocus = true) => {
     setDraft(text);
+    refocus.current = keepFocus && focused.current;
     setInputKey((k) => k + 1);
   };
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    inputRef.current?.focus();
+  }, [inputKey]);
   const [photos, setPhotos] = useState<NewPhoto[]>([]);
   const [hint, setHint] = useState('');
   const [sending, setSending] = useState(false);
@@ -136,12 +145,12 @@ export function Composer(p: Props) {
     const pics = photos;
     setSending(true);
     setHint('');
-    replaceDraft('');
+    replaceDraft('', false);
     setPhotos([]);
     try {
       await p.onSend(text, pics);
     } catch (e: any) {
-      replaceDraft(text);
+      replaceDraft(text, false);
       setPhotos(pics);
       Alert.alert(t('沒有送出'), e?.message ?? String(e));
     } finally {
@@ -223,6 +232,8 @@ export function Composer(p: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
+            onFocus={() => (focused.current = true)}
+            onBlur={() => (focused.current = false)}
             placeholder={p.modelLabel ? t('輸入訊息') : (p.notReadyHint ?? t('先在下方選一個模型'))}
             placeholderTextColor={C.placeholder}
             multiline
