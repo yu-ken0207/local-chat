@@ -172,7 +172,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
       <UndoToast store={store} />
 
       <Modal visible={connectOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setConnectOpen(false)}>
-        <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} />
+        <ConnectSheet store={store} state={state} copyText={copyText} onClose={() => setConnectOpen(false)} manage />
       </Modal>
       <Modal visible={doneOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setDoneOpen(false)}>
         <DoneActions store={store} onClose={() => setDoneOpen(false)} />

@@ -55,11 +55,17 @@ test('語言：預設跟著系統，可以改成 English', async () => {
   await waitFor(() => expect(store.getState().prefs.language).toBe('en'));
 });
 
-test('你的電腦：顯示數量，點了打開連接面板；設定裡沒有已拿掉的項目', async () => {
-  await setup();
+test('你的電腦：顯示數量，點了打開管理用的「你的電腦」；點一台只出選單、不直接切換；設定裡沒有已拿掉的項目', async () => {
+  const { store } = await setup();
   for (const gone of ['AI 回答的語言', '自動幫對話取標題', '提示詞範本', '自訂指示']) expect(screen.queryByText(gone)).toBeNull();
   await fireEvent.press(screen.getByLabelText('你的電腦，1 台'));
-  expect(await screen.findByText('連接你的電腦')).toBeTruthy();
+  // 標題是「你的電腦」，下面才是「新增電腦」
+  expect(await screen.findByText('新增電腦')).toBeTruthy();
+  const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
+  const before = store.getState().session?.hostUrl;
+  await fireEvent.press(screen.getByLabelText(/^電腦 /));
+  expect(sheet.mock.calls[0][0].options).toEqual(['改用這台電腦', '移除這台電腦', '取消']);
+  expect(store.getState().session?.hostUrl).toBe(before);
 });
 
 test('從備份還原：先確認，還原後資料換掉，可以復原', async () => {

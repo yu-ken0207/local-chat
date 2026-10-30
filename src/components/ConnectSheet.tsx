@@ -18,10 +18,12 @@ type Props = {
   /** 打開時就展開「連不上嗎？」說明（例如從錯誤訊息的「連線說明」進來） */
   showHelp?: boolean;
   copyText: (text: string) => void;
+  /** 從設定的「你的電腦」進來：管理用，電腦清單放最上面，點一台只出選單、不直接切換目前的對話 */
+  manage?: boolean;
 };
 
 /** 連接你的電腦：自動尋找、手動輸入位址、你的電腦清單、連不上時的說明 */
-export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Props) {
+export function ConnectSheet({ store, state, onClose, showHelp, copyText, manage }: Props) {
   const [helpOpen, setHelpOpen] = useState(!!showHelp);
   /** 手動輸入的位址正在連線（最久要等幾秒，畫面要讓人知道還在動） */
   const [adding, setAdding] = useState<string | null>(null);
@@ -124,6 +126,11 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
   }
 
   function hostMenu(url: string, label: string) {
+    // 管理用的頁面：要改用哪台由使用者自己選，不要點一下就切換目前的對話
+    if (manage) {
+      chooseOption(label, [t('改用這台電腦'), t('移除這台電腦')], (i) => (i === 0 ? void use(url, label) : void store.removeHost(url)), 1);
+      return;
+    }
     chooseOption(label, [t('移除這台電腦')], () => void store.removeHost(url), 0);
   }
 
@@ -142,19 +149,53 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
     }
   }
 
+  const hostList =
+    state.hosts.length > 0 ? (
+          <>
+            <Text style={styles.section}>{t('你的電腦')}</Text>
+            <View style={styles.card}>
+              {state.hosts.map((h, i) => {
+                return (
+                  <SwipeRow key={h.url} label={t('移除')} testID={`swipe-host-${h.url}`} onDelete={() => void store.removeHost(h.url)}>
+                  <Pressable
+                    onPress={() => (manage ? hostMenu(h.url, h.label) : void use(h.url, h.label))}
+                    onLongPress={() => hostMenu(h.url, h.label)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('電腦 {p0}', { p0: h.label })}
+                    accessibilityState={{ selected: current === h.url }}
+                    style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
+                    <View style={styles.row}>
+                      <SymbolView name="desktopcomputer" size={18} tintColor={C.secondary} />
+                      <Text style={[styles.rowTitle, styles.flex]}>{h.label}</Text>
+                      {current === h.url ? <Text style={styles.using}>{t('使用中')}</Text> : null}
+                      <Pressable onPress={() => hostMenu(h.url, h.label)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: h.label })}>
+                        <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
+                      </Pressable>
+                    </View>
+                    {i < state.hosts.length - 1 ? <View style={styles.separator} /> : null}
+                  </Pressable>
+                  </SwipeRow>
+                );
+              })}
+            </View>
+          </>
+    ) : null;
+
   return (
     <View style={styles.sheet}>
       {/* 跟設定、最近刪除一樣：標題置中，右邊「完成」（左邊放同寬的空位對稱） */}
       <View style={styles.header}>
         <View style={styles.headerSide} />
         <Text style={styles.title} accessibilityRole="header">
-          {t('連接你的電腦')}
+          {manage ? t('你的電腦') : t('連接你的電腦')}
         </Text>
         <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.headerSide, styles.headerRight, pressed && styles.pressed]}>
           <Text style={styles.done}>{t('完成')}</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {manage ? hostList : null}
+        {manage ? <Text style={styles.section}>{t('新增電腦')}</Text> : null}
         <Text style={styles.lead}>{t('在電腦上打開 Local AI 小幫手，按「配對新手機」，再用手機掃描電腦畫面上的 QR code。')}</Text>
 
         <Pressable onPress={() => setScannerOpen(true)} accessibilityRole="button" style={({ pressed }) => [styles.primary, pressed && styles.pressedButton]}>
@@ -219,36 +260,7 @@ export function ConnectSheet({ store, state, onClose, showHelp, copyText }: Prop
           </>
         ) : null}
 
-        {state.hosts.length > 0 ? (
-          <>
-            <Text style={styles.section}>{t('你的電腦')}</Text>
-            <View style={styles.card}>
-              {state.hosts.map((h, i) => {
-                return (
-                  <SwipeRow key={h.url} label={t('移除')} testID={`swipe-host-${h.url}`} onDelete={() => void store.removeHost(h.url)}>
-                  <Pressable
-                    onPress={() => void use(h.url, h.label)}
-                    onLongPress={() => hostMenu(h.url, h.label)}
-                    accessibilityRole="button"
-                    accessibilityLabel={t('電腦 {p0}', { p0: h.label })}
-                    accessibilityState={{ selected: current === h.url }}
-                    style={({ pressed }) => pressed && { backgroundColor: C.pressed }}>
-                    <View style={styles.row}>
-                      <SymbolView name="desktopcomputer" size={18} tintColor={C.secondary} />
-                      <Text style={[styles.rowTitle, styles.flex]}>{h.label}</Text>
-                      {current === h.url ? <Text style={styles.using}>{t('使用中')}</Text> : null}
-                      <Pressable onPress={() => hostMenu(h.url, h.label)} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('{p0} 的選項', { p0: h.label })}>
-                        <SymbolView name="ellipsis.circle" size={20} tintColor={C.secondary} />
-                      </Pressable>
-                    </View>
-                    {i < state.hosts.length - 1 ? <View style={styles.separator} /> : null}
-                  </Pressable>
-                  </SwipeRow>
-                );
-              })}
-            </View>
-          </>
-        ) : null}
+        {manage ? null : hostList}
 
         <Pressable
           onPress={() => setHelpOpen((v) => !v)}

@@ -364,6 +364,7 @@ export const en: Record<string, string> = {
   "跳過：{p0}（你直接打字了）": "Skipped: {p0} (you typed a new message)",
   "加上": "Set",
   "不改了": "Keep as is",
+  "改用這台電腦": "Use this computer",
   "現在連不到你的電腦。確認電腦開著、小幫手在執行，手機和電腦連在同一個網路。": "Can't reach your computer right now. Make sure it's on, the helper is running, and the phone is on the same network.",
   "正在連線到你的電腦…": "Connecting to your computer…",
   "照片 {p0}": "Photo {p0}",
