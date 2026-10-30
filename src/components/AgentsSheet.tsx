@@ -258,6 +258,8 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
   const [name, setName] = useState(existing?.name ?? '');
   const [intro, setIntro] = useState(existing?.intro ?? '');
   const [emoji, setEmoji] = useState(existing?.emoji ?? '');
+  const [avatar, setAvatar] = useState<string | null>(existing?.avatar ?? null);
+  const [pickingAvatar, setPickingAvatar] = useState(false);
   const [talk, setTalk] = useState(existing?.talk ?? 0.5);
   const [card, setCard] = useState<AgentCard | null>(existing ? existing.card : null);
   const [autoJoin, setAutoJoin] = useState(existing?.autoJoin ?? false);
@@ -279,6 +281,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
       setName(d.name);
       setIntro(d.intro);
       setEmoji(d.emoji);
+      setAvatar(d.avatar);
       setTalk(d.talk);
       setCard(d.card);
     } catch (e) {
@@ -290,7 +293,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
 
   async function save() {
     if (!name.trim()) return;
-    await store.saveAgent({ name: name.trim(), intro: intro.trim(), emoji, talk, card: fromCatalog ? (existing?.card ?? null) : card, autoJoin, hostUrl: model.hostUrl, model: model.model }, id);
+    await store.saveAgent({ name: name.trim(), intro: intro.trim(), emoji, avatar, talk, card: fromCatalog ? (existing?.card ?? null) : card, autoJoin, hostUrl: model.hostUrl, model: model.model }, id);
     onClose();
   }
 
@@ -348,7 +351,10 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
         {drafted ? (
           <>
             <View style={styles.hero}>
-              <AgentAvatar id={existing?.catalogId ?? existing?.id ?? name} emoji={emoji} photo={existing?.photo} size={64} />
+              <AgentAvatar id={avatar ?? existing?.catalogId ?? existing?.id ?? name} emoji={emoji} photo={existing?.photo} size={64} />
+              <Pressable onPress={() => setPickingAvatar(true)} hitSlop={8} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+                <Text style={styles.link}>{t('換頭像')}</Text>
+              </Pressable>
             </View>
             <Field label={t('名字')} value={name} onChange={setName} />
             <Field label={t('一句話介紹')} value={intro} onChange={setIntro} multiline />
@@ -480,6 +486,54 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
           </>
         ) : null}
       </ScrollView>
+      <Modal visible={pickingAvatar} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setPickingAvatar(false)}>
+        <AvatarPicker
+          emoji={emoji}
+          onClose={() => setPickingAvatar(false)}
+          onPick={(id) => {
+            setAvatar(id);
+            setPickingAvatar(false);
+          }}
+        />
+      </Modal>
+    </View>
+  );
+}
+
+/** 換頭像：從圖鑑的像素頭像挑一張（可以搜尋），或用 emoji */
+function AvatarPicker({ emoji, onPick, onClose }: { emoji: string; onPick: (id: string | null) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const list = useMemo(() => searchCatalog(query), [query]);
+  return (
+    <View style={styles.sheet}>
+      <Header title={t('換頭像')} right={t('完成')} onRight={onClose} />
+      <View style={styles.searchBox}>
+        <SymbolView name="magnifyingglass" size={15} tintColor={C.secondary} />
+        <TextInput value={query} onChangeText={setQuery} placeholder={t('搜尋角色')} placeholderTextColor={C.placeholder} style={styles.searchInput} clearButtonMode="while-editing" accessibilityLabel={t('搜尋頭像')} />
+      </View>
+      <FlatList
+        data={list}
+        keyExtractor={(e) => e.id}
+        numColumns={4}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        initialNumToRender={24}
+        contentContainerStyle={styles.grid}
+        ListHeaderComponent={
+          <Pressable onPress={() => onPick(null)} accessibilityRole="button" style={({ pressed }) => [styles.emojiOption, pressed && styles.pressed]}>
+            <AgentAvatar id="emoji" emoji={emoji} size={40} />
+            <Text style={styles.link}>{t('用 emoji')}</Text>
+          </Pressable>
+        }
+        renderItem={({ item }) => (
+          <Pressable onPress={() => onPick(item.id)} accessibilityRole="button" accessibilityLabel={t('用 {p0} 的頭像', { p0: entryName(item) })} style={({ pressed }) => [styles.gridCell, pressed && styles.pressed]}>
+            <AgentAvatar id={item.id} emoji={item.e} size={56} />
+            <Text style={styles.gridName} numberOfLines={1}>
+              {entryName(item)}
+            </Text>
+          </Pressable>
+        )}
+      />
     </View>
   );
 }
@@ -601,4 +655,8 @@ const styles = StyleSheet.create({
   smallButton: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: C.accentFill },
   smallButtonText: { fontSize: 15, fontWeight: '600', color: '#fff' },
   disabled: { opacity: 0.4 },
+  grid: { paddingHorizontal: 8, paddingBottom: 48 },
+  gridCell: { flex: 1 / 4, alignItems: 'center', gap: 4, paddingVertical: 10 },
+  gridName: { ...TEXT.meta, color: C.secondary, maxWidth: 80 },
+  emojiOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
 });

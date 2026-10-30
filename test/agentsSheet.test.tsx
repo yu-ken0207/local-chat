@@ -135,3 +135,21 @@ test('第三方授權：兩份 MIT 全文', async () => {
   expect(screen.getAllByText(/MIT License/).length).toBeGreaterThanOrEqual(2);
   expect(within(screen.getByText('圖鑑裡的角色來自下面兩個開放原始碼專案（MIT 授權）。').parent!)).toBeTruthy();
 });
+
+test('換頭像：從圖鑑挑一張（可以搜尋），也可以改回 emoji', async () => {
+  const { store } = await setup();
+  await store.saveAgent({ name: '財務長', intro: '看預算' });
+  await render(<AgentsView store={store} onClose={jest.fn()} />);
+  await fireEvent.press(await screen.findByLabelText('財務長，看預算'));
+  await fireEvent.press(await screen.findByText('換頭像'));
+  await fireEvent.changeText(screen.getByLabelText('搜尋頭像'), 'historian');
+  const name = getEntry('agency:academic/academic-historian')!.n[0];
+  await fireEvent.press(await screen.findByLabelText(`用 ${name} 的頭像`));
+  await fireEvent.press(screen.getByText('儲存'));
+  await waitFor(() => expect(store.getState().myAgents[0].avatar).toBe('agency:academic/academic-historian'));
+  await fireEvent.press(await screen.findByLabelText('財務長，看預算'));
+  await fireEvent.press(await screen.findByText('換頭像'));
+  await fireEvent.press(await screen.findByText('用 emoji'));
+  await fireEvent.press(screen.getByText('儲存'));
+  await waitFor(() => expect(store.getState().myAgents[0].avatar).toBeNull());
+});

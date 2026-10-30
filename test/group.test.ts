@@ -1,4 +1,4 @@
-import { PromptStore } from '../src/agents/catalog';
+import { PromptStore, searchCatalog } from '../src/agents/catalog';
 import { ChatStore, ROLE_TRUNCATED } from '../src/state/chatStore';
 import { DEFAULT_GROUP, Repo, type Agent } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -282,7 +282,10 @@ describe('Agent（設定頁）', () => {
     const draft = { name: '挑剔財務長', intro: '每筆錢都要問清楚', expertise: '預算', stance: '保守', style: '直接', blindSpot: '忽略長期價值', emoji: '💼', talk: 0.7 };
     host.reply = (body: any) => ({ lines: [{ message: { content: JSON.stringify(draft) }, done: false }, done] });
     const got = await store.generateAgent('一個愛挑毛病的財務長');
-    expect(got).toEqual({ name: '挑剔財務長', intro: '每筆錢都要問清楚', emoji: '💼', talk: 0.7, card: { expertise: '預算', stance: '保守', style: '直接', blindSpot: '忽略長期價值' } });
+    // 頭像：圖鑑裡名字或專長最接近的角色
+    const avatar = (searchCatalog('挑剔財務長')[0] ?? searchCatalog('預算')[0])?.id ?? null;
+    expect(avatar).not.toBeNull();
+    expect(got).toEqual({ avatar, name: '挑剔財務長', intro: '每筆錢都要問清楚', emoji: '💼', talk: 0.7, card: { expertise: '預算', stance: '保守', style: '直接', blindSpot: '忽略長期價值' } });
     expect(net.chatBodies().at(-1).format.required).toContain('blindSpot');
     await store.generateAgent('一個愛挑毛病的財務長', '挑剔財務長');
     expect(net.chatBodies().at(-1).messages[1].content).toContain('上一個生成的是「挑剔財務長」');

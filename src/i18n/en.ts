@@ -640,4 +640,9 @@ export const en: Record<string, string> = {
   "還有分歧": "Still disagree on",
   "釘在最上面": "Pin to top",
   "釘選的結論：{p0}，點一下看完整內容": "Pinned conclusion: {p0}. Tap to see all of it",
+  "換頭像": "Change picture",
+  "搜尋角色": "Search characters",
+  "搜尋頭像": "Search pictures",
+  "用 emoji": "Use emoji",
+  "用 {p0} 的頭像": "Use {p0}'s picture",
 };

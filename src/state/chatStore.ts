@@ -194,7 +194,7 @@ export type ChatState = {
 };
 
 /** 一句話生成、還沒存的角色卡 */
-export type AgentDraft = Pick<Agent, 'name' | 'intro' | 'emoji' | 'talk'> & { card: AgentCard };
+export type AgentDraft = Pick<Agent, 'name' | 'intro' | 'emoji' | 'talk' | 'avatar'> & { card: AgentCard };
 
 type PendingUndo = { id: number; message: string; undo: () => Promise<void>; commit?: () => Promise<void> };
 
@@ -1598,7 +1598,10 @@ export class ChatStore {
     }
     const str = (x: unknown) => (typeof x === 'string' ? x.trim() : '');
     if (!str(v.name)) throw new Error(t('AI 沒有生成角色，換個說法再試一次。'));
+    // 頭像：圖鑑裡名字或專長最接近的那個角色的像素頭像
+    const avatar = [str(v.name), ...str(v.expertise).split(/[、，,\s]+/)].filter(Boolean).map((q) => searchCatalog(q)[0]).find(Boolean)?.id ?? null;
     return {
+      avatar,
       name: str(v.name).slice(0, 30),
       intro: str(v.intro),
       emoji: str(v.emoji) || '🙂',
