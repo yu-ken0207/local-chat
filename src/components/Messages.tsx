@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
@@ -34,11 +35,17 @@ function moreActions(onMore?: () => void) {
   return onMore ? { accessibilityActions: [{ name: 'more', label: t('更多動作') }], onAccessibilityAction: () => onMore() } : {};
 }
 
+/** 長按訊息：先輕震一下（跟 iPhone 長按一樣的手感），再開選單 */
+function longPress(open: () => void) {
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  open();
+}
+
 /** 對話裡的一則訊息：› 是你說的、• 是 AI、■ 是錯誤或提示 */
 export function MessageView({ message: m, streaming, ...h }: { message: Message; streaming: Streaming | null } & Handlers) {
   if (m.role === 'user') {
     return (
-      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.userBlock}>
           <Text style={styles.userMark} {...decorative}>›</Text>
           <View style={styles.body}>
@@ -78,7 +85,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
     const toolTurn = !live && !content && !!m.toolCalls?.length;
     if (toolTurn && !thinking && !h.extra) return null;
     return (
-      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => !live && h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+      <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => !live && longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
         <View style={styles.aiBlock}>
           <Text style={styles.aiMark} {...decorative}>•</Text>
           <View style={styles.body}>
@@ -110,7 +117,7 @@ export function MessageView({ message: m, streaming, ...h }: { message: Message;
   }
 
   return (
-    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => h.onLongPress?.(m)} delayLongPress={350} testID={`message-${m.id}`}>
+    <Pressable accessible={false} onPress={() => Keyboard.dismiss()} onLongPress={() => longPress(() => h.onLongPress?.(m))} delayLongPress={350} testID={`message-${m.id}`}>
       <View style={styles.aiBlock}>
         <Text style={[styles.aiMark, m.role === 'error' && styles.red]} {...decorative}>■</Text>
         <View style={styles.body}>

@@ -178,8 +178,10 @@ export function Composer(p: Props) {
           <IconButton
             name="plus"
             label={p.canAttach ? t('附加照片') : t('附加照片（目前的模型看不懂圖片）')}
-            onPress={openAttach}
-            disabled={!p.canAttach || p.busy || photos.length >= MAX_PHOTOS}
+            // 模型看不懂圖：灰的但按得到，按了說原因（不然按了沒反應，不知道為什麼）
+            onPress={p.canAttach ? openAttach : () => setHint(t('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。'))}
+            dimmed={!p.canAttach}
+            disabled={p.busy || photos.length >= MAX_PHOTOS}
           />
           <TextInput
             ref={inputRef}
@@ -235,6 +237,7 @@ function IconButton({
   label,
   onPress,
   disabled,
+  dimmed,
   size = 24,
   color,
 }: {
@@ -242,19 +245,22 @@ function IconButton({
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  /** 看起來是灰的、但還能按（按了說為什麼不能用） */
+  dimmed?: boolean;
   size?: number;
   color?: ColorValue;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
+      // 只在真的停用時才給 disabled：Pressable 收到 false 也會蓋掉 accessibilityState 的 disabled（灰掉但能按的就說不出來）
+      disabled={disabled || undefined}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
+      accessibilityState={{ disabled: !!disabled || !!dimmed }}
       style={({ pressed }) => [styles.iconButton, pressed && styles.pressedIcon]}>
-      <SymbolView name={name} size={size} tintColor={disabled ? C.tertiary : (color ?? C.label)} />
+      <SymbolView name={name} size={size} tintColor={disabled || dimmed ? C.tertiary : (color ?? C.label)} />
     </Pressable>
   );
 }

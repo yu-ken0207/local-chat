@@ -373,6 +373,7 @@ export const en: Record<string, string> = {
   "你按了復原：{p0}": "You pressed Undo: {p0}",
   "AI 沒有回答。": "The AI didn't answer.",
   "更多動作": "More actions",
+  "目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。": "This model can't read images. Switch to one that can to attach photos.",
   "回答好了": "Answer ready",
   "沒有得到回答": "No answer",
   "做好了": "Done",

@@ -153,6 +153,9 @@ describe('輸入列', () => {
       await store.selectModel(A, 'llama3:latest');
     });
     expect(disabled('附加照片（目前的模型看不懂圖片）')).toBe(true);
+    // 灰的但按得到：按了說為什麼不能附照片
+    await fireEvent.press(screen.getByLabelText('附加照片（目前的模型看不懂圖片）'));
+    expect(screen.getByText('目前的模型看不懂圖片。換一個看得懂圖的模型，才能附照片。')).toBeTruthy();
   });
 
   test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {
@@ -207,6 +210,8 @@ describe('選單', () => {
     await fireEvent(screen.getByTestId(`message-${mine.id}`), 'longPress');
     const opts = sheet.mock.calls[0][0];
     expect(opts.options[opts.destructiveButtonIndex as number]).toBe('刪除');
+    // 長按時輕震一下
+    expect(jest.requireMock('expo-haptics').impactAsync).toHaveBeenCalled();
   });
 });
 
