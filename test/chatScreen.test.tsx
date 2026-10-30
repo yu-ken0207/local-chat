@@ -53,9 +53,9 @@ async function send(store: ChatStore, text: string, wait: 'answer' | 'streaming'
   else await waitFor(() => expect(store.getState().streaming).not.toBeNull());
 }
 
-/** 訊息區的捲動事件：內容 2000、畫面 600 高；inset 是鍵盤開著時的底部留白 */
-const scrollAt = (y: number, inset = 0) => ({
-  nativeEvent: { contentOffset: { x: 0, y }, contentSize: { width: 390, height: 2000 }, contentInset: { top: 0, left: 0, right: 0, bottom: inset }, layoutMeasurement: { width: 390, height: 600 } },
+/** 訊息區的捲動事件：畫面 600 高、內容預設 2000 高；inset 是鍵盤開著時的底部留白 */
+const scrollAt = (y: number, inset = 0, height = 2000) => ({
+  nativeEvent: { contentOffset: { x: 0, y }, contentSize: { width: 390, height }, contentInset: { top: 0, left: 0, right: 0, bottom: inset }, layoutMeasurement: { width: 390, height: 600 } },
 });
 
 // 第一個測試要先載入所有模組，比較慢
@@ -458,10 +458,15 @@ describe('鍵盤與捲動', () => {
     await send(store, '寫一篇長文', 'streaming');
     jest.spyOn(ScrollView.prototype as any, 'scrollToEnd').mockImplementation(() => {});
     const list = screen.getByTestId('transcript');
-    // 內容長了一大段，捲動位置還沒跟上；這時程式捲動送來的事件不算使用者捲上去
+    // 內容長了一大段（2400），捲動位置還沒跟上（離最底 400）；這時程式捲動送來的事件不算使用者捲上去
     await fireEvent(list, 'contentSizeChange', 390, 2400);
-    await fireEvent(list, 'scroll', scrollAt(1400));
+    await fireEvent(list, 'scroll', scrollAt(1400, 0, 2400));
+    await fireEvent(list, 'momentumScrollEnd', scrollAt(2000, 0, 2400));
     expect(screen.queryByLabelText('捲到最新')).toBeNull();
+    // 對照：同樣離最底 400，換成手指拖的就會出現
+    await fireEvent(list, 'scrollBeginDrag', scrollAt(1400, 0, 2400));
+    await fireEvent(list, 'scrollEndDrag', scrollAt(1400, 0, 2400));
+    expect(screen.getByLabelText('捲到最新')).toBeTruthy();
     store.stop();
   });
 

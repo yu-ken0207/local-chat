@@ -272,11 +272,14 @@ describe('接上 App', () => {
     expect(screen.getByText('結束（AI 猜的） · 地點：三年二班教室 · 行事曆：家庭（AI 猜的）')).toBeTruthy();
     // 讀螢幕唸完整那句，也唸這行
     expect(screen.getByRole('checkbox', { name: /三年二班教室/ })).toBeTruthy();
-    // 改過的就不再標猜的
+    // 改過的照改過的寫；自己選過的行事曆就不再標猜的（沒改的結束時間照樣標）
     await fireEvent.press(screen.getAllByText('修改')[1]);
     await fireEvent.changeText(screen.getByLabelText('地點'), '禮堂');
+    const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementationOnce((o, cb) => cb(o.options.indexOf('Work')));
+    await fireEvent.press(screen.getByLabelText('行事曆：家庭，點一下選'));
+    sheet.mockRestore();
     await fireEvent.press(screen.getByText('好'));
-    expect(screen.getByText('結束（AI 猜的） · 地點：禮堂 · 行事曆：家庭（AI 猜的）')).toBeTruthy();
+    expect(screen.getByText('結束（AI 猜的） · 地點：禮堂 · 行事曆：Work')).toBeTruthy();
     await fireEvent.press(screen.getByText('加入 2 個'));
     await waitFor(() => expect(api.created).toHaveLength(2));
   });

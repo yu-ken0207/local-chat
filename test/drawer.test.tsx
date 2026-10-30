@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Animated } from 'react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { claimSwipe, drawerWidth, project, rubberband, shouldOpen } from '../src/components/SideDrawer';
@@ -126,21 +126,36 @@ test('側邊欄最下面的「設定」不放「›」（它是從下面升起�
 });
 
 test('開了「減少動態效果」：側邊欄照樣打開、關上（改用淡入淡出，不滑動）', async () => {
-  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
-  await setup();
-  await act(async () => {});
-  await fireEvent.press(screen.getByLabelText('對話清單'));
-  expect(await screen.findByLabelText('搜尋對話')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('關閉對話清單'));
-  await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
+  // RN 的測試環境本來就把它換成假的（jest.fn）：記下原本的回傳，結束時放回去（mockRestore 會讓它變成什麼都不回）
+  const reduce = AccessibilityInfo.isReduceMotionEnabled as jest.Mock;
+  const original = reduce.getMockImplementation();
+  reduce.mockResolvedValue(true);
+  const spring = jest.spyOn(Animated, 'spring');
+  try {
+    await setup();
+    await act(async () => {});
+    await fireEvent.press(screen.getByLabelText('對話清單'));
+    expect(await screen.findByLabelText('搜尋對話')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('關閉對話清單'));
+    await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
+    // 不滑動：開關都沒用到彈簧（滑動就是彈簧）
+    expect(spring).not.toHaveBeenCalled();
+  } finally {
+    // 不要讓後面的測試都在減少動態效果模式下跑
+    reduce.mockImplementation(original!);
+    spring.mockRestore();
+  }
 });
 
-test('點右邊變暗的地方關上；按「對話」也能打開', async () => {
+test('點右邊變暗的地方關上；按「對話」也能打開（一般模式用彈簧滑動）', async () => {
+  const spring = jest.spyOn(Animated, 'spring');
   await setup();
   await fireEvent.press(screen.getByLabelText('對話清單'));
   expect(await screen.findByLabelText('搜尋對話')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('關閉對話清單'));
   await waitFor(() => expect(screen.queryByLabelText('搜尋對話')).toBeNull());
+  expect(spring).toHaveBeenCalled();
+  spring.mockRestore();
 });
 
 test('在清單裡開新對話或選一段對話後，清單自動關上', async () => {

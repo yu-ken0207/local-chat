@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
@@ -10,12 +10,14 @@ import { memoryDb } from './helpers/nodeDb';
 // （對話長、表格程式碼多時，每一格重畫全部舊回答會拖慢串流）
 
 const mockRenders: string[] = [];
+const mockProps: Record<string, any> = {};
 jest.mock('../src/components/Markdown', () => {
   const actual = jest.requireActual('../src/components/Markdown');
   const React = require('react');
   // 包一層一樣用 memo 的替身：只有 props 變了才會進來，記下是哪一段
   const Counted = React.memo((p: { text: string }) => {
     mockRenders.push(p.text);
+    mockProps[p.text] = p;
     return React.createElement(actual.Markdown, p);
   });
   return { ...actual, Markdown: Counted };
@@ -51,4 +53,24 @@ test('AI 串流時，舊回答的 Markdown 不會跟著重畫', async () => {
   await p;
   await waitFor(() => expect(store.getState().streaming).toBeNull());
   expect(mockRenders.filter((t) => t === old)).toEqual([]);
+});
+
+test('回答本文和思考過程的 Markdown 都拿到點按、長按的函式（左右捲裡面接手指要用）', async () => {
+  // 沒傳的話，左右捲裡的 Pressable 照樣先搶到手指，但沒有長按：長按程式碼、表格完全沒反應
+  const net = new FakeOllamaNet();
+  const host = net.addHost(A, { models: [{ name: 'gemma4:31b', think: 'toggle' }] });
+  const store = new ChatStore({ repo: new Repo(memoryDb()), client: net.client, wifiIp: async () => null, throttleMs: 5, autoScan: false });
+  await store.init();
+  await store.addHost('192.168.1.20');
+  await store.loadModels(A);
+  await store.selectModel(A, 'gemma4:31b');
+  await store.setThink(true);
+  host.reply = () => ({ lines: [{ message: { content: '', thinking: '想一想' }, done: false }, { message: { content: '答案' }, done: false }, { message: { content: '' }, done: true }] });
+  await store.send('問題');
+  await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+  await fireEvent.press(screen.getByLabelText('展開思考過程'));
+  for (const text of ['答案', '想一想']) {
+    expect(typeof mockProps[text]?.onLongPress).toBe('function');
+    expect(typeof mockProps[text]?.onPress).toBe('function');
+  }
 });

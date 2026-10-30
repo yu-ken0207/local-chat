@@ -783,11 +783,23 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     await store.restoreSession(keep.id);
     await store.dismissUndo(); // 提示時間到
     expect((await store.listSessions()).map((s) => s.preview)).toContain('回答：a');
-    expect((await store.listSessions()).map((s) => s.preview)).not.toContain('回答：b');
+    // 本來就在最近刪除的那段（b、c）真的刪掉了
+    expect(await repo.getSession(old)).toBeNull();
     expect(await repo.countTrash()).toBe(0);
     expect(await repo.listHosts()).toEqual([]);
-    // 目前那段（清除後新開的）沒被換掉
-    expect(await repo.getSession(store.getState().session!.id)).not.toBeNull();
+  });
+
+  test('清除全部資料後救回、打開比較舊的那段：時間到也不會被換到別段', async () => {
+    const { store } = await ready();
+    await store.send('a');
+    const older = store.getState().session!.id;
+    await store.newSession();
+    await store.send('b');
+    await store.resetAll();
+    for (const s of await store.listTrash()) await store.restoreSession(s.id);
+    await store.openSession(older);
+    await store.dismissUndo(); // 提示時間到
+    expect(store.getState().session?.id).toBe(older);
   });
 
   test('清除全部資料後救回一段、接著又刪掉它：照樣進最近刪除，按復原救得回來', async () => {
