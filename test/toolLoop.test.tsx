@@ -560,14 +560,21 @@ describe('清單卡（一次好幾件）', () => {
     expect(screen.getAllByText(/^沒有做：加行程「/)).toHaveLength(3);
   });
 
-  test('畫面：改到一半主按鈕先按不了並說明；全部取消勾選時只剩「都不要」', async () => {
+  test('畫面：改到一半主按鈕和別件的「修改」先按不了並說明；全部取消勾選時只剩「都不要」', async () => {
     const { store } = await three();
     await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
     await fireEvent.press(screen.getAllByText('修改')[0]);
     expect(screen.getByRole('button', { name: '加入 3 個' }).props.accessibilityState).toMatchObject({ disabled: true });
-    expect(screen.getByText('先按「好」或「取消」結束修改')).toBeTruthy();
+    // 直接換去改別件，前一件還沒按「好」的修改會不見
+    const others = screen.getAllByRole('button', { name: '修改' });
+    expect(others).toHaveLength(2);
+    for (const b of others) expect(b.props.accessibilityState).toMatchObject({ disabled: true });
+    // 提示寫的是畫面上真的有的按鈕
+    expect(screen.getByText('先按「好」或「不改了」結束修改')).toBeTruthy();
+    expect(screen.getByText('不改了')).toBeTruthy();
     await fireEvent.press(screen.getByText('好'));
-    expect(screen.queryByText('先按「好」或「取消」結束修改')).toBeNull();
+    expect(screen.queryByText('先按「好」或「不改了」結束修改')).toBeNull();
+    expect(screen.getAllByRole('button', { name: '修改' })[1].props.accessibilityState?.disabled).toBeFalsy();
     for (const name of [/校慶運動會/, /親師座談會/, /戶外教學/]) await fireEvent.press(screen.getByRole('checkbox', { name }));
     expect(screen.getByText('都不要')).toBeTruthy();
     expect(screen.queryByText('全部不要')).toBeNull();

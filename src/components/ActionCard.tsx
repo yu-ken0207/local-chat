@@ -138,7 +138,8 @@ export function ActionListCard({
                 <Text style={[styles.check, on && { color: C.accent }]}>{on ? '☑' : '☐'}</Text>
                 <Text style={[styles.text, styles.flex, !on && styles.off]}>{tool?.brief?.(input) ?? tool?.describe?.(input) ?? tool?.label ?? a.tool}</Text>
               </Pressable>
-              {tool?.fields && editing !== a.id ? <ActionButton text={t('修改')} onPress={() => setEditing(a.id)} /> : null}
+              {/* 另一件改到一半時先按不了：直接換過去，前一件還沒按「好」的修改會不見 */}
+              {tool?.fields && editing !== a.id ? <ActionButton text={t('修改')} disabled={editing !== null} onPress={() => setEditing(a.id)} /> : null}
             </View>
             {editing === a.id && tool ? (
               <FieldEditor
@@ -186,13 +187,13 @@ export function ActionListCard({
             <>
               {/* 全部取消勾選時主按鈕已經是「都不要」，不再並排一顆「全部不要」 */}
               {chosen.length > 0 ? <ActionButton text={t('全部不要')} onPress={() => setDeclining(true)} /> : null}
-              {/* 改到一半：主按鈕先按不了，並說要先按「好」或「取消」（以前按了沒反應） */}
+              {/* 改到一半：主按鈕先按不了，並說要先按「好」或「不改了」（以前按了沒反應） */}
               <ActionButton text={busy ? t('處理中…') : verb} primary disabled={editing !== null} onPress={() => !busy && void (chosen.length === 0 ? declineAll() : go())} />
             </>
           )}
         </View>
       )}
-      {editing !== null && !progress ? <Text style={[styles.small, styles.dim]}>{t('先按「好」或「取消」結束修改')}</Text> : null}
+      {editing !== null && !progress ? <Text style={[styles.small, styles.dim]}>{t('先按「好」或「不改了」結束修改')}</Text> : null}
     </View>
   );
 }
