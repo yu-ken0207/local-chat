@@ -1019,6 +1019,12 @@ export class ChatStore {
     await this.deps.repo.restoreSessions([id]);
   }
 
+  /** 最近刪除全部救回 */
+  async restoreAllTrash(): Promise<void> {
+    const ids = (await this.listTrash()).map((s) => s.id);
+    if (ids.length > 0) await this.deps.repo.restoreSessions(ids);
+  }
+
   /** 從最近刪除永久刪除（不能復原，畫面上要先確認） */
   async deleteForever(id: string): Promise<void> {
     await this.deps.repo.deleteSession(id);

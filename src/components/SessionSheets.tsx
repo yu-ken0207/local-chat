@@ -207,13 +207,21 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
 
   function menu(s: TrashItem, name: string) {
     chooseOption(name, [t('救回這段對話'), t('永久刪除')], async (i) => {
-      if (i === 0) {
-        await store.restoreSession(s.id);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        reload();
-      }
+      if (i === 0) await restore(s);
       if (i === 1) forever(s, name);
     }, 1);
+  }
+
+  async function restore(s: TrashItem) {
+    await store.restoreSession(s.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    reload();
+  }
+
+  async function restoreAll() {
+    await store.restoreAllTrash();
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    reload();
   }
 
   function emptyAll() {
@@ -231,9 +239,8 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
           <Text style={styles.cancel}>{t('設定')}</Text>
         </Pressable>
         <Text style={styles.title}>{t('最近刪除')}</Text>
-        <Pressable onPress={emptyAll} disabled={!items?.length} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-          <Text style={[styles.cancel, !items?.length && { color: C.tertiary }]}>{t('全部清空')}</Text>
-        </Pressable>
+        {/* 右邊在其他面板是「完成」：不放危險的「全部清空」，改到清單下面 */}
+        <View style={styles.back} />
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
@@ -252,7 +259,9 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
                         </Text>
                         <Text style={styles.preview}>{t('還會保留 {n} 天', { n: daysLeft(s.deletedAt) })}</Text>
                       </View>
-                      <Text style={styles.restore}>{t('救回')}</Text>
+                      <Pressable onPress={() => void restore(s)} hitSlop={12} accessibilityRole="button" accessibilityLabel={t('救回 {p0}', { p0: name })}>
+                        <Text style={styles.restore}>{t('救回')}</Text>
+                      </Pressable>
                     </View>
                     {i < items.length - 1 ? <View style={styles.separator} /> : null}
                   </Pressable>
@@ -261,13 +270,24 @@ function TrashView({ store, onBack }: { store: ChatStore; onBack: () => void }) 
             })
           )}
         </View>
-        <Text style={styles.footnote}>{t('點一下可以救回或永久刪除。')}</Text>
+        {items?.length ? (
+          <View style={styles.trashActions}>
+            <Pressable onPress={() => void restoreAll()} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+              <Text style={styles.cancel}>{t('全部救回')}</Text>
+            </Pressable>
+            <Pressable onPress={emptyAll} hitSlop={10} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+              <Text style={[styles.cancel, { color: C.errorText }]}>{t('全部清空')}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+        <Text style={styles.footnote}>{t('按「救回」就救回來；點一下那一列也可以永久刪除。')}</Text>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  trashActions: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
   sheet: { flex: 1, backgroundColor: C.groupedBg },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 8 },
   title: { fontSize: 17, fontWeight: '600', color: C.label },

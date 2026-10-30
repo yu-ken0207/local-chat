@@ -105,8 +105,8 @@ test('最近刪除：可以救回、永久刪除（先確認）、全部清空�
   expect(await screen.findByLabelText('已刪除的對話 天氣')).toBeTruthy();
   expect(screen.getAllByText('還會保留 30 天')).toHaveLength(2);
 
-  pickAction(0);
-  await fireEvent.press(screen.getByLabelText('已刪除的對話 天氣'));
+  // 「救回」是真的按鈕：按了直接救回，不跳選單
+  await fireEvent.press(screen.getByLabelText('救回 天氣'));
   await waitFor(() => expect(screen.queryByLabelText('已刪除的對話 天氣')).toBeNull());
   expect((await store.listSessions()).map((s) => s.title)).toContain('天氣');
 
@@ -120,6 +120,21 @@ test('最近刪除：可以救回、永久刪除（先確認）、全部清空�
   // 關上設定回到對話清單，救回的對話在清單裡
   await fireEvent.press(await screen.findByText('完成'));
   expect(await screen.findByLabelText('對話 天氣')).toBeTruthy();
+});
+
+test('最近刪除：全部救回；全部清空在清單下面（標題列右邊不放危險按鈕）', async () => {
+  const { store } = await setup();
+  const ids = (await store.listSessions()).map((s) => s.id);
+  await store.deleteSession(ids[0]);
+  await store.deleteSession(ids[1]);
+  await store.dismissUndo();
+  await openSettings();
+  await fireEvent.press(await screen.findByLabelText('最近刪除，2 段'));
+  expect(await screen.findByText('全部清空')).toBeTruthy();
+  await fireEvent.press(screen.getByText('全部救回'));
+  await waitFor(() => expect(screen.getByText(/最近刪除是空的/)).toBeTruthy());
+  expect(screen.queryByText('全部清空')).toBeNull();
+  expect((await store.listTrash()).length).toBe(0);
 });
 
 test('清單裡的「新對話」', async () => {
