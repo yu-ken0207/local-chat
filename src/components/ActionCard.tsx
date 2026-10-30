@@ -526,8 +526,9 @@ function QuestionCard({ action, onApprove, onDecline }: { action: Action } & Han
             <ActionButton key={o} text={o} onPress={() => void answer(o)} />
           ))}
           <ActionButton text={t('自己輸入…')} onPress={() => setTyping(true)} />
-          {/* 按鈕間距只有 8：上、左不能補超過鄰居自己補的範圍，不然點選項邊緣會變成「不回答」；它排最後，右、下可以多補 */}
-          <Pressable onPress={() => !busy && void onDecline(action.id, '')} accessibilityRole="button" hitSlop={{ top: 8, bottom: 12, left: 4, right: 12 }} style={styles.skip}>
+          {/* 按鈕間距只有 8，選項上下各補 8、左右各補 4：「不回答」換到第二排時，上面那段空隙已經是選項的，
+              左邊 4 也是鄰居的，所以上 0、左 4；它排最後，右、下可以多補 */}
+          <Pressable onPress={() => !busy && void onDecline(action.id, '')} accessibilityRole="button" hitSlop={{ top: 0, bottom: 12, left: 4, right: 12 }} style={styles.skip}>
             <Text style={[styles.small, styles.dim]}>{t('不回答')}</Text>
           </Pressable>
         </View>

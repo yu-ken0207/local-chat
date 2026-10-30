@@ -543,10 +543,11 @@ describe('問使用者選擇題', () => {
   test('畫面：按不回答（可按範圍不蓋到旁邊的選項）', async () => {
     const { store } = await asked();
     await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
-    // 按鈕間距 8、選項自己左右各補 4：「不回答」往左、往上補超過就會蓋到選項
+    // 按鈕間距 8、選項上下各補 8、左右各補 4：「不回答」換到第二排時，自己補的加上鄰居補的不能超過間距
     const slop = screen.getByRole('button', { name: '不回答' }).props.hitSlop;
-    expect(slop.left).toBeLessThanOrEqual(4);
-    expect(slop.top).toBeLessThanOrEqual(8);
+    const option = screen.getByRole('button', { name: '早上 9:00' }).props.hitSlop;
+    expect(slop.left + option.right).toBeLessThanOrEqual(8);
+    expect(slop.top + option.bottom).toBeLessThanOrEqual(8);
     await fireEvent.press(screen.getByText('不回答'));
     expect(await screen.findByText('沒有回答')).toBeTruthy();
   });
