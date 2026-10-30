@@ -340,6 +340,16 @@ describe('畫面', () => {
     expect(screen.getByText('–', { includeHiddenElements: true })).toBeTruthy();
   });
 
+  test('凌晨 00:00 照寫 00:00，不會被當成整天', async () => {
+    const ctx = await setup();
+    script(ctx.host, [() => [toolCall('create_event', { title: '搶票', start: '2026-11-05T00:00' }), done], () => [text('好了'), done]]);
+    await render(<ChatScreen store={ctx.store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+    await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '11/5 凌晨 12 點搶票');
+    await fireEvent.press(screen.getByLabelText('送出'));
+    expect(await screen.findByText('開始：11/5（週四）00:00')).toBeTruthy();
+    expect(screen.queryByText(/整天/)).toBeNull();
+  });
+
   test('按復原後最下面那行只是紀錄：沒有「重新回答」，上面 AI 的回答照樣有重新產生', async () => {
     const { store } = await screenWithCard();
     await fireEvent.press(screen.getByText('加入'));

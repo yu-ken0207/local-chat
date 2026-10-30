@@ -199,13 +199,16 @@ export function ActionListCard({
 
 const toText = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 
-/** 確認卡上顯示的值：時間改成白話（11/4（週三）15:00），其他照原樣 */
-function shown(tool: PhoneTool | undefined, key: string, v: unknown): string {
+/**
+ * 確認卡上顯示的值：時間改成白話（11/4（週三）15:00），其他照原樣。
+ * 整天要看 allDay（跟時間選擇器同一個判斷），不能看「00:00」猜：凌晨 12 點的提醒會被寫成「整天」
+ */
+function shown(tool: PhoneTool | undefined, key: string, v: unknown, allDay: boolean): string {
   const format = tool?.inputSchema.properties[key]?.format;
   if (typeof v !== 'string' || !format) return toText(v);
   const d = parseLocal(v);
   if (isNaN(d.getTime())) return v;
-  return fmtEventTime(d, null, format === 'date' || (format === 'date-time' && v.endsWith('T00:00')), getLanguage());
+  return fmtEventTime(d, null, format === 'date' || allDay, getLanguage());
 }
 
 /**
@@ -384,8 +387,8 @@ function ActionCard({ action, tool, onApprove, onDecline }: { action: Action; to
         ? fields
             .filter(([key]) => action.input[key] !== undefined && action.input[key] !== '')
             .map(([key, label]) => (
-              <Text key={key} style={[styles.small, guessed.has(key) ? styles.guessed : styles.dim]} accessibilityLabel={guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: shown(tool, key, action.input[key]) }) : undefined}>
-                {label}：{shown(tool, key, action.input[key])}
+              <Text key={key} style={[styles.small, guessed.has(key) ? styles.guessed : styles.dim]} accessibilityLabel={guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: shown(tool, key, action.input[key], action.input.allDay === true) }) : undefined}>
+                {label}：{shown(tool, key, action.input[key], action.input.allDay === true)}
                 {/* AI 或 App 補上的：不只靠顏色，寫明是猜的 */}
                 {guessed.has(key) ? <Text style={styles.guessedTag}>{t('（AI 猜的）')}</Text> : null}
               </Text>
