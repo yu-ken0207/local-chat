@@ -26,9 +26,13 @@ async function setup(questions: string[] = ['你好']) {
   return { net, store, copyText };
 }
 
-const pickAction = (...indexes: number[]) => {
-  const queue = [...indexes];
-  return jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_o, cb) => cb(queue.shift() ?? 99));
+/** 讓選單自動選：給字就照字找（選單項目會增減，照位置選容易選錯），給數字照位置 */
+const pickAction = (...choices: (number | string)[]) => {
+  const queue = [...choices];
+  return jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => {
+    const c = queue.shift();
+    cb(typeof c === 'string' ? o.options.indexOf(c) : (c ?? 99));
+  });
 };
 const swipeDelete = (el: any) => fireEvent(el, 'accessibilityAction', { nativeEvent: { actionName: 'delete' } });
 
@@ -65,7 +69,7 @@ test('只有最後一則回答下方有按鈕', async () => {
 test('回答的「詳細資訊」：原始模型名稱、電腦、速度、時間', async () => {
   const { store } = await setup();
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  pickAction(4);
+  pickAction('詳細資訊');
   await fireEvent(screen.getByTestId(`message-${store.getState().messages[1].id}`), 'longPress');
   expect(alert.mock.calls[0][0]).toBe('詳細資訊');
   const body = alert.mock.calls[0][1] as string;

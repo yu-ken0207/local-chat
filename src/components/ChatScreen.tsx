@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentRef } from 'react';
 import { Alert, Keyboard, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { KeyboardChatScrollView, KeyboardGestureArea, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,14 +11,14 @@ import type { NewPhoto } from '../lib/photos';
 import type { ChatStore } from '../state/chatStore';
 import { useChatState } from '../state/useChat';
 import type { Db } from '../store/db';
-import { isRecordNote, type Attachment, type Message } from '../store/repo';
+import { isRecordNote, isThreadRoot, type Attachment, type Message } from '../store/repo';
 import { APP_NAME } from '../ui/brand';
 import { C, TEXT } from '../ui/theme';
 import { COMPOSER_INPUT_ID, Composer, chooseOption, type PickSource } from './Composer';
 import { ConnectSheet } from './ConnectSheet';
 import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
-import { MessageView, metaLine } from './Messages';
+import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer } from './SideDrawer';
@@ -131,6 +131,13 @@ export function ChatScreen(p: ChatScreenProps) {
     void store.deleteMessage(m.id);
   }
 
+  /** 這則訊息屬於哪一題（使用者那則的 id）：討論串用它當 key */
+  function threadQuestionId(m: Message): string {
+    if (m.role === 'user') return m.id;
+    const i = state.messages.findIndex((x) => x.id === m.id);
+    return state.messages.slice(0, i).filter((x) => x.role === 'user').at(-1)?.id ?? '';
+  }
+
   /** 長按訊息的選單：真的要開才輕震一下（跟 iPhone 長按一樣的手感）；AI 回答中先不開，說一聲 */
   function messageMenu(m: Message) {
     if (state.streaming) {
@@ -138,25 +145,36 @@ export function ChatScreen(p: ChatScreenProps) {
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // 選單項目：[字, 要做的事]；最後一項是刪除（紅字）
+    const menu = (title: string, items: [string, () => void][], destructive = true) =>
+      chooseOption(title, items.map(([text]) => text), (i) => items[i][1](), destructive ? items.length - 1 : undefined);
+    // 討論串帶進來的那一題：只是背景，只能複製
+    if (isThreadRoot(m)) {
+      menu(m.role === 'user' ? t('你的訊息') : t('AI 的回答'), [[t('複製'), () => copy(m.content)]], false);
+      return;
+    }
+    // 討論串（只有一層：討論串裡不能再開）
+    const thread: [string, () => void][] = session?.parentId ? [] : [[state.threads[threadQuestionId(m)]?.count ? t('打開討論串') : t('開討論串'), () => openThread(m.id)]];
     if (m.role === 'user') {
-      chooseOption(t('你的訊息'), [t('複製'), t('編輯並重送'), t('刪除')], (i) => [() => copy(m.content), () => startEdit(m), () => confirmDeleteMessage(m)][i](), 2);
+      menu(t('你的訊息'), [[t('複製'), () => copy(m.content)], [t('編輯並重送'), () => startEdit(m)], ...thread, [t('刪除'), () => confirmDeleteMessage(m)]]);
     } else if (m.role === 'assistant') {
       const hostUrl = state.session?.hostUrl;
       const others = hostUrl ? (state.models[hostUrl]?.list ?? []).map((x) => x.name) : [];
-      chooseOption(t('AI 的回答'), [t('複製'), t('分享'), t('重新產生'), t('換個模型重新產生'), t('詳細資訊'), t('刪除')], (i) =>
+      menu(t('AI 的回答'), [
+        [t('複製'), () => copy(m.content)],
+        [t('分享'), () => void Share.share({ message: m.content })],
+        ...thread,
+        [t('重新產生'), () => confirmLater(m, () => store.regenerate(m.id))],
         [
-          () => copy(m.content),
-          () => void Share.share({ message: m.content }),
-          () => confirmLater(m, () => store.regenerate(m.id)),
+          t('換個模型重新產生'),
           () =>
             hostUrl && others.length > 0
               ? chooseOption(t('用哪個模型重新產生'), others.map(friendlyModelName), (j) => confirmLater(m, () => store.regenerate(m.id, { hostUrl, model: others[j] })))
               : Alert.alert(t('沒有其他模型'), t('這台電腦上只有一個模型。')),
-          () => showDetails(m),
-          () => confirmDeleteMessage(m),
-        ][i](),
-        5
-      );
+        ],
+        [t('詳細資訊'), () => showDetails(m)],
+        [t('刪除'), () => confirmDeleteMessage(m)],
+      ]);
     } else {
       chooseOption(m.role === 'error' ? t('錯誤訊息') : t('提示'), [t('複製'), t('刪除')], (i) => [() => copy(m.content), () => void store.deleteMessage(m.id)][i](), 1);
     }
@@ -195,11 +213,27 @@ export function ChatScreen(p: ChatScreenProps) {
     setTimeout(() => sub.remove(), 2000);
   }, []);
 
-  // 換對話時捲到最下面
+  // 換對話時捲到最下面；從討論串回到原對話時回到剛才看的位置
+  const savedScroll = useRef<{ sessionId: string; y: number; following: boolean } | null>(null);
   useEffect(() => {
+    const saved = savedScroll.current;
+    if (saved && saved.sessionId === state.session?.id) {
+      savedScroll.current = null;
+      follow(saved.following);
+      requestAnimationFrame(() => (saved.following ? scrollRef.current?.scrollToEnd({ animated: false }) : scrollRef.current?.scrollTo({ y: saved.y, animated: false })));
+      return;
+    }
     follow(true);
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: false }));
   }, [state.session?.id]);
+
+  /** 開某一題的討論串（開過就回到那一個）；先記住現在看到哪 */
+  function openThread(messageId: string) {
+    if (!state.session) return;
+    Keyboard.dismiss();
+    savedScroll.current = { sessionId: state.session.id, y: scrollY.current, following: nearBottom.current };
+    void store.openThread(messageId);
+  }
 
   // 空白畫面要講的那台電腦：這段對話用的；還沒綁電腦時（例如剛配對、電腦上沒有模型）看最近加入的那台
   const statusHost = state.session?.hostUrl ?? state.hosts[state.hosts.length - 1]?.url;
@@ -215,7 +249,18 @@ export function ChatScreen(p: ChatScreenProps) {
   }
 
   // 「你按了復原」那種紀錄行不算最後一則：上面 AI 的回答照樣有複製、重新產生
-  const lastIndex = state.messages.findLastIndex((m) => !isRecordNote(m));
+  const lastIndex = state.messages.findLastIndex((m) => !isRecordNote(m) && !isThreadRoot(m));
+  // 討論串的入口：放在那一題那一輪的最後一則後面（下一則是另一題、或已經是最後）
+  const threadAfter = new Map<number, { questionId: string; count: number }>();
+  if (!state.session?.parentId) {
+    let question = '';
+    state.messages.forEach((m, i) => {
+      if (m.role === 'user') question = m.id;
+      const next = state.messages[i + 1];
+      const thread = question ? state.threads[question] : undefined;
+      if (thread && thread.count > 0 && (!next || next.role === 'user')) threadAfter.set(i, { questionId: question, count: thread.count });
+    });
+  }
 
   const session = state.session;
   const model = store.currentModel();
@@ -263,13 +308,18 @@ export function ChatScreen(p: ChatScreenProps) {
     );
   };
   // 還沒取好標題：跟對話清單一樣先用第一句話（不寫「對話」，免得跟左上角的按鈕同一個字）
-  const title = session?.title || state.messages.find((m) => m.role === 'user')?.content.trim() || t('新對話');
+  const inThread = !!session?.parentId;
+  const title = inThread ? t('討論串') : session?.title || state.messages.find((m) => m.role === 'user')?.content.trim() || t('新對話');
   const hasChat = !!session && state.messages.length > 0;
 
-  /** 點標題：改名或刪除這段對話（跟對話清單的 ⋯ 一樣） */
+  /** 點標題：改名或刪除這段對話（跟對話清單的 ⋯ 一樣）；在討論串裡只能刪掉這個討論串 */
   function sessionMenu() {
     // 回答中也能改名、刪除（刪除本來就會先停掉回答）；以前回答中點標題沒反應
     if (!session) return;
+    if (inThread) {
+      chooseOption(title, [t('刪除這個討論串')], () => void store.deleteSession(session.id), 0);
+      return;
+    }
     chooseOption(title, [t('重新命名'), t('刪除這段對話')], (i) => {
       if (i === 0) Alert.prompt(t('重新命名'), undefined, (text) => void store.renameSession(session.id, text), 'plain-text', session.title);
       if (i === 1) void deleteSession(store, session.id);
@@ -286,7 +336,7 @@ export function ChatScreen(p: ChatScreenProps) {
         renderDrawer={() => (
           <SessionList
             store={store}
-            currentId={session?.id ?? null}
+            currentId={session?.parentId ?? session?.id ?? null}
             onClose={() => setListOpen(false)}
             onOpenSettings={() => setAppSettingsOpen(true)}
             showUndo={!appSettingsOpen}
@@ -295,23 +345,36 @@ export function ChatScreen(p: ChatScreenProps) {
         <View style={styles.root}>
           <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
             <View style={styles.headerSide}>
-              <HeaderButton
-                name="list.bullet"
-                text={t('對話')}
-                label={t('對話清單')}
-                onPress={() => {
-                  // 跟用手勢打開一樣先收鍵盤
-                  Keyboard.dismiss();
-                  setListOpen(true);
-                }}
-              />
+              {inThread ? (
+                // 討論串：左上角回到原本那段對話（回到剛才看的位置）
+                <HeaderButton
+                  name="chevron.left"
+                  text={t('對話')}
+                  label={t('回到對話')}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    void store.leaveThread();
+                  }}
+                />
+              ) : (
+                <HeaderButton
+                  name="list.bullet"
+                  text={t('對話')}
+                  label={t('對話清單')}
+                  onPress={() => {
+                    // 跟用手勢打開一樣先收鍵盤
+                    Keyboard.dismiss();
+                    setListOpen(true);
+                  }}
+                />
+              )}
             </View>
             <Pressable
               style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
               onPress={sessionMenu}
               disabled={!hasChat}
               accessibilityRole="button"
-              accessibilityLabel={hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
+              accessibilityLabel={inThread ? t('討論串，點一下可以刪除') : hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
               <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
                 {title}
               </Text>
@@ -371,8 +434,8 @@ export function ChatScreen(p: ChatScreenProps) {
               />
             ) : (
               state.messages.map((m, i) => (
+                <Fragment key={m.id}>
                 <MessageView
-                  key={m.id}
                   message={m}
                   streaming={state.streaming}
                   isLast={i === lastIndex}
@@ -387,6 +450,9 @@ export function ChatScreen(p: ChatScreenProps) {
                   onSwitchVersion={(delta) => void store.switchVersion(m.id, delta)}
                   extra={actionsOf(m)}
                 />
+                {threadAfter.has(i) ? <ThreadLink count={threadAfter.get(i)!.count} onPress={() => openThread(threadAfter.get(i)!.questionId)} /> : null}
+                {isThreadRoot(m) && !(state.messages[i + 1] && isThreadRoot(state.messages[i + 1])) ? <ThreadDivider /> : null}
+                </Fragment>
               ))
             )}
           </KeyboardChatScrollView>

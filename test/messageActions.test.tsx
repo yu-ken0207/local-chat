@@ -27,9 +27,13 @@ async function setup(questions: string[] = []) {
 }
 
 /** ActionSheet 依序選這些選項 */
-function pickActions(...indexes: number[]) {
-  const queue = [...indexes];
-  return jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((_o, cb) => cb(queue.shift() ?? 99));
+/** 讓選單自動選：給字就照字找（選單項目會增減，照位置選容易選錯），給數字照位置 */
+function pickActions(...choices: (number | string)[]) {
+  const queue = [...choices];
+  return jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => {
+    const c = queue.shift();
+    cb(typeof c === 'string' ? o.options.indexOf(c) : (c ?? 99));
+  });
 }
 const msgId = (store: ChatStore, i: number) => store.getState().messages[i].id;
 const longPress = (store: ChatStore, i: number) => fireEvent(screen.getByTestId(`message-${msgId(store, i)}`), 'longPress');
@@ -41,11 +45,11 @@ afterEach(() => jest.restoreAllMocks());
 describe('長按 AI 的回答', () => {
   test('複製、分享', async () => {
     const { store, copyText } = await setup(['你好']);
-    pickActions(0);
+    pickActions('複製');
     await longPress(store, 1);
     expect(copyText).toHaveBeenCalledWith('回答：你好');
     const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' } as any);
-    pickActions(1);
+    pickActions('分享');
     await longPress(store, 1);
     expect(share).toHaveBeenCalledWith({ message: '回答：你好' });
   });
@@ -53,7 +57,7 @@ describe('長按 AI 的回答', () => {
   test('重新產生中間的回答：不用先確認，後面的訊息可以按「復原」拿回來', async () => {
     const { store } = await setup(['第一題', '第二題']);
     const old = msgId(store, 1);
-    pickActions(2);
+    pickActions('重新產生');
     const alert = jest.spyOn(Alert, 'alert');
     await longPress(store, 1);
     expect(alert).not.toHaveBeenCalled();
@@ -85,7 +89,7 @@ describe('長按 AI 的回答', () => {
 
   test('最後一則回答重新產生不用確認', async () => {
     const { store } = await setup(['只有一題']);
-    pickActions(2);
+    pickActions('重新產生');
     const alert = jest.spyOn(Alert, 'alert');
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().streaming).toBeNull());
@@ -95,7 +99,7 @@ describe('長按 AI 的回答', () => {
 
   test('換個模型重新產生：選了 llama3 之後回答標上 llama3', async () => {
     const { store } = await setup(['hi']);
-    pickActions(3, 1); // 換個模型重新產生 → 第二個模型（llama3:latest）
+    pickActions('換個模型重新產生', 1); // 第二個模型（llama3:latest）
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages[1]?.model).toBe('llama3:latest'));
     // 回答下方寫「模型 · 電腦」；輸入列下方只有一台電腦時只寫模型
@@ -105,7 +109,7 @@ describe('長按 AI 的回答', () => {
 
   test('刪除：不用先確認，按「復原」拿回來', async () => {
     const { store } = await setup(['hi']);
-    pickActions(5);
+    pickActions('刪除');
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages).toHaveLength(1));
     await fireEvent.press(screen.getByText('復原'));
@@ -116,14 +120,14 @@ describe('長按 AI 的回答', () => {
 describe('長按自己的訊息', () => {
   test('複製', async () => {
     const { store, copyText } = await setup(['你好']);
-    pickActions(0);
+    pickActions('複製');
     await longPress(store, 0);
     expect(copyText).toHaveBeenCalledWith('你好');
   });
 
   test('編輯並重送：文字放回輸入框、提示會取代之後的訊息，送出後換掉', async () => {
     const { store } = await setup(['原本', '追問']);
-    pickActions(1);
+    pickActions('編輯並重送');
     await longPress(store, 0);
     expect(inputValue()).toBe('原本');
     expect(screen.getByText('編輯中：送出後會取代這則訊息和之後的 3 則')).toBeTruthy();
@@ -140,7 +144,7 @@ describe('長按自己的訊息', () => {
     // RN 0.88 多行輸入框被程式改字時量的是改之前的字：放回四行的訊息只有一行高、清空後停在四行高
     const { store } = await setup(['第一行\n第二行\n第三行\n第四行']);
     const before = screen.getByLabelText('訊息輸入框');
-    pickActions(1);
+    pickActions('編輯並重送');
     await longPress(store, 0);
     const filled = screen.getByLabelText('訊息輸入框');
     expect(filled.props.value).toBe('第一行\n第二行\n第三行\n第四行');
@@ -151,7 +155,7 @@ describe('長按自己的訊息', () => {
 
   test('取消編輯：清空輸入框，不會動到原本的訊息', async () => {
     const { store } = await setup(['原本']);
-    pickActions(1);
+    pickActions('編輯並重送');
     await longPress(store, 0);
     await fireEvent.press(screen.getByText('取消編輯'));
     expect(inputValue()).toBe('');

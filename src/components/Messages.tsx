@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Image, Keyboard, Linking, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 
@@ -209,6 +210,36 @@ export function ActionButton({ text, onPress, primary, disabled }: { text: strin
   );
 }
 
+/** 那一題的討論串入口「討論串（3 則）›」：跟 AI 的回答對齊，放在那一輪最後面 */
+export function ThreadLink({ count, onPress }: { count: number; onPress: () => void }) {
+  return (
+    <View style={styles.aiBlock}>
+      <Text style={[styles.aiMark, styles.invisible]} {...decorative}>•</Text>
+      <Pressable
+        onPress={onPress}
+        hitSlop={{ top: 10, bottom: 10, left: 4, right: 12 }}
+        accessibilityRole="button"
+        accessibilityLabel={t('討論串，問了 {n} 次，點一下打開', { n: count })}
+        style={({ pressed }) => [styles.threadLink, pressed && styles.pressed]}>
+        <SymbolView name="bubble.left.and.bubble.right" size={14} tintColor={C.accent} />
+        <Text style={styles.threadLinkText}>{t('討論串（{n} 則）', { n: count })}</Text>
+        <SymbolView name="chevron.right" size={11} tintColor={C.accent} />
+      </Pressable>
+    </View>
+  );
+}
+
+/** 討論串裡：帶進來的那一題和之後討論的分界 */
+export function ThreadDivider() {
+  return (
+    <View style={styles.threadDivider}>
+      <View style={styles.threadLine} />
+      <Text style={styles.threadDividerText}>{t('以下是討論串')}</Text>
+      <View style={styles.threadLine} />
+    </View>
+  );
+}
+
 /** 回答下方的小字：電腦 · 模型（速度、時間這些進階資訊放在長按的「詳細資訊」） */
 export function metaLine(m: Message): string {
   return [m.model ? friendlyModelName(m.model) : null, m.hostLabel].filter(Boolean).join(' · ');
@@ -332,6 +363,12 @@ const styles = StyleSheet.create({
   dim: { color: C.secondary },
   red: { color: C.errorText },
   pressed: { opacity: 0.6 },
+  invisible: { opacity: 0 },
+  threadLink: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+  threadLinkText: { ...TEXT.small, color: C.accent, fontWeight: '600' },
+  threadDivider: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 },
+  threadLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: C.separator },
+  threadDividerText: { ...TEXT.meta, color: C.secondary },
   thumbs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   thumb: { width: 56, height: 56, borderRadius: 8, backgroundColor: C.bg },
   thinking: { gap: 6 },
