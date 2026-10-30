@@ -224,6 +224,15 @@ describe('會改東西的工具', () => {
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0].status).toBe('undone');
   });
 
+  test('第一輪出了卡片：標題只用使用者的第一句話（不拿按完卡片後 AI 說的話）', async () => {
+    const { store, net } = await askToAdd();
+    await store.declineAction(pending(store)[0].id);
+    await waitFor(() => expect(lastText(store)).toBe('已經加好了（no）'));
+    await store.titleTask;
+    expect(net.titleBodies()).toHaveLength(1);
+    expect(net.titleBodies()[0].messages[1].content).toBe('使用者：下週三下午三點帶小孩看牙醫');
+  });
+
   test('修改後加入：照改過的做，並告訴模型改了什麼', async () => {
     const { store, cal, net } = await askToAdd();
     await store.approveAction(pending(store)[0].id, { start: '2026-11-05T15:00' });

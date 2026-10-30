@@ -232,6 +232,7 @@ export const en: Record<string, string> = {
   "已停止": "Stopped",
   "沒有得到回答：{p0}": "No reply: {p0}",
   "使用者：{p0}\nAI：{p1}": "User: {p0}\nAI: {p1}",
+  "使用者：{p0}": "User: {p0}",
   "已刪除 {p0} 段對話": "Deleted {p0} chat(s)",
   "已清除全部資料": "All data erased",
   "已從備份還原": "Restored from backup",

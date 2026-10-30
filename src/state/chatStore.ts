@@ -1608,8 +1608,12 @@ export class ChatStore {
   private async autoTitle(sessionId: string, url: string, model: string, info: ModelInfo | undefined): Promise<void> {
     const { repo } = this.deps;
     const msgs = await repo.listMessages(sessionId);
-    const question = msgs.find((m) => m.role === 'user')?.content ?? '';
-    const answer = msgs.find((m) => m.role === 'assistant' && m.content.trim())?.content ?? '';
+    const first = msgs.findIndex((m) => m.role === 'user');
+    const question = msgs[first]?.content ?? '';
+    // 第一輪叫了工具（出了卡片）：之後 AI 的話是看你按了什麼才說的（「沒有加」「改成 11/27」），
+    // 拿來取標題會變成「新增失敗」「日期錯誤」這種誤導的標題，只用你的第一句話
+    const usedTools = !!msgs.slice(first + 1).find((m) => m.role === 'assistant')?.toolCalls?.length;
+    const answer = usedTools ? '' : (msgs.find((m) => m.role === 'assistant' && m.content.trim())?.content ?? '');
     let title = '';
     try {
       let text = '';
@@ -1620,7 +1624,7 @@ export class ChatStore {
           think,
           messages: [
             { role: 'system', content: TITLE_PROMPTS[this.appLanguage()] },
-            { role: 'user', content: t('使用者：{p0}\nAI：{p1}', { p0: question.slice(0, 300), p1: answer.slice(0, 500) }) },
+            { role: 'user', content: answer ? t('使用者：{p0}\nAI：{p1}', { p0: question.slice(0, 300), p1: answer.slice(0, 500) }) : t('使用者：{p0}', { p0: question.slice(0, 300) }) },
           ],
         },
         (d) => (text += d.content ?? '')
