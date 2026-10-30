@@ -790,6 +790,18 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     expect(await repo.getSession(store.getState().session!.id)).not.toBeNull();
   });
 
+  test('清除全部資料後救回一段、接著又刪掉它：照樣進最近刪除，按復原救得回來', async () => {
+    const { store, repo } = await ready();
+    await store.send('a');
+    await store.resetAll();
+    const keep = (await store.listTrash()).find((s) => s.preview === '回答：a')!;
+    await store.restoreSession(keep.id);
+    await store.deleteSession(keep.id);
+    expect(await repo.getSession(keep.id)).not.toBeNull();
+    await store.undoLast();
+    expect((await store.listSessions()).map((s) => s.id)).toContain(keep.id);
+  });
+
   test('清除全部資料後還在可以復原的時候就關掉 App：下次打開時真的刪掉（救回的留著）', async () => {
     const { net, store, repo } = await ready();
     await store.send('a');

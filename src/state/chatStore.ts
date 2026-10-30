@@ -1001,6 +1001,8 @@ export class ChatStore {
     const { repo } = this.deps;
     const wasCurrent = this.state.session?.id === id;
     if (wasCurrent) this.stop();
+    // 上一個還能復原的操作先確定（例如清除全部資料）：不然它確定時會看到這段剛被移到最近刪除，直接永久刪掉
+    await this.dismissUndo();
     const session = await repo.getSession(id);
     await repo.trashSessions([id]);
     // 刪的是討論串：回到它那段對話
@@ -1735,6 +1737,7 @@ export class ChatStore {
   async deleteAllSessions(): Promise<void> {
     const { repo } = this.deps;
     this.stop();
+    await this.dismissUndo();
     const ids = await repo.trashAllSessions();
     this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {} });
     await this.offerUndo(t('已刪除 {p0} 段對話', { p0: ids.length }), async () => {
