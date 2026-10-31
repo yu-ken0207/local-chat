@@ -355,8 +355,9 @@ export class HostOfflineError extends Error {
 /** 請模型取標題的提示詞（依回答語言；給 AI 的指示，不跟著畫面翻譯） */
 /** 一般聊天快滿了整理成前情摘要（之後代替前面的原文送給模型） */
 export const COMPACT_PROMPTS = {
-  'zh-Hant': '把下面這段對話整理成前情摘要，之後會用它代替原文給 AI 看。保留：使用者的目標、偏好與限制；已經決定或做完的事；重要的事實、數字、名稱、程式碼的重點；還沒解決的問題。不要加入原文沒有的內容。用繁體中文（台灣用語），500 字以內。只回摘要本身。', // i18n-ignore
-  en: 'Summarize the conversation below. The summary will replace it when talking to the AI. Keep: the user’s goals, preferences and constraints; what has been decided or done; key facts, numbers, names and the gist of any code; open questions. Don’t add anything that isn’t there. Under 350 words. Reply with the summary only.',
+  'zh-Hant':
+    '把下面這段對話整理成前情摘要，之後會用它代替原文給 AI 看。保留：使用者的目標、偏好與限制，以及每個決定、限制背後的原因；已經決定或做完的事；重要的事實、數字、日期、名字、代號、程式碼的重點；使用者貼的文件寫出是什麼文件和重點結論（例如最多人提的意見、最便宜的選項），細節不用全抄；還沒解決的問題。不要加入原文沒有的內容。用繁體中文（台灣用語），1,000 字以內。只回摘要本身。', // i18n-ignore
+  en: 'Summarize the conversation below. The summary will replace it when talking to the AI. Keep: the user’s goals, preferences and constraints, and the reason behind each decision or constraint; what has been decided or done; key facts, numbers, dates, names, codes and the gist of any code; for documents the user pasted, what each one is and its key conclusions (such as the most common feedback or the cheapest option), without copying every detail; open questions. Don’t add anything that isn’t there. Under 700 words. Reply with the summary only.',
 } as const;
 /** 送給模型時放在摘要前面的說明 */
 export const SUMMARY_LEADS = {
@@ -2361,7 +2362,7 @@ export class ChatStore {
           { role: 'system', content: COMPACT_PROMPTS[lang] },
           { role: 'user', content: body },
         ],
-        { think: quickThink(info), options: { num_predict: budget(900, info) }, usage: { kind: 'summary', sessionId } }
+        { think: quickThink(info), options: { num_predict: budget(1600, info) }, usage: { kind: 'summary', sessionId } }
       );
       const next = (info?.think ? (splitThink(text)?.content ?? text) : text).trim();
       // 摘要是空的（例如思考把字數用光）：不要往前推，不然這幾則同時從摘要和原文裡消失
