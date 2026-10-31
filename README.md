@@ -1,5 +1,7 @@
 # local-chat（Local AI）
 
+[![Tests](https://github.com/yu-ken0207/local-chat/actions/workflows/test.yml/badge.svg)](https://github.com/yu-ken0207/local-chat/actions/workflows/test.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 連自己地端 Ollama 主機的 iPhone 聊天 App，App 名稱「Local AI」（Expo / React Native，用 Expo Go 執行）。以聊天為主，模型看得懂圖時也能傳照片。
 
 > **Local AI** is an iPhone chat app (Expo / React Native) for the AI models running on your own computer (Ollama or LM Studio). Chats are stored on the phone and only sent to your own computer. Highlights: pairing with a desktop helper by QR code, multi-agent discussions with 788 built-in roles, phone actions (calendar events, reminders) with confirmation and undo, and a live context gauge that condenses long chats automatically. The UI is available in Traditional Chinese and English.
@@ -36,6 +38,7 @@ npm run test:live   # 打真主機（要設 LIVE_HOSTS 等環境變數，見 tes
 npx expo start      # 開發伺服器，iPhone 用 Expo Go 打開
 ```
 
+- 每次 push 到 main 或開 PR，GitHub Actions 會跑型別檢查和全部測試（`.github/workflows/test.yml`）。
 - 新增套件一律用 `npx expo install <套件>`（會挑跟 Expo SDK 58 相容的版本）。
 - 只用 Expo Go 內建的原生模組；需要開發版（development build）的套件先不加。
 - 介面照 apple-design，外觀參考 Codex 終端介面（等寬字、› 是使用者、• 是 AI）。
