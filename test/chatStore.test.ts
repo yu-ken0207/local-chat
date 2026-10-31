@@ -3,7 +3,8 @@
  */
 import { REPLY_PROMPTS } from '../src/lib/history';
 import { inviteHintPrompt } from '../src/tools/invite';
-import { ChatStore, HostOfflineError, type ChatEvent } from '../src/state/chatStore';
+import { ChatStore, HostOfflineError, describeError, type ChatEvent } from '../src/state/chatStore';
+import { OllamaError } from '../src/lib/ollama';
 import { waitFor } from '@testing-library/react-native';
 import { Repo } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -1058,4 +1059,12 @@ describe('設定', () => {
     await expect(store.restoreFromBackup(bad)).rejects.toThrow('這個檔案不是這個 App 的備份。');
     expect(store.getState().messages[0].content).toBe('現在的對話');
   });
+});
+
+test('AI 引擎自己當掉（電腦記憶體不夠被系統關掉）：說「出錯了，再試一次」，不說「拒絕」', () => {
+  const crashed = '電腦上的 AI 出錯了（可能是電腦記憶體不夠），再試一次。';
+  expect(describeError(new OllamaError('http', 'HTTP 500：{"error":"llama runner process has terminated"}', '', 500))).toBe(crashed);
+  expect(describeError(new OllamaError('server', 'llama runner process has terminated: signal: killed'))).toBe(crashed);
+  expect(describeError(new OllamaError('http', 'HTTP 400：bad request', '', 400))).toBe('電腦拒絕了這次請求。');
+  expect(describeError(new OllamaError('http', 'HTTP 404：model "x" not found', '', 404))).toBe('電腦上找不到這個模型，可能已經被刪除，請換一個模型。');
 });

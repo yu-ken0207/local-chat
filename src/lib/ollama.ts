@@ -95,7 +95,9 @@ export class OllamaError extends Error {
     readonly kind: OllamaErrorKind,
     message: string,
     /** 小幫手回的錯誤代碼（bad_code、not_pairing…） */
-    readonly code: string = ''
+    readonly code: string = '',
+    /** HTTP 錯誤的狀態碼（其他種類是 0） */
+    readonly status: number = 0
   ) {
     super(message);
     this.name = 'OllamaError';
@@ -115,7 +117,7 @@ async function httpError(res: ResponseLike): Promise<OllamaError> {
     // 不是 JSON
   }
   if (res.status === 401) return new OllamaError('unpaired', t('這支手機的配對已經被移除，請在電腦的小幫手重新配對。'), code || 'not_paired');
-  return new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: text.slice(0, 200) }), code);
+  return new OllamaError('http', t('HTTP {p0}：{p1}', { p0: res.status, p1: text.slice(0, 200) }), code, res.status);
 }
 
 type ResponseLike = {

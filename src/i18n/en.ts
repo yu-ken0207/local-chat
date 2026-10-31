@@ -753,4 +753,5 @@ export const en: Record<string, string> = {
   "快滿了，回答完會自動整理前面的內容": "Almost full. Earlier messages will be condensed after the reply",
   "現在整理": "Condense now",
   "「現在整理」：把前面的對話整理成摘要，AI 之後看摘要加上最近的對話，手機上的訊息都還在。": "Condense now: turns the earlier conversation into a summary. The AI then sees the summary plus the recent messages. All messages stay on your phone.",
+  "電腦上的 AI 出錯了（可能是電腦記憶體不夠），再試一次。": "The AI on your computer crashed (your computer may be low on memory). Try again.",
 };

@@ -415,6 +415,9 @@ export function describeError(e: unknown): string {
     if (e.kind === 'unpaired') return e.message;
     if (e.code === 'no_engine' || e.code === 'engine_unreachable') return t('電腦上的 AI 引擎沒有開著。請到電腦的 Local AI 小幫手畫面，按「安裝 Ollama」或「打開 Ollama」。');
     if (e.kind === 'http' && /not found/i.test(e.message)) return t('電腦上找不到這個模型，可能已經被刪除，請換一個模型。');
+    // AI 引擎自己當掉（例如電腦記憶體不夠被系統關掉）：不是「拒絕」，再試一次通常就好
+    if ((e.kind === 'http' && e.status >= 500) || (e.kind === 'server' && /terminated|killed|out of memory|exit status|CUDA error/i.test(e.message)))
+      return t('電腦上的 AI 出錯了（可能是電腦記憶體不夠），再試一次。');
     if (e.kind === 'http') return t('電腦拒絕了這次請求。');
     return t('電腦回報錯誤：{p0}', { p0: e.message });
   }
