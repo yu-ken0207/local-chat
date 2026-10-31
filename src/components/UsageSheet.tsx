@@ -165,12 +165,25 @@ function percent(n: number, of: number): string {
   return p === 0 ? '<1%' : `${p}%`;
 }
 
-export function UsageSheet({ store, version, reduceMotion, onClose }: { store: ChatStore; version: number; reduceMotion: boolean; onClose: () => void }) {
+export function UsageSheet({
+  store,
+  version,
+  reduceMotion,
+  compacting,
+  onClose,
+}: {
+  store: ChatStore;
+  version: number;
+  reduceMotion: boolean;
+  /** 這段正在把前面整理成摘要 */
+  compacting: boolean;
+  onClose: () => void;
+}) {
   const [report, setReport] = useState<UsageReport | null>(null);
   const [failed, setFailed] = useState(false);
   const [range, setRange] = useState<'today' | 'week'>('today');
 
-  // 面板開著時又答完一則（version 變了）就重讀，指針接著轉
+  // 面板開著時又答完一則、整理好了（version 變了）就重讀，指針接著轉
   useEffect(() => {
     let alive = true;
     store.usageReport().then(
@@ -180,7 +193,7 @@ export function UsageSheet({ store, version, reduceMotion, onClose }: { store: C
     return () => {
       alive = false;
     };
-  }, [store, version]);
+  }, [store, version, compacting]);
 
   return (
     <View style={styles.sheet}>
@@ -195,7 +208,14 @@ export function UsageSheet({ store, version, reduceMotion, onClose }: { store: C
       </View>
       {report ? (
         <ScrollView contentContainerStyle={styles.content}>
-          {report.context ? <ContextCard context={report.context} reduceMotion={reduceMotion} /> : null}
+          {report.context ? (
+            <ContextCard
+              context={report.context}
+              reduceMotion={reduceMotion}
+              compacting={compacting}
+              onCompact={report.canCompact && !compacting ? () => void store.compact(store.getState().session!.id) : undefined}
+            />
+          ) : null}
           {report.computer ? <ComputerCard computer={report.computer} now={Date.now()} /> : null}
           <TotalsCard store={store} totals={range === 'today' ? report.today : report.week} range={range} onRange={setRange} />
         </ScrollView>
@@ -208,13 +228,25 @@ export function UsageSheet({ store, version, reduceMotion, onClose }: { store: C
   );
 }
 
-function ContextCard({ context, reduceMotion }: { context: NonNullable<UsageReport['context']>; reduceMotion: boolean }) {
+function ContextCard({
+  context,
+  reduceMotion,
+  compacting,
+  onCompact,
+}: {
+  context: NonNullable<UsageReport['context']>;
+  reduceMotion: boolean;
+  compacting: boolean;
+  /** 一般聊天、前面有東西可以整理時才有（「現在整理」） */
+  onCompact?: () => void;
+}) {
   const { used, limit, estimated, parts } = context;
   const level = contextLevel(used, limit);
   const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : null;
   const total = estimated ? t('約 {p0}', { p0: fmtRough(used) }) : used.toLocaleString('en-US');
   const caption = limit ? t('{p0}／{p1} tokens', { p0: total, p1: limit.toLocaleString('en-US') }) : t('{p0} tokens', { p0: total });
-  const status = level === 'full' ? t('滿了，AI 已經記不住最前面的內容') : level === 'near' ? t('快滿了') : '';
+  // 快滿了不跳提示，回答完自動整理；這裡只說明會怎樣
+  const status = compacting ? t('正在整理前面的內容…') : level === 'full' ? t('滿了，回答完會自動整理前面的內容') : level === 'near' ? t('快滿了，回答完會自動整理前面的內容') : '';
   const rows: { key: UsagePartKey | 'free'; tokens: number }[] = [...parts, ...(limit ? [{ key: 'free' as const, tokens: Math.max(0, limit - used) }] : [])];
 
   return (
@@ -230,8 +262,16 @@ function ContextCard({ context, reduceMotion }: { context: NonNullable<UsageRepo
           {limit ? <Gauge ratio={used / limit} reduceMotion={reduceMotion} /> : null}
           <Text style={[styles.big, { color: levelColor(level) ?? C.label }]}>{pct !== null ? `${pct}%` : total}</Text>
           <Text style={styles.caption}>{limit ? caption : t('不知道這個模型最多能記住多少')}</Text>
-          {status ? <Text style={[styles.status, { color: levelColor(level) }]}>{status}</Text> : null}
+          {status ? <Text style={[styles.status, { color: compacting ? C.secondary : levelColor(level) }]}>{status}</Text> : null}
         </View>
+        {onCompact ? (
+          <>
+            <View style={styles.separator} />
+            <Pressable onPress={onCompact} accessibilityRole="button" style={({ pressed }) => [styles.action, pressed && { backgroundColor: C.pressed }]}>
+              <Text style={styles.actionText}>{t('現在整理')}</Text>
+            </Pressable>
+          </>
+        ) : null}
         {rows.map((p) => (
           <View key={p.key}>
             <View style={styles.separator} />
@@ -252,7 +292,14 @@ function ContextCard({ context, reduceMotion }: { context: NonNullable<UsageRepo
           </View>
         ))}
       </View>
-      <Text style={styles.footnote}>{estimated ? t('這段還沒問過 AI，全部是估的。') : t('總數是模型回報的，各部分是照內容估的。')}</Text>
+      <Text style={styles.footnote}>
+        {[
+          estimated ? t('這段還沒問過 AI，全部是估的。') : t('總數是模型回報的，各部分是照內容估的。'),
+          onCompact ? t('「現在整理」：把前面的對話整理成摘要，AI 之後看摘要加上最近的對話，手機上的訊息都還在。') : '',
+        ]
+          .filter(Boolean)
+          .join(getLanguage() === 'en' ? ' ' : '')}
+      </Text>
     </>
   );
 }
@@ -384,6 +431,31 @@ function TotalsCard({ store, totals, range, onRange }: { store: ChatStore; total
   );
 }
 
+/** 看前情摘要（點對話裡「前面的內容已整理成摘要」那條線） */
+export function SummarySheet({ summary, onClose }: { summary: string; onClose: () => void }) {
+  return (
+    <View style={styles.sheet}>
+      <View style={styles.header}>
+        <View style={styles.headerSide} />
+        <Text style={styles.title} accessibilityRole="header">
+          {t('前情摘要')}
+        </Text>
+        <Pressable onPress={onClose} hitSlop={10} accessibilityRole="button" style={({ pressed }) => [styles.headerSide, styles.headerRight, pressed && styles.pressed]}>
+          <Text style={styles.done}>{t('完成')}</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.card}>
+          <Text style={styles.summaryText} selectable>
+            {summary}
+          </Text>
+        </View>
+        <Text style={styles.footnote}>{t('前面的對話很長，已經整理成這段摘要。之後 AI 看的是摘要加上最近的對話，手機上的訊息都還在。')}</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.stat} accessible accessibilityLabel={`${label} ${value}`}>
@@ -443,6 +515,9 @@ const styles = StyleSheet.create({
   miniNeedleBox: { position: 'absolute', left: MINI_C - MINI_NEEDLE, top: MINI_C - MINI_NEEDLE, width: MINI_NEEDLE * 2, height: MINI_NEEDLE * 2 },
   miniNeedle: { position: 'absolute', left: 0, top: MINI_NEEDLE - 0.8, width: MINI_NEEDLE, height: 1.6, borderRadius: 0.8 },
   miniHub: { position: 'absolute', left: MINI_C - 1.8, top: MINI_C - 1.8, width: 3.6, height: 3.6, borderRadius: 1.8 },
+  action: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  actionText: { fontSize: 15, fontWeight: '600', color: C.accent },
+  summaryText: { ...TEXT.small, color: C.label, padding: 16 },
   stats: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 8 },
   stat: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
   statLabel: { ...TEXT.meta, color: C.secondary },

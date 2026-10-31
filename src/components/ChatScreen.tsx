@@ -22,7 +22,7 @@ import { ImageViewer } from './ImageViewer';
 import { ActionListCard, ActionView, RevealContext, type CardField } from './ActionCard';
 import { CONCLUSION, parseConclusion } from '../agents/discussion';
 import { BubbleView, ConclusionCard, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, PinnedConclusion, conclusionText, replyTargets } from './GroupChat';
-import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
+import { MessageView, SummaryDivider, ThreadDivider, ThreadLink, metaLine } from './Messages';
 import { AgentProfile } from './AgentProfile';
 import { AgentEditor } from './AgentsSheet';
 import { ModelSheet } from './ModelSheet';
@@ -30,7 +30,7 @@ import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer, project, rubberband } from './SideDrawer';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
-import { UsageMeter, UsageSheet } from './UsageSheet';
+import { SummarySheet, UsageMeter, UsageSheet } from './UsageSheet';
 import { t } from '../i18n';
 
 export type ChatScreenProps = {
@@ -94,6 +94,7 @@ export function ChatScreen(p: ChatScreenProps) {
   // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
   const [membersOpen, setMembersOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   // 點 Agent 頭像看的資料卡（at：頭像的位置）、從資料卡按「編輯」打開的編輯面板
   const [profile, setProfile] = useState<{ id: string; at: { x: number; y: number } | null } | null>(null);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -483,6 +484,8 @@ export function ChatScreen(p: ChatScreenProps) {
 
   // 「你按了復原」那種紀錄行不算最後一則：上面 AI 的回答照樣有複製、重新產生
   const lastIndex = state.messages.findLastIndex((m) => !isRecordNote(m) && !isThreadRoot(m));
+  // 一般聊天整理過：在第一則還沒整理的訊息前面畫一條「前面的內容已整理成摘要」
+  const summaryAt = !group && state.session?.summary ? state.messages.findIndex((m) => m.seq > state.session!.summarySeq) : -1;
   // 討論串的入口：放在那一題那一輪的最後一則後面（下一則是另一題、或已經是最後）
   const threadAfter = new Map<number, { questionId: string; count: number; running: boolean; fresh: boolean }>();
   if (!state.session?.parentId) {
@@ -498,7 +501,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen || usageOpen;
+  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen || usageOpen || summaryOpen;
   // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
   const replies = bubbles ? replyTargets(state.messages, state.agents, t('你')) : null;
   // 一般聊天也有 @ 名單（只列「我的 Agent」）：選了送出就把他拉進來
@@ -695,6 +698,7 @@ export function ChatScreen(p: ChatScreenProps) {
           );
           return (
           <Fragment key={m.id}>
+          {i === summaryAt ? <SummaryDivider onPress={() => setSummaryOpen(true)} /> : null}
           {bubbles ? (
             <View onLayout={(e) => messageY.current.set(m.id, e.nativeEvent.layout.y)}>
               <BubbleView
@@ -784,18 +788,7 @@ export function ChatScreen(p: ChatScreenProps) {
       />
     ) : null}
     {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
-    {/* 多 AI 討論自己會整理前情摘要，不用提醒 */}
-    {!group && state.context && state.context.level !== 'ok' ? (
-      <Banner
-        tone={state.context.level === 'full' ? 'error' : 'warn'}
-        text={
-          state.context.level === 'full'
-            ? t('這段對話太長了，AI 已經記不住最前面的內容。')
-            : t('這段對話快要太長了，AI 可能開始忘記前面的內容。')
-        }
-        action={{ text: t('開新對話'), onPress: () => store.newSession() }}
-      />
-    ) : null}
+    {/* 快滿了不提示、不叫人開新對話：回答完自動把前面整理成摘要（右上角的用量變橘、變紅） */}
 
     <View style={styles.toastAnchor} pointerEvents="box-none">
       {/* 面板開著時，復原提示由面板自己顯示 */}
@@ -958,7 +951,16 @@ export function ChatScreen(p: ChatScreenProps) {
             />
           </Modal>
           <Modal visible={usageOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setUsageOpen(false)}>
-            <UsageSheet store={store} version={state.context?.used ?? 0} reduceMotion={reduceMotion} onClose={() => setUsageOpen(false)} />
+            <UsageSheet
+              store={store}
+              version={state.context?.used ?? 0}
+              reduceMotion={reduceMotion}
+              compacting={!!session && state.compacting.includes(session.id)}
+              onClose={() => setUsageOpen(false)}
+            />
+          </Modal>
+          <Modal visible={summaryOpen && !!session?.summary} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setSummaryOpen(false)}>
+            <SummarySheet summary={session?.summary ?? ''} onClose={() => setSummaryOpen(false)} />
           </Modal>
           <Modal visible={membersOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setMembersOpen(false)}>
             <MembersSheet store={store} state={state} topic={topic} onClose={() => setMembersOpen(false)} />

@@ -130,6 +130,8 @@ export type UsageReport = {
   computer: { url: string; label: string; reachable: boolean; models: LoadedModel[]; hardware: Hardware | null } | null;
   today: UsageTotals;
   week: UsageTotals;
+  /** 一般聊天、前面有東西可以整理成摘要（用量面板的「現在整理」） */
+  canCompact: boolean;
 };
 
 /** 估上下文時，一張照片大約佔幾個 token（Gemma、Qwen 這類看圖模型大約 256） */
@@ -218,6 +220,8 @@ export type ChatState = {
   suggestConclude: string[];
   /** 「我的 Agent」（設定頁、加成員用；打開時才讀） */
   myAgents: Agent[];
+  /** 正在把前面整理成摘要的一般聊天 */
+  compacting: string[];
 };
 
 /** 一句話生成、還沒存的角色卡 */
@@ -349,6 +353,38 @@ export class HostOfflineError extends Error {
 
 /** 請模型幫對話取標題用的系統提示詞 */
 /** 請模型取標題的提示詞（依回答語言；給 AI 的指示，不跟著畫面翻譯） */
+/** 一般聊天快滿了整理成前情摘要（之後代替前面的原文送給模型） */
+export const COMPACT_PROMPTS = {
+  'zh-Hant': '把下面這段對話整理成前情摘要，之後會用它代替原文給 AI 看。保留：使用者的目標、偏好與限制；已經決定或做完的事；重要的事實、數字、名稱、程式碼的重點；還沒解決的問題。不要加入原文沒有的內容。用繁體中文（台灣用語），500 字以內。只回摘要本身。', // i18n-ignore
+  en: 'Summarize the conversation below. The summary will replace it when talking to the AI. Keep: the user’s goals, preferences and constraints; what has been decided or done; key facts, numbers, names and the gist of any code; open questions. Don’t add anything that isn’t there. Under 350 words. Reply with the summary only.',
+} as const;
+/** 送給模型時放在摘要前面的說明 */
+export const SUMMARY_LEADS = {
+  'zh-Hant': '前面的對話已經整理成下面這段摘要（原文不再提供），接著聊的時候照它理解前情：', // i18n-ignore
+  en: 'The earlier conversation was condensed into the summary below (the original is no longer included). Use it as context:',
+} as const;
+/** 一般聊天用到幾成就自動整理（跟右上角變橘同一個門檻） */
+export const COMPACT_AT = 0.8;
+/** 整理時留多少原文：最近大約三成的上下文 */
+const KEEP_RATIO = 0.3;
+
+/**
+ * 一般聊天整理成摘要時從哪裡切：從最後往前留到 keepTokens 為止，切在使用者說的話（一問一答、叫工具的過程不會被切開）。
+ * 至少留最後一次發問；回傳第一則留下來的位置，前面沒有東西可以整理時回 null
+ */
+export function compactCut(messages: Message[], keepTokens: number): number | null {
+  let used = 0;
+  let cut: number | null = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    used += estimateTokens(m.content) + MESSAGE_OVERHEAD + m.attachments.length * IMAGE_TOKENS;
+    if (m.role !== 'user') continue;
+    if (used > keepTokens && cut !== null) break;
+    cut = i;
+  }
+  return cut !== null && cut > 0 ? cut : null;
+}
+
 export const TITLE_PROMPTS = {
   'zh-Hant': '幫下面這段對話取一個標題：繁體中文、15 個字以內、只回標題本身，不要引號和標點。', // i18n-ignore
   en: 'Write a title for the conversation below: in English, at most 6 words, reply with the title only, no quotes or punctuation.',
@@ -430,12 +466,15 @@ export class ChatStore {
     discussion: null,
     suggestConclude: [],
     myAgents: [],
+    compacting: [],
   };
   private pendingUndo: PendingUndo | null = null;
   private undoCounter = 0;
   private listeners = new Set<() => void>();
   /** 正在幫對話取標題（測試用來等它完成） */
   titleTask: Promise<void> | null = null;
+  /** 正在整理成摘要的一般聊天（同一段不會同時整理兩次；測試用來等它完成） */
+  readonly compactTasks = new Map<string, Promise<boolean>>();
   /** 開 App 時的檢查主機＋自動掃描（測試用來等它完成） */
   startupTask: Promise<void> | null = null;
   /** 換對話後讀成員（測試用來等它完成） */
@@ -1550,7 +1589,11 @@ export class ChatStore {
     const model = s.model;
     const info = this.state.models[url]?.list.find((m) => m.name === model);
     const tools = this.toolsFor(info);
-    const msgs = await repo.listMessages(s.id);
+    // 整理過的：前面的換成前情摘要，只送摘要之後的（手機上的訊息都還在）
+    const saved = await repo.getSession(s.id);
+    const summary = saved?.summary ?? '';
+    const all = await repo.listMessages(s.id);
+    const msgs = summary ? all.filter((m) => m.seq > saved!.summarySeq) : all;
     // 設定裡關掉的：模型還是可能照前面的對話去叫，所以先跟它說
     const toolsOff = info?.tools ? this.toolGroups().filter((g) => this.state.prefs.toolsOff?.includes(g)) : [];
     const { messages: history, droppedImages } = buildChatMessages(msgs, {
@@ -1562,6 +1605,7 @@ export class ChatStore {
         (tools.length === 0 ? '\n\n' + inviteHintPrompt() : '') +
         (toolsOff.length > 0 ? '\n\n' + toolsOffPrompt(toolsOff) : ''),
     });
+    if (summary) history.splice(1, 0, { role: 'system', content: `${SUMMARY_LEADS[this.appLanguage()]}\n${summary}` });
     // 這一輪使用者說「不要」、改過才做的：最後再提醒一次，不然模型常照自己原本提的講（「已經改好了」、原本的日期）
     const note = this.lastRoundNote(msgs);
     if (note) history.push({ role: 'system', content: note });
@@ -1657,6 +1701,8 @@ export class ChatStore {
       if (toolCalls.length > 0) next = await this.runToolCalls(s.id, placeholder.id, toolCalls, signal);
       // 在背景答完的不震、不播報（使用者正在看別段，不要打擾）
       else if (here()) this.deps.onEvent?.('answered');
+      // 快滿了：不提示、不叫人開新對話，直接在背景把前面整理成摘要（叫工具的過程做完才整理）
+      if (toolCalls.length === 0 && limit && used >= limit * COMPACT_AT) void this.compact(s.id);
       // 有文字的回答出來、這段還沒有標題：請模型取標題（不擋住下一次輸入；第一個回答被停掉的話，下一個回答再取）
       const answered = (await repo.listMessages(s.id)).filter((m) => m.role === 'assistant' && m.content.trim()).length;
       if (answered >= 1 && !(await repo.getSession(s.id))?.title) this.titleTask = this.autoTitle(s.id, url, model, info);
@@ -2245,6 +2291,89 @@ export class ChatStore {
     }
   }
 
+  /**
+   * 一般聊天快滿了：把前面的對話整理成前情摘要，之後送給 AI 的是「摘要＋最近大約三成的原文」，手機上的訊息都還在。
+   * 回答完到 80% 自動做，用量面板也能按「現在整理」；多 AI 討論有自己的前情摘要，不用這個
+   */
+  compact(sessionId: string): Promise<boolean> {
+    const running = this.compactTasks.get(sessionId);
+    if (running) return running;
+    const task = this.runCompact(sessionId)
+      .catch(() => false)
+      .finally(() => {
+        this.compactTasks.delete(sessionId);
+        this.set({ compacting: this.state.compacting.filter((x) => x !== sessionId) });
+      });
+    this.compactTasks.set(sessionId, task);
+    this.set({ compacting: [...this.state.compacting, sessionId] });
+    return task;
+  }
+
+  /** 這段有沒有東西可以整理（用量面板的「現在整理」） */
+  private async canCompact(s: Session): Promise<boolean> {
+    if ((await this.deps.repo.listMembers(s.id)).length > 0 || !s.hostUrl || !s.model) return false;
+    const msgs = (await this.deps.repo.listMessages(s.id)).filter((m) => m.seq > s.summarySeq);
+    const limit = (await this.cachedLimit(s.hostUrl, s.model)) ?? ASSUMED_CONTEXT;
+    return compactCut(msgs, Math.floor(limit * KEEP_RATIO)) !== null;
+  }
+
+  private async runCompact(sessionId: string): Promise<boolean> {
+    const { repo } = this.deps;
+    const s = await repo.getSession(sessionId);
+    if (!s?.hostUrl || !s.model || (await repo.listMembers(sessionId)).length > 0) return false;
+    const url = s.hostUrl;
+    const model = s.model;
+    const info = this.state.models[url]?.list.find((m) => m.name === model);
+    const limit = (await this.cachedLimit(url, model)) ?? ASSUMED_CONTEXT;
+    const msgs = (await repo.listMessages(sessionId)).filter((m) => m.seq > s.summarySeq);
+    const cut = compactCut(msgs, Math.floor(limit * KEEP_RATIO));
+    if (cut === null) return false;
+    const older = msgs.slice(0, cut);
+    const lineOf = (m: Message) =>
+      m.role === 'user'
+        ? t('使用者：{p0}', { p0: m.content.trim() + (m.attachments.length > 0 ? t('（附了 {p0} 張照片）', { p0: m.attachments.length }) : '') })
+        : m.role === 'assistant' && m.content.trim()
+          ? t('AI：{p0}', { p0: m.content.trim() })
+          : '';
+    const lines = older.map((m) => ({ seq: m.seq, text: lineOf(m) })).filter((l) => l.text);
+    let summary = s.summary;
+    // 一次只塞得下上下文的一半：太長就分幾次，每次把新的一段併進摘要
+    for (let i = 0; i < lines.length; ) {
+      const chunk: string[] = [];
+      let room = Math.floor(limit * 0.5) - estimateTokens(summary);
+      for (; i < lines.length; i++) {
+        room -= estimateTokens(lines[i].text) + 8;
+        if (room < 0 && chunk.length > 0) break;
+        chunk.push(lines[i].text);
+      }
+      const lang = this.appLanguage();
+      const body = (summary ? t('之前的摘要：\n{p0}\n\n接下來的對話：\n', { p0: summary }) : '') + chunk.join('\n');
+      const text = await this.collect(
+        url,
+        model,
+        [
+          { role: 'system', content: COMPACT_PROMPTS[lang] },
+          { role: 'user', content: body },
+        ],
+        { think: quickThink(info), options: { num_predict: budget(900, info) }, usage: { kind: 'summary', sessionId } }
+      );
+      const next = (info?.think ? (splitThink(text)?.content ?? text) : text).trim();
+      // 摘要是空的（例如思考把字數用光）：不要往前推，不然這幾則同時從摘要和原文裡消失
+      if (!next) return false;
+      summary = next;
+    }
+    // 中間有人編輯、刪掉前面的訊息（摘要作廢了）：這次的不算
+    const now = await repo.getSession(sessionId);
+    if (!now || now.summarySeq !== s.summarySeq || now.summary !== s.summary) return false;
+    const summarySeq = older.at(-1)!.seq;
+    await repo.updateSession(sessionId, { summary, summarySeq });
+    if (this.state.session?.id === sessionId) {
+      this.set({ session: { ...this.state.session, summary, summarySeq } });
+      void this.loadContext(sessionId);
+    }
+    return true;
+  }
+
   /** 打開一段對話、換模型時：右上角的用量照最後一次回答或發言的實際值；還沒問過（或之後整理過、換過模型）就照內容估 */
   private async loadContext(sessionId: string): Promise<void> {
     const s = this.state.session;
@@ -2292,7 +2421,7 @@ export class ChatStore {
     midnight.setHours(0, 0, 0, 0);
     const [today, week] = await Promise.all([repo.usageTotals(midnight.getTime()), repo.usageTotals(now - 7 * 24 * 60 * 60 * 1000)]);
     const s = this.state.session;
-    if (!s) return { context: null, computer: null, today, week };
+    if (!s) return { context: null, computer: null, today, week, canCompact: false };
     const last = await repo.lastUsage(s.id);
     const url = last?.hostUrl ?? s.hostUrl;
     let computer: UsageReport['computer'] = null;
@@ -2307,7 +2436,7 @@ export class ChatStore {
       }
       computer = { url, label: this.hostLabel(url), reachable, models, hardware: this.state.helperInfo[url]?.hardware ?? null };
     }
-    return { context: await this.contextParts(s, last), computer, today, week };
+    return { context: await this.contextParts(s, last), computer, today, week, canCompact: await this.canCompact(s) };
   }
 
   /** 估這段送給模型的東西各佔多少（照真的送出去的樣子組），再按比例對齊最後一次的實際值 */
@@ -2324,14 +2453,16 @@ export class ChatStore {
     const est: Record<UsagePartKey, number> = { system: 0, tools: 0, role: 0, summary: 0, messages: 0, images: 0 };
     const images = (list: Message[]) => (info?.vision === false ? 0 : list.reduce((n, m) => n + (m.role === 'user' ? m.attachments.length : 0), 0) * IMAGE_TOKENS);
     if (members.length === 0) {
-      // 一般聊天：照 answer() 送出去的樣子
+      // 一般聊天：照 answer() 送出去的樣子（整理過的：前情摘要加上之後的訊息）
       const tools = this.toolsFor(info);
+      const kept = s.summary ? msgs.filter((m) => m.seq > s.summarySeq) : msgs;
+      est.summary = s.summary ? estimateTokens(`${SUMMARY_LEADS[this.appLanguage()]}\n${s.summary}`) + MESSAGE_OVERHEAD : 0;
       const system = REPLY_PROMPTS[this.appLanguage()] + (tools.some((x) => x !== this.inviteTool) ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') + (tools.length === 0 ? '\n\n' + inviteHintPrompt() : '');
       est.system = estimateTokens(system);
       est.tools = tools.length > 0 ? estimateTokens(JSON.stringify(toOllamaTools(tools))) : 0;
-      const sent = buildChatMessages(msgs, { vision: info ? info.vision : true, systemPrompt: '' }).messages.slice(1);
+      const sent = buildChatMessages(kept, { vision: info ? info.vision : true, systemPrompt: '' }).messages.slice(1);
       est.messages = sent.reduce((n, m) => n + estimateTokens(m.content) + MESSAGE_OVERHEAD + ('tool_calls' in m && m.tool_calls ? estimateTokens(JSON.stringify(m.tool_calls)) : 0), 0);
-      est.images = images(msgs);
+      est.images = images(kept);
     } else {
       // 多 AI 討論：照最後一位發言的人送出去的樣子
       const a = members.find((x) => x.agent.id === lastUsage?.agentId)?.agent ?? members[0].agent;

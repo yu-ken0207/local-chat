@@ -249,6 +249,23 @@ export function ThreadDivider() {
   );
 }
 
+/** 一般聊天整理成摘要的地方：這條線以上的，AI 現在看的是摘要（訊息都還在）；點了看摘要 */
+export function SummaryDivider({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={t('前面的內容已整理成摘要，點一下看摘要')}
+      style={({ pressed }) => [styles.threadDivider, styles.summaryDivider, pressed && { opacity: 0.5 }]}
+      testID="summary-divider">
+      <View style={styles.threadLine} />
+      <Text style={styles.threadDividerText}>{t('前面的內容已整理成摘要')}</Text>
+      <SymbolView name="chevron.right" size={10} tintColor={C.secondary} />
+      <View style={styles.threadLine} />
+    </Pressable>
+  );
+}
+
 /** 回答下方的小字：模型，電腦（速度、時間這些進階資訊放在長按的「詳細資訊」） */
 export function metaLine(m: Message): string {
   return [m.model ? friendlyModelName(m.model) : null, m.hostLabel].filter(Boolean).join(t('，'));
@@ -378,6 +395,8 @@ const styles = StyleSheet.create({
   threadDivider: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12 },
   threadLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: C.separator },
   threadDividerText: { ...TEXT.meta, color: C.secondary },
+  // 按得到：高度補到 44
+  summaryDivider: { minHeight: 44 },
   thumbs: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   thumb: { width: 56, height: 56, borderRadius: 8, backgroundColor: C.bg },
   thinking: { gap: 6 },

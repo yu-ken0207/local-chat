@@ -184,7 +184,7 @@ describe('畫面', () => {
     await waitFor(() => expect(screen.queryByLabelText('AI 記住的內容')).toBeNull());
   });
 
-  test('多 AI 討論不跳「對話太長」的提示（自己會整理前情摘要），儀表照樣變色', async () => {
+  test('多 AI 討論也不跳「對話太長」的提示，儀表照樣變色', async () => {
     const { repo, store } = await setup();
     const a = await repo.createAgent({ name: '財務長', intro: '', card: { expertise: '預算', stance: '', style: '', blindSpot: '' }, mine: true });
     await store.addMember(a.id);
@@ -224,12 +224,13 @@ describe('畫面', () => {
         byModel: [{ hostUrl: A, model: 'gemma4:31b', calls: 3, promptTokens: 52_000, outputTokens: 3_000, totalMs: 90_000, evalMs: 60_000 }],
       }),
       week: totals(),
+      canCompact: false,
     };
-    await render(<UsageSheet store={stub(report)} version={0} reduceMotion onClose={jest.fn()} />);
+    await render(<UsageSheet store={stub(report)} version={0} reduceMotion compacting={false} onClose={jest.fn()} />);
     const gauge = await screen.findByLabelText('AI 記住的內容');
-    expect(gauge.props.accessibilityValue).toMatchObject({ now: 82, text: '82%，27,000／32,768 tokens，快滿了' });
+    expect(gauge.props.accessibilityValue).toMatchObject({ now: 82, text: '82%，27,000／32,768 tokens，快滿了，回答完會自動整理前面的內容' });
     expect(screen.getByText('82%')).toBeTruthy();
-    expect(screen.getByText('快滿了')).toBeTruthy();
+    expect(screen.getByText('快滿了，回答完會自動整理前面的內容')).toBeTruthy();
     expect(screen.getByText('約 22,200')).toBeTruthy();
     expect(screen.getByLabelText('對話內容：約 22,200 tokens，68%')).toBeTruthy();
     expect(screen.getByText('5,768')).toBeTruthy();
@@ -243,17 +244,17 @@ describe('畫面', () => {
   });
 
   test('滿了寫原因；不知道上限只寫數字；還沒問過全部是估的；電腦連不上、沒有載入的模型', async () => {
-    const base = { today: totals(), week: totals() };
+    const base = { today: totals(), week: totals(), canCompact: false };
     const full: UsageReport = { ...base, context: { used: 8192, limit: 8192, estimated: false, parts: [{ key: 'messages', tokens: 8192 }] }, computer: { url: A, label: '書房電腦', reachable: false, models: [], hardware: null } };
-    const { unmount } = await render(<UsageSheet store={stub(full)} version={0} reduceMotion onClose={jest.fn()} />);
+    const { unmount } = await render(<UsageSheet store={stub(full)} version={0} reduceMotion compacting={false} onClose={jest.fn()} />);
     expect((await screen.findByLabelText('AI 記住的內容')).props.accessibilityValue).toMatchObject({ now: 100 });
-    expect(screen.getByText('滿了，AI 已經記不住最前面的內容')).toBeTruthy();
+    expect(screen.getByText('滿了，回答完會自動整理前面的內容')).toBeTruthy();
     expect(screen.getByText('現在連不上這台電腦。')).toBeTruthy();
     expect(screen.getByText('今天還沒用到 AI。')).toBeTruthy();
     await unmount();
 
     const unknown: UsageReport = { ...base, context: { used: 1_913, limit: null, estimated: true, parts: [{ key: 'system', tokens: 1_913 }] }, computer: { url: A, label: '書房電腦', reachable: true, models: [], hardware: null } };
-    await render(<UsageSheet store={stub(unknown)} version={0} reduceMotion onClose={jest.fn()} />);
+    await render(<UsageSheet store={stub(unknown)} version={0} reduceMotion compacting={false} onClose={jest.fn()} />);
     expect(await screen.findByText('不知道這個模型最多能記住多少')).toBeTruthy();
     expect(screen.queryByTestId('usage-gauge')).toBeNull();
     expect(screen.getAllByText('約 1,900').length).toBe(2); // 大數字和系統說明那一列
@@ -277,12 +278,12 @@ describe('畫面', () => {
   });
 
   test('面板開著時又答完一則：重讀，指針接著轉', async () => {
-    const report = (used: number): UsageReport => ({ context: { used, limit: 8192, estimated: false, parts: [{ key: 'messages', tokens: used }] }, computer: null, today: totals(), week: totals() });
+    const report = (used: number): UsageReport => ({ context: { used, limit: 8192, estimated: false, parts: [{ key: 'messages', tokens: used }] }, computer: null, today: totals(), week: totals(), canCompact: false });
     const store = stub(report(1000));
-    const { rerender } = await render(<UsageSheet store={store} version={1000} reduceMotion onClose={jest.fn()} />);
+    const { rerender } = await render(<UsageSheet store={store} version={1000} reduceMotion compacting={false} onClose={jest.fn()} />);
     expect((await screen.findByLabelText('AI 記住的內容')).props.accessibilityValue.now).toBe(12);
     (store.usageReport as jest.Mock).mockResolvedValue(report(4096));
-    await rerender(<UsageSheet store={store} version={4096} reduceMotion onClose={jest.fn()} />);
+    await rerender(<UsageSheet store={store} version={4096} reduceMotion compacting={false} onClose={jest.fn()} />);
     await waitFor(() => expect(screen.getByLabelText('AI 記住的內容').props.accessibilityValue.now).toBe(50));
   });
 });

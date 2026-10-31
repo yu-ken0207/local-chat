@@ -675,15 +675,12 @@ describe('對話', () => {
     expect(copyText).toHaveBeenCalledWith('print(1)');
   });
 
-  test('上下文快滿：用白話提醒，按「開新對話」開新的一段', async () => {
+  test('上下文快滿：不跳提示、不叫人開新對話（回答完自動整理），右上角的用量變色', async () => {
     const { net, store } = await setup();
     net.hosts.get(A)!.runtimeCtx = 140;
     await send(store, 'hi');
-    expect(await screen.findByText('這段對話快要太長了，AI 可能開始忘記前面的內容。')).toBeTruthy();
-    const before = store.getState().session!.id;
-    await fireEvent.press(screen.getByText('開新對話'));
-    await waitFor(() => expect(store.getState().session!.id).not.toBe(before));
-    expect(screen.getByTestId('chat-title').props.children).toBe('新對話');
+    expect(await screen.findByLabelText('用量，這段用了 86%')).toBeTruthy();
+    expect(screen.queryByText(/太長了|開新對話/)).toBeNull();
   });
 
   test('連不到電腦：白話錯誤下方有重試、連線說明、詳細資訊；重試成功後錯誤消失', async () => {
