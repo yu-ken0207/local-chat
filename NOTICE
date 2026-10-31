@@ -1,0 +1,10 @@
+Local AI (local-chat)
+Copyright 2026 yu-ken0207
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes agent role content from the following projects,
+each under the MIT License:
+- lobehub/lobe-chat-agents, Copyright (c) 2023 LobeHub
+- msitarzewski/agency-agents, Copyright (c) 2025 AgentLand Contributors
+See THIRD_PARTY_NOTICES.md for the full license texts.

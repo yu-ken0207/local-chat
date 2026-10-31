@@ -74,3 +74,7 @@ test/              測試；test/live/ 是打真主機的測試，不在 npm tes
 ## 翻譯
 
 畫面文字一律寫成 `t('繁體中文原文')`，英文在 `src/i18n/en.ts`（key 是中文原文）。`test/i18n.test.ts` 會檢查：程式裡沒有漏包的中文、每個 key 都有英文且參數一致。給 AI 的指示（回答語言、取標題）不跟著畫面翻譯，標 `i18n-ignore`。
+
+## 授權（License）
+
+程式碼採 [Apache-2.0](LICENSE)。圖鑑的 Agent 角色內容來自 lobehub/lobe-chat-agents 與 msitarzewski/agency-agents（都是 MIT 授權），授權全文見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
