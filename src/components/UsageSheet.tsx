@@ -1,10 +1,10 @@
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { describeHardware } from '../lib/catalog';
-import { contextLevel, fmtBytes, fmtCount, fmtRough, fmtUnload, type ContextLevel } from '../lib/format';
+import { contextLevel, fmtBytes, fmtCount, fmtK, fmtRough, fmtUnload, type ContextLevel } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
 import type { ChatStore, ContextInfo, UsagePartKey, UsageReport } from '../state/chatStore';
 import type { UsageTotals } from '../store/repo';
@@ -56,49 +56,50 @@ function arc(from: number, to: number) {
   return `M ${a.x} ${a.y} A ${R} ${R} 0 0 1 ${b.x} ${b.y}`;
 }
 
-/** 右上角用量條的大小：外框、裡面能填的寬度 */
-const METER_W = 25;
-const METER_INNER = METER_W - 2 * 2.5;
-/** 用量條變長變短用的彈簧（臨界阻尼，跟著回答一路變不會晃） */
-const METER_SPRING = { stiffness: 300, damping: 35, mass: 1, useNativeDriver: true } as const;
+/** 右上角的字最多放大到 1.3 倍（跟標題列一樣，大字時還放得下） */
+const METER_MAX_SCALE = 1.3;
+
+/** 右上角的儀表圖示：指針停在最接近的位置（SF Symbols 只有這五格；確切的數字寫在旁邊） */
+export function gaugeSymbol(ratio: number | null): SFSymbol {
+  if (ratio === null || ratio < 0.17) return 'gauge.with.dots.needle.0percent';
+  if (ratio < 0.42) return 'gauge.with.dots.needle.33percent';
+  if (ratio < 0.59) return 'gauge.with.dots.needle.50percent';
+  if (ratio < 0.84) return 'gauge.with.dots.needle.67percent';
+  return 'gauge.with.dots.needle.100percent';
+}
 
 /**
- * 右上角的用量：像電池那樣的小條加百分比，AI 回答時一路跟著變；點了打開用量面板。
- * 顯示的是「用了多少」（跟用量面板一樣），越用越滿；快滿變橘、滿了變紅
+ * 右上角的用量：儀表圖示加百分比，下面一行是用了多少／最多記住多少；AI 回答時一路跟著變，點了打開用量面板。
+ * 快滿變橘、滿了變紅
  */
-export function UsageMeter({ context, reduceMotion, onPress }: { context: ContextInfo | null; reduceMotion: boolean; onPress: () => void }) {
-  const ratio = context?.limit ? Math.min(1, context.used / context.limit) : null;
-  // 有用到就至少看得到一點點
-  const shown = ratio ? Math.max(ratio, 2 / METER_INNER) : 0;
-  const fill = useRef(new Animated.Value(shown)).current;
-  // 剛有數字（打開一段對話、換到別段）直接顯示；同一段裡跟著回答變才用彈簧
-  const prev = useRef<number | null>(ratio === null ? null : shown);
-  useEffect(() => {
-    const was = prev.current;
-    prev.current = ratio === null ? null : shown;
-    if (was === null || reduceMotion) fill.setValue(shown);
-    else if (was !== shown) Animated.spring(fill, { toValue: shown, ...METER_SPRING }).start();
-  }, [fill, shown, ratio, reduceMotion]);
-  const level = context?.level ?? 'ok';
-  const color = levelColor(level) ?? C.secondary;
-  const pct = ratio !== null ? Math.round(ratio * 100) : null;
+export function UsageMeter({ context, onPress }: { context: ContextInfo | null; onPress: () => void }) {
+  const ratio = context?.limit ? context.used / context.limit : null;
+  const pct = ratio !== null ? Math.min(100, Math.round(ratio * 100)) : null;
+  const color = levelColor(context?.level ?? 'ok');
+  // 半形斜線、不留空白：標題列放得下，標題才維持置中
+  const numbers = context ? (context.limit ? `${fmtK(context.used)}/${fmtK(context.limit)}` : fmtK(context.used)) : '';
   return (
     <Pressable
       onPress={onPress}
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={pct !== null ? t('用量，這段用了 {p0}%', { p0: pct }) : t('用量')}
+      accessibilityValue={context ? { text: context.limit ? t('{p0}／{p1} tokens', { p0: context.used.toLocaleString('en-US'), p1: context.limit.toLocaleString('en-US') }) : t('{p0} tokens', { p0: context.used.toLocaleString('en-US') }) } : undefined}
       style={({ pressed }) => [styles.meter, pressed && styles.pressed]}
       testID="usage-button">
-      {pct !== null ? <Text style={[styles.meterText, { color }]}>{`${pct}%`}</Text> : null}
-      <View style={styles.meterTrack}>
-        <View style={styles.meterInner}>
-          {/* 整條的長度不變，往左推出框外來表示比例（只動 transform，原生跑得動） */}
-          <Animated.View
-            style={[styles.meterFill, { backgroundColor: color, transform: [{ translateX: fill.interpolate({ inputRange: [0, 1], outputRange: [-METER_INNER, 0] }) }] }]}
-          />
+      <SymbolView name={gaugeSymbol(ratio)} size={20} tintColor={color ?? C.secondary} />
+      {context ? (
+        <View>
+          {pct !== null ? (
+            <Text style={[styles.meterPct, color ? { color } : null]} maxFontSizeMultiplier={METER_MAX_SCALE}>
+              {`${pct}%`}
+            </Text>
+          ) : null}
+          <Text style={styles.meterNumbers} maxFontSizeMultiplier={METER_MAX_SCALE}>
+            {numbers}
+          </Text>
         </View>
-      </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -406,11 +407,9 @@ const styles = StyleSheet.create({
   segmentOn: { backgroundColor: C.groupedCard },
   segmentText: { fontSize: 14, color: C.secondary },
   segmentTextOn: { color: C.label, fontWeight: '600' },
-  meter: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  meterText: { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  meterTrack: { width: METER_W, height: 12, borderRadius: 4, borderWidth: 1, borderColor: C.tertiary, padding: 1.5 },
-  meterInner: { flex: 1, borderRadius: 2, overflow: 'hidden' },
-  meterFill: { position: 'absolute', top: 0, bottom: 0, left: 0, width: METER_INNER, borderRadius: 2 },
+  meter: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  meterPct: { fontSize: 13, lineHeight: 15, fontWeight: '600', color: C.label, fontVariant: ['tabular-nums'] },
+  meterNumbers: { fontSize: 10, lineHeight: 12, color: C.secondary, fontVariant: ['tabular-nums'] },
   stats: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 8 },
   stat: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
   statLabel: { ...TEXT.meta, color: C.secondary },

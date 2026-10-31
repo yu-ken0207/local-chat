@@ -1,9 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
-import { UsageSheet } from '../src/components/UsageSheet';
+import { UsageSheet, gaugeSymbol } from '../src/components/UsageSheet';
 import { setLanguage } from '../src/i18n';
-import { fmtCount, fmtRough, fmtUnload } from '../src/lib/format';
+import { fmtCount, fmtK, fmtRough, fmtUnload } from '../src/lib/format';
 import { ChatStore, type UsageReport } from '../src/state/chatStore';
 import { Repo, type UsageTotals } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -53,6 +53,24 @@ describe('格式', () => {
     expect(fmtRough(456)).toBe('460');
     expect(fmtRough(42)).toBe('42');
     expect(fmtRough(-3)).toBe('0');
+  });
+
+  test('上下文大小短寫：以 1024 算一 K（8K、32K、128K）', () => {
+    expect(fmtK(120)).toBe('120');
+    expect(fmtK(1203)).toBe('1.2K');
+    expect(fmtK(8192)).toBe('8K');
+    expect(fmtK(27_000)).toBe('26.4K');
+    expect(fmtK(32_768)).toBe('32K');
+    expect(fmtK(131_072)).toBe('128K');
+  });
+
+  test('右上角的儀表圖示：指針停在最接近的格', () => {
+    expect(gaugeSymbol(null)).toBe('gauge.with.dots.needle.0percent');
+    expect(gaugeSymbol(0.1)).toBe('gauge.with.dots.needle.0percent');
+    expect(gaugeSymbol(0.3)).toBe('gauge.with.dots.needle.33percent');
+    expect(gaugeSymbol(0.5)).toBe('gauge.with.dots.needle.50percent');
+    expect(gaugeSymbol(0.8)).toBe('gauge.with.dots.needle.67percent');
+    expect(gaugeSymbol(0.9)).toBe('gauge.with.dots.needle.100percent');
   });
 
   test('多久後卸載；一直載入的（年份很遠）不寫倒數', () => {
@@ -165,6 +183,11 @@ describe('畫面', () => {
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '你好');
     await fireEvent.press(screen.getByLabelText('送出'));
     const button = await screen.findByLabelText('用量，這段用了 1%');
+    // 儀表圖示、百分比，下面一行是用了多少／最多記住多少
+    expect(button.props.accessibilityValue).toMatchObject({ text: '120／8,192 tokens' });
+    expect(within(button).getByText('1%')).toBeTruthy();
+    expect(within(button).getByText('120/8K')).toBeTruthy();
+    expect(within(button).getByTestId('symbol-gauge.with.dots.needle.0percent')).toBeTruthy();
     await fireEvent.press(button);
     const gauge = await screen.findByLabelText('AI 記住的內容');
     expect(gauge.props.accessibilityValue).toMatchObject({ min: 0, max: 100, now: 1 });

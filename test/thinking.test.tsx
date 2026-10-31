@@ -1,5 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import { Alert } from 'react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { ChatScreen } from '../src/components/ChatScreen';
 import { ChatStore } from '../src/state/chatStore';
@@ -47,14 +46,16 @@ test('思考混在回答裡：拆出來；記住這個模型一定會思考，�
   expect(again.currentModel()?.think).toEqual({ kind: 'always' });
 });
 
-test('輸入列：一定會思考的模型顯示「一定會先思考」，按了說明為什麼關不掉', async () => {
+test('輸入列：一定會思考的模型，模型那顆寫「思考」；選模型面板寫「一定會先思考」、說明為什麼關不掉', async () => {
   const { store } = await setup();
   await store.send('1+1=?');
   await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  await fireEvent.press(await screen.findByLabelText('一定會先思考'));
-  expect(alert.mock.calls[0][1]).toMatch(/沒辦法關掉/);
-  alert.mockRestore();
+  await waitFor(() => expect(screen.getByTestId('model-pill').props.accessibilityValue).toMatchObject({ text: '一定會先思考' }));
+  expect(within(screen.getByTestId('model-pill')).getByText('思考')).toBeTruthy();
+  await fireEvent.press(screen.getByTestId('model-pill'));
+  expect(await screen.findByText(/沒辦法關掉/)).toBeTruthy();
+  // 面板最上面的深入思考一列，加上模型清單那一列的標示
+  expect(screen.getAllByText('一定會先思考')).toHaveLength(2);
 });
 
 test('一般會思考的模型關掉思考：回答照常，不會被誤判', async () => {

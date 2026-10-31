@@ -1,10 +1,10 @@
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import { fmtBytes } from '../lib/format';
-import { friendlyModelName } from '../lib/modelName';
+import { friendlyLevel, friendlyModelName } from '../lib/modelName';
 import type { ModelInfo } from '../lib/ollama';
 import { diagnosisText, type ChatState, type ChatStore } from '../state/chatStore';
 import { C, TEXT } from '../ui/theme';
@@ -124,6 +124,7 @@ export function ModelSheet({ store, state, onClose, copyText }: { store: ChatSto
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+        <ThinkCard store={store} state={state} />
         <Text style={styles.section}>{t('電腦')}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           {state.hosts.map((h) => {
@@ -341,6 +342,57 @@ function Badge({ icon, text, color }: { icon: 'eye' | 'lightbulb' | 'bolt.fill' 
   );
 }
 
+/** 深入思考（從輸入框的模型那顆點進來）：這段用的模型會思考才出現；開關型、分程度、一定會思考 */
+function ThinkCard({ store, state }: { store: ChatStore; state: ChatState }) {
+  const think = store.currentModel()?.think;
+  if (!think || !state.session) return null;
+  const value = state.session.think;
+  return (
+    <>
+      <View style={styles.card}>
+        {think.kind === 'toggle' ? (
+          <View style={styles.row}>
+            <Text style={[styles.rowTitle, styles.flex]}>{t('深入思考')}</Text>
+            <Switch value={!!value} onValueChange={(v) => void store.setThink(v)} accessibilityLabel={t('深入思考')} />
+          </View>
+        ) : think.kind === 'levels' ? (
+          <View style={styles.levels}>
+            <Text style={styles.rowTitle}>{t('深入思考')}</Text>
+            <View style={styles.segment}>
+              {think.levels.map((lv) => {
+                const on = String(value || think.defaultLevel) === lv;
+                return (
+                  <Pressable
+                    key={lv}
+                    onPress={() => {
+                      if (on) return;
+                      Haptics.selectionAsync();
+                      void store.setThink(lv);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={t('深入思考：{p0}', { p0: friendlyLevel(lv) })}
+                    accessibilityState={{ selected: on }}
+                    style={[styles.segmentItem, on && styles.segmentOn]}>
+                    <Text style={[styles.segmentText, on && styles.segmentTextOn]}>{friendlyLevel(lv)}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.row}>
+            <Text style={[styles.rowTitle, styles.flex]}>{t('深入思考')}</Text>
+            <Text style={styles.rowSub}>{t('一定會先思考')}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={styles.footnote}>
+        {think.kind === 'always' ? t('這個模型每次都會先思考再回答，沒辦法關掉。思考過程收在回答上方，可以點開看。') : t('開了會先想再回答，比較仔細，但比較慢。')}
+      </Text>
+    </>
+  );
+}
+
 function TextButton({ text, onPress }: { text: string; onPress: () => void }) {
   return (
     <Pressable onPress={onPress} hitSlop={8} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
@@ -381,4 +433,10 @@ const styles = StyleSheet.create({
   primaryText: { fontSize: 15, fontWeight: '600', color: '#ffffff' },
   footnote: { fontSize: 13, lineHeight: 18, color: C.secondary, marginHorizontal: 4 },
   pressed: { opacity: 0.4 },
+  levels: { padding: 16, gap: 10 },
+  segment: { flexDirection: 'row', padding: 2, borderRadius: 9, backgroundColor: C.pressed },
+  segmentItem: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
+  segmentOn: { backgroundColor: C.groupedCard },
+  segmentText: { fontSize: 14, color: C.secondary },
+  segmentTextOn: { color: C.label, fontWeight: '600' },
 });

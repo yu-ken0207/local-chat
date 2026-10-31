@@ -45,6 +45,14 @@ export function fmtCount(n: number): string {
   return x < 1e8 ? `${short(x / 1e4)} 萬` : `${short(x / 1e8)} 億`; // i18n-ignore：中文的數字單位，英文在上面另外寫
 }
 
+/** 上下文大小的短寫：1,203 寫 1.2K、32,768 寫 32K（以 1024 算一 K，跟大家說的 8K、32K、128K 一樣） */
+export function fmtK(n: number): string {
+  const x = Math.max(0, Math.round(n));
+  if (x < 1000) return String(x);
+  const k = x / 1024;
+  return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, '')}K`;
+}
+
 /** 估出來的 token 數：一千以上取到百位、一百以上取到十位（看起來才不會像精確值） */
 export function fmtRough(n: number): string {
   const x = Math.max(0, n);

@@ -614,7 +614,7 @@ export function ChatScreen(p: ChatScreenProps) {
       </Pressable>
       <View style={[styles.headerSide, styles.headerRight]}>
         {/* 右上角放用量（不放「新對話」：盡量留在這段聊，快滿了會自動整理；要開新的從對話清單） */}
-        <UsageMeter context={state.context} reduceMotion={reduceMotion} onPress={() => setUsageOpen(true)} />
+        <UsageMeter context={state.context} onPress={() => setUsageOpen(true)} />
       </View>
     </View>
   );
@@ -832,7 +832,6 @@ export function ChatScreen(p: ChatScreenProps) {
       }}
       onStop={() => store.stop()}
       onOpenModels={() => setSheetOpen(true)}
-      onThink={(v) => store.setThink(v)}
       pickPhotos={p.pickPhotos}
       injected={injected}
       // 塞進去的字套用一次就清掉：不然輸入框換位置重建時（打開討論串）又被放回去

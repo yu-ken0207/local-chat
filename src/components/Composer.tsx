@@ -1,7 +1,6 @@
-import * as Haptics from 'expo-haptics';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
-import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View, type ColorValue } from 'react-native';
+import { ActionSheetIOS, Alert, Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { friendlyLevel } from '../lib/modelName';
 import type { ThinkOption, ThinkSetting } from '../lib/ollama';
@@ -25,8 +24,8 @@ type Props = {
   /** 開始在輸入框打字 */
   onInputFocus?: () => void;
   onStop: () => void;
+  /** 點模型那顆：打開選模型（深入思考也在那裡開關） */
   onOpenModels: () => void;
-  onThink: (value: ThinkSetting) => void;
   pickPhotos: (source: PickSource, limit: number) => Promise<NewPhoto[] | 'denied'>;
   /** 由外面塞進輸入框的文字（例如提示詞範本、編輯訊息） */
   injected?: { text: string; photos?: NewPhoto[]; nonce: number } | null;
@@ -54,10 +53,10 @@ export function chooseOption(title: string, options: string[], onPick: (index: n
   }
 }
 
-/** 底下那排的按鈕不到 44pt 高：外觀不變，用 hitSlop 補足可以按的範圍 */
-const PILL_HIT = { top: 10, bottom: 10, left: 4, right: 4 };
-/** 底下那排的字最多放大到 1.3 倍（大字時整排還放得下；訊息內容照樣跟著放大） */
-const FOOTER_MAX_SCALE = 1.3;
+/** 下面那排的圓鈕、模型那顆是 36pt 高：用 hitSlop 補到 44pt */
+const ROW_HIT = { top: 4, bottom: 4, left: 4, right: 4 };
+/** 模型那顆的字最多放大到 1.3 倍（大字時整排還放得下；訊息內容照樣跟著放大） */
+const PILL_MAX_SCALE = 1.3;
 
 /** 輸入框的 nativeID：KeyboardGestureArea 靠它把「往下拖收鍵盤」的起點拉到輸入列上緣 */
 export const COMPOSER_INPUT_ID = 'composer-input';
@@ -166,26 +165,11 @@ export function Composer(p: Props) {
     }
   }
 
-  function pressThink() {
-    if (!p.think) return;
-    Haptics.selectionAsync();
-    if (p.think.kind === 'always') {
-      Alert.alert(t('一定會先思考'), t('這個模型每次都會先思考再回答，沒辦法關掉。思考過程收在回答上方，可以點開看。'));
-    } else if (p.think.kind === 'toggle') {
-      p.onThink(!p.thinkValue);
-    } else {
-      const levels = p.think.levels;
-      chooseOption(t('深入思考的程度（越仔細越慢）'), levels.map(friendlyLevel), (i) => p.onThink(levels[i]));
-    }
-  }
-
+  // 模型那顆上的思考：開著才寫（分程度的寫程度、一定會思考的也寫）；讀螢幕另外唸開或關
   const always = p.think?.kind === 'always';
-  const thinkOn = always || !!p.thinkValue;
-  const level = p.think?.kind === 'levels' ? friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) : '';
-  // 畫面上只寫「思考」（開的時候燈泡實心、亮色）；分程度的模型多寫程度；讀螢幕唸完整的
-  const thinkText = level ? t('思考：{p0}', { p0: level }) : t('思考');
-  const thinkLabel = always ? t('一定會先思考') : level ? t('深入思考：{p0}', { p0: level }) : t('深入思考');
-
+  const level = p.think?.kind === 'levels' ? friendlyLevel(String(p.thinkValue || p.think.defaultLevel)) : '';
+  const thinkShort = !p.think ? '' : level ? t('思考：{p0}', { p0: level }) : always || p.thinkValue ? t('思考') : '';
+  const thinkSpoken = !p.think ? '' : always ? t('一定會先思考') : level ? t('深入思考：{p0}', { p0: level }) : p.thinkValue ? t('深入思考：開') : t('深入思考：關');
 
   return (
     <View style={[styles.wrap, { paddingBottom: p.bottomInset }]}>
@@ -213,7 +197,28 @@ export function Composer(p: Props) {
             ))}
           </View>
         )}
-        <View style={styles.inputRow}>
+        <TextInput
+          key={inputKey}
+          ref={inputRef}
+          nativeID={COMPOSER_INPUT_ID}
+          style={styles.input}
+          value={draft}
+          onChangeText={(text) => {
+            setDraft(text);
+            p.onDraftChange?.(text);
+          }}
+          onFocus={() => {
+            focused.current = true;
+            p.onInputFocus?.();
+          }}
+          onBlur={() => (focused.current = false)}
+          placeholder={p.modelLabel ? t('輸入訊息') : (p.notReadyHint ?? t('先在下方選一個模型'))}
+          placeholderTextColor={C.placeholder}
+          multiline
+          accessibilityLabel={t('訊息輸入框')}
+        />
+        {/* 下面一排：＋、模型（跟思考合成一顆）、送出 */}
+        <View style={styles.toolbar}>
           <IconButton
             name="plus"
             label={p.canAttach ? t('附加照片') : attachBlocked.label}
@@ -229,59 +234,30 @@ export function Composer(p: Props) {
             dimmed={!p.canAttach}
             disabled={p.busy || photos.length >= MAX_PHOTOS}
           />
-          <TextInput
-            key={inputKey}
-            ref={inputRef}
-            nativeID={COMPOSER_INPUT_ID}
-            style={styles.input}
-            value={draft}
-            onChangeText={(text) => {
-              setDraft(text);
-              p.onDraftChange?.(text);
-            }}
-            onFocus={() => {
-              focused.current = true;
-              p.onInputFocus?.();
-            }}
-            onBlur={() => (focused.current = false)}
-            placeholder={p.modelLabel ? t('輸入訊息') : (p.notReadyHint ?? t('先在下方選一個模型'))}
-            placeholderTextColor={C.placeholder}
-            multiline
-            accessibilityLabel={t('訊息輸入框')}
-          />
+          <Pressable
+            onPress={p.onOpenModels}
+            hitSlop={ROW_HIT}
+            accessibilityRole="button"
+            accessibilityLabel={t('模型：{p0}，點一下切換', { p0: p.modelLabel ?? t('還沒選') })}
+            accessibilityValue={thinkSpoken ? { text: thinkSpoken } : undefined}
+            style={({ pressed }) => [styles.modelPill, pressed && styles.pressed]}
+            testID="model-pill">
+            <Text style={[styles.pillText, !p.modelLabel && { color: C.accent }]} numberOfLines={1} maxFontSizeMultiplier={PILL_MAX_SCALE}>
+              {p.modelLabel ?? t('選擇模型')}
+            </Text>
+            {thinkShort ? (
+              <Text style={styles.pillThink} numberOfLines={1} maxFontSizeMultiplier={PILL_MAX_SCALE}>
+                {thinkShort}
+              </Text>
+            ) : null}
+          </Pressable>
+          <View style={styles.spacer} />
           {p.busy ? (
-            <IconButton name="stop.circle.fill" label={t('停止回答')} size={30} color={C.label} onPress={p.onStop} />
+            <IconButton name="stop.fill" label={t('停止回答')} kind="stop" onPress={p.onStop} />
           ) : (
-            <IconButton name="arrow.up.circle.fill" label={t('送出')} size={30} color={C.accent} disabled={!canSend} onPress={() => void send()} />
+            <IconButton name="arrow.up" label={t('送出')} kind="send" disabled={!canSend} onPress={() => void send()} />
           )}
         </View>
-      </View>
-      <View style={styles.footer}>
-        <Pressable
-          onPress={p.onOpenModels}
-          hitSlop={PILL_HIT}
-          accessibilityRole="button"
-          accessibilityLabel={t('模型：{p0}，點一下切換', { p0: p.modelLabel ?? t('還沒選') })}
-          style={({ pressed }) => [styles.pill, pressed && styles.pressed]}>
-          <Text style={[styles.footerText, !p.modelLabel && { color: C.accent }]} numberOfLines={1} maxFontSizeMultiplier={FOOTER_MAX_SCALE}>
-            {p.modelLabel ?? t('選擇模型')}
-          </Text>
-          <SymbolView name="chevron.up.chevron.down" size={11} tintColor={C.secondary} />
-        </Pressable>
-        {p.think ? (
-          <Pressable
-            onPress={pressThink}
-            hitSlop={PILL_HIT}
-            accessibilityRole={p.think.kind === 'toggle' ? 'switch' : 'button'}
-            accessibilityState={p.think.kind === 'toggle' ? { checked: !!p.thinkValue } : undefined}
-            accessibilityLabel={thinkLabel}
-            style={({ pressed }) => [styles.pill, styles.pillFixed, thinkOn ? styles.pillOn : null, pressed && styles.pressed]}>
-            <SymbolView name={thinkOn ? 'lightbulb.fill' : 'lightbulb'} size={11} tintColor={thinkOn ? C.accent : C.secondary} />
-            <Text style={[styles.footerText, thinkOn ? { color: C.accent } : null]} numberOfLines={1} maxFontSizeMultiplier={FOOTER_MAX_SCALE}>
-              {thinkText}
-            </Text>
-          </Pressable>
-        ) : null}
       </View>
     </View>
   );
@@ -293,8 +269,7 @@ function IconButton({
   onPress,
   disabled,
   dimmed,
-  size = 24,
-  color,
+  kind = 'plain',
 }: {
   name: SFSymbol;
   label: string;
@@ -302,20 +277,23 @@ function IconButton({
   disabled?: boolean;
   /** 看起來是灰的、但還能按（按了說為什麼不能用） */
   dimmed?: boolean;
-  size?: number;
-  color?: ColorValue;
+  /** plain：灰底圓鈕（＋）；send：強調色圓底白箭頭；stop：深色圓底 */
+  kind?: 'plain' | 'send' | 'stop';
 }) {
+  const off = disabled || dimmed;
+  const bg = kind === 'send' && !off ? C.accentFill : kind === 'stop' ? C.label : C.pressed;
+  const tint = kind === 'send' && !off ? '#ffffff' : kind === 'stop' ? C.bg : off ? C.tertiary : C.label;
   return (
     <Pressable
       onPress={onPress}
       // 只在真的停用時才給 disabled：Pressable 收到 false 也會蓋掉 accessibilityState 的 disabled（灰掉但能按的就說不出來）
       disabled={disabled || undefined}
-      hitSlop={8}
+      hitSlop={ROW_HIT}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled || !!dimmed }}
-      style={({ pressed }) => [styles.iconButton, pressed && styles.pressedIcon]}>
-      <SymbolView name={name} size={size} tintColor={disabled || dimmed ? C.tertiary : (color ?? C.label)} />
+      style={({ pressed }) => [styles.circle, { backgroundColor: bg }, pressed && styles.pressedIcon]}>
+      <SymbolView name={name} size={kind === 'stop' ? 13 : 17} weight="semibold" tintColor={tint} />
     </Pressable>
   );
 }
@@ -323,20 +301,20 @@ function IconButton({
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: 12, paddingTop: 6, gap: 6, backgroundColor: C.bg },
   hint: { ...TEXT.meta, color: C.warnText, marginHorizontal: 8 },
-  composer: { backgroundColor: C.surface, borderRadius: 20, padding: 6, gap: 6 },
-  attachments: { flexDirection: 'row', gap: 10, paddingHorizontal: 8, paddingTop: 6 },
+  // 一整塊圓角框：字在上面，下面一排按鈕（像 Claude App 的輸入框）
+  composer: { backgroundColor: C.surface, borderRadius: 24, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator, paddingHorizontal: 8, paddingTop: 6, paddingBottom: 8, gap: 4 },
+  attachments: { flexDirection: 'row', gap: 10, paddingHorizontal: 6, paddingTop: 8 },
   attachment: {},
   attachmentImage: { width: 56, height: 56, borderRadius: 8 },
   remove: { position: 'absolute', top: -8, right: -8, backgroundColor: C.surface, borderRadius: 10 },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 4 },
-  input: { flex: 1, fontFamily: MONO, fontSize: 15, lineHeight: 21, color: C.label, paddingVertical: 8, paddingHorizontal: 4, minHeight: 38, maxHeight: 140 },
-  iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+  input: { fontFamily: MONO, fontSize: 15, lineHeight: 21, color: C.label, paddingVertical: 8, paddingHorizontal: 8, minHeight: 38, maxHeight: 140 },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  spacer: { flex: 1 },
+  circle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   pressedIcon: { opacity: 0.5, transform: [{ scale: 0.92 }] },
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 6 },
-  // 兩顆都有細框，看得出是按鈕；放不下時只縮模型那顆（截掉的是後面的電腦名），深入思考不縮，字不會跑出框外
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 12, flexShrink: 1, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
-  pillFixed: { flexShrink: 0 },
-  pillOn: { backgroundColor: C.surface },
-  footerText: { ...TEXT.meta, color: C.secondary },
+  // 模型那顆：放不下時縮模型名（截掉後面），思考的字不縮
+  modelPill: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: C.pressed, flexShrink: 1 },
+  pillText: { ...TEXT.small, color: C.label, flexShrink: 1 },
+  pillThink: { ...TEXT.small, color: C.secondary, flexShrink: 0 },
   pressed: { opacity: 0.4 },
 });

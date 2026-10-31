@@ -247,28 +247,39 @@ describe('輸入列', () => {
     expect(screen.getByLabelText('移除照片 1')).toBeTruthy();
   });
 
-  test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {
+  test('思考：模型那顆開著才寫「思考」；在選模型面板最上面開關、選程度；沒有思考能力就沒有', async () => {
     const { store, net } = await setup();
-    // 畫面上只寫「思考」，開的時候燈泡實心；讀螢幕是開關
-    expect(screen.getByText('思考')).toBeTruthy();
-    expect(screen.getByLabelText('深入思考').props.accessibilityState).toMatchObject({ checked: false });
-    await fireEvent.press(screen.getByLabelText('深入思考'));
-    expect(screen.getByLabelText('深入思考').props.accessibilityState).toMatchObject({ checked: true });
+    const pill = () => screen.getByTestId('model-pill');
+    // 關著：只寫模型名，讀螢幕另外唸「深入思考：關」
+    expect(within(pill()).queryByText('思考')).toBeNull();
+    expect(pill().props.accessibilityValue).toMatchObject({ text: '深入思考：關' });
+    await fireEvent.press(pill());
+    await fireEvent(await screen.findByLabelText('深入思考'), 'valueChange', true);
+    expect(store.getState().session!.think).toBe(true);
+    await fireEvent.press(screen.getByText('完成'));
+    expect(within(pill()).getByText('思考')).toBeTruthy();
+    expect(pill().props.accessibilityValue).toMatchObject({ text: '深入思考：開' });
     await send(store, '問');
     expect(net.chatBodies()[0].think).toBe(true);
 
+    // 分程度的：模型那顆寫程度，面板裡用分段選
     await act(async () => {
       await store.selectModel(A, 'gpt-oss:20b');
     });
-    pickActionSheet(2);
-    expect(screen.getByText('思考：平衡')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('深入思考：平衡'));
-    expect(screen.getByLabelText('深入思考：仔細')).toBeTruthy();
+    expect(within(pill()).getByText('思考：平衡')).toBeTruthy();
+    await fireEvent.press(pill());
+    await fireEvent.press(await screen.findByLabelText('深入思考：仔細'));
+    expect(store.getState().session!.think).toBe('high');
+    await fireEvent.press(screen.getByText('完成'));
+    expect(within(pill()).getByText('思考：仔細')).toBeTruthy();
 
     await act(async () => {
       await store.selectModel(A, 'llama3:latest');
     });
-    expect(screen.queryByText(/^深入思考/)).toBeNull();
+    expect(pill().props.accessibilityValue?.text).toBeUndefined();
+    await fireEvent.press(pill());
+    await screen.findByText('選擇模型');
+    expect(screen.queryByLabelText('深入思考')).toBeNull();
   });
 
   test('沒打字也沒照片時不能送出', async () => {

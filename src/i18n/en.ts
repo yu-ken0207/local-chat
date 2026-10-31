@@ -739,4 +739,7 @@ export const en: Record<string, string> = {
   "{n} 次": "{n} calls",
   "只算這支手機用的，紀錄留 90 天。": "Counts only this phone. Records are kept for 90 days.",
   "用量，這段用了 {p0}%": "Usage, {p0}% used in this conversation",
+  "開了會先想再回答，比較仔細，但比較慢。": "When on, the AI thinks before answering. More careful, but slower.",
+  "深入思考：開": "Think deeply: on",
+  "深入思考：關": "Think deeply: off",
 };
