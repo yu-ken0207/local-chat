@@ -334,6 +334,16 @@ export function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: str
   const setField = (k: keyof AgentCard) => (v: string) => setCard({ expertise: '', stance: '', style: '', blindSpot: '', ...card, [k]: v });
   const modelLabel = model.model ? t('{p0}，{p1}', { p0: model.model, p1: state.hosts.find((h) => h.url === model.hostUrl)?.label ?? '' }) : t('跟著對話');
 
+  // 拿到 id 卻不在「我的 Agent」（例如已經刪掉）：不要退成建立模式，存檔會改到別人
+  if (id && !existing) {
+    return (
+      <View style={styles.sheet}>
+        <Header title={t('編輯 Agent')} right={t('完成')} onRight={onClose} />
+        <Text style={[styles.sub, styles.empty]}>{t('找不到這個 Agent，可能已經刪除了。')}</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.sheet}>
       <Header title={existing ? t('編輯 Agent') : t('建立 Agent')} left={t('取消')} onLeft={onClose} right={t('儲存')} onRight={save} rightDisabled={!name.trim()} />

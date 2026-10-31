@@ -114,6 +114,8 @@ export function AgentProfile({
         ]
       : [];
   const shown = rows.filter(([, v]) => v.trim());
+  // 刪掉的 Agent：只看資料（說過的話還在），不給 @他、編輯、移除
+  const deleted = !!agent.deletedAt;
   const stats = [spoken > 0 ? t('這段說了 {n} 次', { n: spoken }) : t('這段還沒說話'), t('積極度：{p0}', { p0: talkLabel(agent.talk) })].join(t('，'));
 
   return (
@@ -161,11 +163,15 @@ export function AgentProfile({
                 ))}
               </View>
             ) : null}
-            <View style={styles.buttons}>
-              <ActionButton text={t('@他')} primary onPress={() => close('mention')} />
-              <ActionButton text={t('編輯')} onPress={() => close('edit')} />
-              {member ? <ActionButton text={t('移除')} onPress={() => close('remove')} /> : null}
-            </View>
+            {deleted ? (
+              <Text style={[styles.stats, styles.deleted]}>{t('這個 Agent 已經刪除，可以在設定的 Agent 頁復原。')}</Text>
+            ) : (
+              <View style={styles.buttons}>
+                <ActionButton text={t('@他')} primary onPress={() => close('mention')} />
+                <ActionButton text={t('編輯')} onPress={() => close('edit')} />
+                {member ? <ActionButton text={t('移除')} onPress={() => close('remove')} /> : null}
+              </View>
+            )}
           </ScrollView>
         </Animated.View>
       </View>
@@ -197,4 +203,5 @@ const styles = StyleSheet.create({
   value: { ...TEXT.small, color: C.label, flex: 1 },
   note: { ...TEXT.small, color: C.label },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
+  deleted: { paddingHorizontal: 8 },
 });

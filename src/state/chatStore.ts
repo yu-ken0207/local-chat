@@ -1749,6 +1749,9 @@ export class ChatStore {
 
   /** 放進「我的 Agent」（從資料卡按「編輯」時：圖鑑來的先收進來才能改） */
   async makeMine(agentId: string): Promise<void> {
+    const a = await this.deps.repo.getAgent(agentId);
+    // 刪掉的不收（要先在 Agent 頁復原），不然編輯面板找不到他、存檔又改到刪掉的那一份
+    if (!a || a.deletedAt) return;
     await this.deps.repo.updateAgent(agentId, { mine: true });
     await this.loadMyAgents();
   }
@@ -2184,9 +2187,13 @@ export class ChatStore {
     const members = (await repo.listMembers(sessionId)).map((m) => m.agent);
     const memberIds = new Set(members.map((a) => a.id));
     const mine = (await repo.listMyAgents()).filter((a) => !memberIds.has(a.id));
+    // 這段說過話、後來離開的人（找 Agent、圖鑑加的不在「我的 Agent」）：@ 他也拉得回來；刪掉的不算
+    const spokeIds = [...new Set((await repo.listMessages(sessionId)).flatMap((m) => (m.agentId && !memberIds.has(m.agentId) ? [m.agentId] : [])))];
+    const spoke = (await repo.agentsByIds(spokeIds)).filter((a) => !a.deletedAt && !mine.some((x) => x.id === a.id));
+    const outside = [...mine, ...spoke];
     // 跟成員一起比：簡稱撞到成員的不算，免得拉錯人
-    for (const id of findMentions(text, mentionPeople([...members, ...mine]))) {
-      const a = mine.find((x) => x.id === id);
+    for (const id of findMentions(text, mentionPeople([...members, ...outside]))) {
+      const a = outside.find((x) => x.id === id);
       if (a) await this.joinAgent(sessionId, a, 'mention');
     }
   }
@@ -2667,7 +2674,11 @@ export class ChatStore {
       if (tool.kind === 'agents') {
         const topic = String(checked.value.topic ?? '');
         const picks = await this.findAgents(sessionId, topic, [], signal).catch(() => [] as AgentCandidate[]);
-        if (signal?.aborted) continue;
+        // 找人時按了停止：照樣留一則工具結果（不然之後每次送給模型都帶著一個沒有回應的工具呼叫）
+        if (signal?.aborted) {
+          reject('The user stopped before any agents were found. Do not invite anyone.');
+          continue;
+        }
         if (picks.length === 0) {
           reject('No suitable agents were found for this topic. Answer the user yourself.', t('沒有找到合適的 Agent'));
           continue;

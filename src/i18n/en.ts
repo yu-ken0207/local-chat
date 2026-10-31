@@ -693,4 +693,6 @@ export const en: Record<string, string> = {
   "編輯": "Edit",
   "看 {p0} 的資料": "View {p0}’s profile",
   "「{p0}」離開了討論": "{p0} left the discussion",
+  "這個 Agent 已經刪除，可以在設定的 Agent 頁復原。": "This agent was deleted. You can restore it on the Agents page in Settings.",
+  "找不到這個 Agent，可能已經刪除了。": "Couldn't find this agent. It may have been deleted.",
 };

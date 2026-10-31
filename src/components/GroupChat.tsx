@@ -13,6 +13,7 @@ import { CatalogList } from './AgentsSheet';
 import { chooseOption } from './Composer';
 import { Markdown } from './Markdown';
 import { ActionButton, Thinking, Thumbnails, Versions, Working, moreActions } from './Messages';
+import { UndoToast } from './UndoToast';
 import { t } from '../i18n';
 
 // 多 AI 討論的畫面：聊天氣泡（你在右、AI 在左帶頭像和名字）、成員列、討論進行到哪、@ 選人、成員面板
@@ -590,6 +591,8 @@ export function MembersSheet({ store, state, topic, onClose }: { store: ChatStor
           />
         </View>
       </Modal>
+      {/* 面板開著時聊天畫面的復原提示被蓋住：拿掉成員的「復原」在這裡 */}
+      <UndoToast store={store} />
     </View>
   );
 }

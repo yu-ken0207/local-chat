@@ -404,3 +404,70 @@ describe('點頭像看 Agent 的資料', () => {
     expect(await screen.findByDisplayValue('預算控管', {}, { timeout: 3000 })).toBeTruthy();
   });
 });
+
+describe('審查修正（完整 code review）：資料卡、成員面板', () => {
+  test('資料卡開著時不能從左邊滑出對話清單', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    // 從左邊緣往右滑一段：側邊欄要不要接手
+    const claims = () => {
+      const el = screen.getByTestId('side-drawer', { includeHiddenElements: true } as never);
+      const ev = (x: number) => ({
+        nativeEvent: { pageX: x, pageY: 400, timestamp: 1016, touches: [{}] },
+        touchHistory: { numberActiveTouches: 1, indexOfSingleActiveTouch: 0, mostRecentTimeStamp: 1016, touchBank: [{ touchActive: true, startPageX: 10, startPageY: 400, startTimeStamp: 1000, currentPageX: x, currentPageY: 400, currentTimeStamp: 1016, previousPageX: 10, previousPageY: 400, previousTimeStamp: 1000 }] },
+      });
+      el.props.onStartShouldSetResponderCapture(ev(10));
+      el.props.onMoveShouldSetResponderCapture(ev(60));
+      return !!el.props.onMoveShouldSetResponder(ev(60));
+    };
+    expect(claims()).toBe(true);
+    await fireEvent.press(screen.getByLabelText('看 財務長 的資料'), { nativeEvent: { pageX: 30, pageY: 400 } });
+    await screen.findByTestId('agent-profile');
+    expect(claims()).toBe(false);
+  });
+
+  test('已經離開討論的人：資料卡按「@他」先把他拉回來再填 @', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await store.removeMember(agents['財務長'].id);
+    await store.dismissUndo();
+    await screenOf(store);
+    await fireEvent.press(screen.getByLabelText('看 財務長 的資料'), { nativeEvent: { pageX: 30, pageY: 400 } });
+    await screen.findByTestId('agent-profile');
+    expect(screen.queryByText('移除')).toBeNull();
+    await fireEvent.press(screen.getByText('@他'));
+    await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toContain('財務長'));
+    expect(await screen.findByDisplayValue('@財務長 ')).toBeTruthy();
+  });
+
+  test('已刪除的 Agent：資料卡只看資料，沒有 @他、編輯、移除', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await store.deleteAgent(agents['財務長'].id);
+    await store.dismissUndo();
+    await screenOf(store);
+    await fireEvent.press(screen.getByLabelText('看 財務長 的資料'), { nativeEvent: { pageX: 30, pageY: 400 } });
+    expect(await screen.findByText('這個 Agent 已經刪除，可以在設定的 Agent 頁復原。')).toBeTruthy();
+    expect(screen.queryByText('@他')).toBeNull();
+    expect(screen.queryByText('編輯')).toBeNull();
+  });
+
+  test('成員面板拿掉成員：面板裡就有「復原」', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, {});
+    await screenOf(store);
+    await fireEvent.press(await screen.findByText('2 位成員'));
+    await fireEvent.press(await screen.findByLabelText('拿掉 工程師'));
+    expect(await screen.findByText('「工程師」離開了討論', {}, { includeHiddenElements: true } as never)).toBeTruthy();
+    await fireEvent.press(screen.getByText('復原', { includeHiddenElements: true } as never));
+    await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', '工程師']));
+  });
+});

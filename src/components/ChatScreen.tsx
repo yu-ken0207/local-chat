@@ -498,6 +498,11 @@ export function ChatScreen(p: ChatScreenProps) {
   const concluded = lastShown?.detail === CONCLUSION || lastShown?.role === 'error';
   const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant' && !concluded;
   const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftRef.current;
+  // @ 名單的後半：我的 Agent，加上這段說過話、後來離開的人（刪掉的不算）
+  const mentionOutside = [
+    ...state.myAgents,
+    ...Object.values(state.agents).filter((a) => !a.deletedAt && !state.members.some((m) => m.agent.id === a.id) && !state.myAgents.some((x) => x.id === a.id)),
+  ];
   const profileAgent = profile ? (state.agents[profile.id] ?? state.members.find((m) => m.agent.id === profile.id)?.agent ?? null) : null;
   const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
   const pinnedCard = pinnedMessage ? parseConclusion(pinnedMessage.content) : null;
@@ -823,7 +828,7 @@ export function ChatScreen(p: ChatScreenProps) {
           <MentionPicker
             query={mention}
             members={state.members.map((x) => x.agent)}
-            mine={state.myAgents}
+            mine={mentionOutside}
             onPick={(name) => setInjected({ text: draftRef.current.replace(/@[^\s@]*$/, `@${name} `), nonce: Date.now() })}
           />
         ) : editing ? (
@@ -902,7 +907,7 @@ export function ChatScreen(p: ChatScreenProps) {
       <SideDrawer
         open={listOpen}
         onOpenChange={setListOpen}
-        swipeEnabled={listOpen || (!anySheetOpen && !viewer && !cardMode)}
+        swipeEnabled={listOpen || (!anySheetOpen && !viewer && !cardMode && !profile && !editingAgent)}
         closeLabel={t('關閉對話清單')}
         renderDrawer={() => (
           <SessionList
@@ -955,6 +960,8 @@ export function ChatScreen(p: ChatScreenProps) {
                 setProfile(null);
                 // 縮回頭像之後才做：@ 他填進輸入框、打開編輯、離開討論（可以復原）
                 if (action === 'mention') {
+                  // 已經不在討論裡的：先拉回來（@ 了才回得了話）
+                  if (!state.members.some((m) => m.agent.id === a.id)) void store.addMember(a.id);
                   const base = draftRef.current;
                   setInjected({ text: `${base && !/\s$/.test(base) ? `${base} ` : base}@${a.name} `, nonce: Date.now() });
                 }

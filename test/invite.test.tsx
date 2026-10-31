@@ -222,3 +222,48 @@ describe('畫面', () => {
     expect(await screen.findByText('幫我挑', { includeHiddenElements: true })).toBeTruthy();
   });
 });
+
+describe('審查修正（完整 code review）：資料卡與找 Agent', () => {
+  test('找 Agent 加進來、後來離開的人：打 @ 他也拉得回來（他不在「我的 Agent」）', async () => {
+    const { net, store } = await setup();
+    script(net, { picks: [[{ name: hist.n[0], why: '看過去' }]], bids: { [hist.n[0]]: [8, 0, 0] } });
+    await store.send('找人討論要不要換伺服器');
+    const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
+    await store.approveAgents(action.id, action.input.keys as string[]);
+    const histId = store.getState().members[0].agent.id;
+    expect(store.getState().myAgents.some((a) => a.id === histId)).toBe(false);
+    await store.removeMember(histId);
+    expect(store.getState().members).toEqual([]);
+    await store.send(`@${hist.n[0]} 你再說說`);
+    expect(store.getState().members.map((m) => m.agent.id)).toEqual([histId]);
+    expect(said(store).at(-1)).toBe(`${hist.n[0]}：${hist.n[0]}說了`);
+  });
+
+  test('刪掉的 Agent 不能收進「我的 Agent」（編輯面板才不會變成建立）', async () => {
+    const { repo, store, cfo } = await setup();
+    await repo.deleteAgent(cfo.id);
+    await store.makeMine(cfo.id);
+    expect((await repo.getAgent(cfo.id))!.mine).toBe(false);
+  });
+
+  test('找人時按停止：那次叫工具照樣留下結果（不會留一個沒有回應的工具呼叫）', async () => {
+    const { net, store } = await setup();
+    let called = false;
+    net.hosts.get(A)!.reply = (body: any) => {
+      if (body.format?.properties?.roles) return { lines: [{ message: { role: 'assistant', content: '{' }, done: false }], hang: true };
+      if (!called && body.tools) {
+        called = true;
+        return { lines: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', function: { name: 'invite_agents', arguments: { topic: '換伺服器' } } }] }, done: false }, done] };
+      }
+      return say('AI 自己回答');
+    };
+    const p = store.send('找人討論要不要換伺服器');
+    await new Promise((r) => setTimeout(r, 150));
+    store.stop();
+    await p;
+    const tool = store.getState().messages.find((m) => m.role === 'tool');
+    expect(tool).toMatchObject({ toolCallId: 'call_1' });
+    expect(JSON.parse(tool!.content).ok).toBe(false);
+    expect(store.getState().messages.flatMap((m) => m.actions ?? [])).toEqual([]);
+  });
+});
