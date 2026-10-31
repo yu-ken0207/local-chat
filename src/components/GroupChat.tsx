@@ -326,18 +326,18 @@ export function DiscussionStatus({
     const was = prev.current;
     prev.current = { running, suggest, canContinue };
     if (running) return;
-    if (suggest && !was.suggest) AccessibilityInfo.announceForAccessibility(t('大家覺得可以收尾了'));
+    if (suggest && !was.suggest) AccessibilityInfo.announceForAccessibility(t('可以收尾了'));
     else if (canContinue && (was.running || !was.canContinue) && !suggest) AccessibilityInfo.announceForAccessibility(t('大家說完了'));
   }, [running, suggest, canContinue]);
   if (running) {
     const text = !phase
       ? t('討論中…')
       : phase.phase === 'bidding'
-        ? t('大家在想要不要說話…')
+        ? t('大家在想…')
         : phase.phase === 'hosting'
-          ? t('主持人在決定下一位…')
+          ? t('主持人點名中…')
           : phase.phase === 'summarizing'
-            ? t('正在整理前情摘要…')
+            ? t('整理前情中…')
             : phase.phase === 'concluding'
               ? t('正在收尾…')
               : t('{p0} 正在說話…', { p0: (phase.agentId && agents[phase.agentId]?.name) || 'AI' });
@@ -358,7 +358,7 @@ export function DiscussionStatus({
         <View style={styles.statusLine}>
           <SymbolView name="checkmark.seal" size={16} tintColor={C.accent} />
           <Text style={[styles.statusText, styles.flex]} numberOfLines={2}>
-            {t('大家覺得可以收尾了')}
+            {t('可以收尾了')}
           </Text>
           <Pressable onPress={onDismissSuggest} accessibilityRole="button" accessibilityLabel={t('先不要')} style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}>
             <SymbolView name="xmark" size={12} tintColor={C.secondary} />

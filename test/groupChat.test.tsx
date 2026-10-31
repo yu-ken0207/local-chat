@@ -162,9 +162,9 @@ test('大家覺得可以收尾：出現提示，可以繼續聊或先不要', as
   await screenOf(store);
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '開始');
   await fireEvent.press(screen.getByLabelText('送出'));
-  expect(await screen.findByText('大家覺得可以收尾了')).toBeTruthy();
+  expect(await screen.findByText('可以收尾了')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('先不要'));
-  expect(screen.queryByText('大家覺得可以收尾了')).toBeNull();
+  expect(screen.queryByText('可以收尾了')).toBeNull();
 });
 
 test('成員面板：改發言方式、拿掉成員；幫我挑照話題從圖鑑挑', async () => {
@@ -296,8 +296,8 @@ describe('審查修正：畫面與讀螢幕', () => {
     await screenOf(store);
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '開始');
     await fireEvent.press(screen.getByLabelText('送出'));
-    await screen.findByText('大家覺得可以收尾了');
-    expect(announce).toHaveBeenCalledWith('大家覺得可以收尾了');
+    await screen.findByText('可以收尾了');
+    expect(announce).toHaveBeenCalledWith('可以收尾了');
   });
 
   test('打字時（沒有 @）不會整個畫面重畫；打了 @ 才更新名單', async () => {

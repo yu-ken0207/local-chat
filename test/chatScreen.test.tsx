@@ -249,8 +249,11 @@ describe('輸入列', () => {
 
   test('思考開關：開關型可切換；分段型用選單選等級；沒有思考能力就不顯示', async () => {
     const { store, net } = await setup();
-    await fireEvent.press(screen.getByLabelText('深入思考：關'));
-    expect(screen.getByLabelText('深入思考：開')).toBeTruthy();
+    // 畫面上只寫「思考」，開的時候燈泡實心；讀螢幕是開關
+    expect(screen.getByText('思考')).toBeTruthy();
+    expect(screen.getByLabelText('深入思考').props.accessibilityState).toMatchObject({ checked: false });
+    await fireEvent.press(screen.getByLabelText('深入思考'));
+    expect(screen.getByLabelText('深入思考').props.accessibilityState).toMatchObject({ checked: true });
     await send(store, '問');
     expect(net.chatBodies()[0].think).toBe(true);
 
@@ -258,6 +261,7 @@ describe('輸入列', () => {
       await store.selectModel(A, 'gpt-oss:20b');
     });
     pickActionSheet(2);
+    expect(screen.getByText('思考：平衡')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('深入思考：平衡'));
     expect(screen.getByLabelText('深入思考：仔細')).toBeTruthy();
 
@@ -532,14 +536,15 @@ describe('對話', () => {
     expect(screen.getByTestId('chat-title').props.maxFontSizeMultiplier).toBe(1.3);
   });
 
-  test('輸入列下方：只有一台電腦只寫模型；兩台以上才加上電腦名', async () => {
+  test('輸入列下方只寫模型名：兩台以上電腦也不寫電腦（點開選模型面板看得到）', async () => {
     const { store, net } = await setup();
     expect(screen.getByLabelText('模型：Gemma 4 31B，點一下切換')).toBeTruthy();
     net.addHost('http://192.168.1.21:11434', { models: MODELS });
     await act(async () => {
       await store.addHost('192.168.1.21');
     });
-    expect(await screen.findByLabelText('模型：Gemma 4 31B，192.168.1.20，點一下切換')).toBeTruthy();
+    await waitFor(() => expect(store.getState().hosts).toHaveLength(2));
+    expect(screen.getByLabelText('模型：Gemma 4 31B，點一下切換')).toBeTruthy();
   });
 
   test('回答下的「模型，電腦」只在換了模型或電腦時才顯示', async () => {

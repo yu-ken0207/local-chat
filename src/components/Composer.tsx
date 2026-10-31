@@ -181,14 +181,10 @@ export function Composer(p: Props) {
 
   const always = p.think?.kind === 'always';
   const thinkOn = always || !!p.thinkValue;
-  const thinkText =
-    p.think?.kind === 'always'
-      ? t('一定會先思考')
-      : p.think?.kind === 'toggle'
-      ? t('深入思考：{p0}', { p0: p.thinkValue ? t('開') : t('關') })
-      : p.think
-        ? t('深入思考：{p0}', { p0: friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) })
-        : '';
+  const level = p.think?.kind === 'levels' ? friendlyLevel(String(p.thinkValue ?? p.think.defaultLevel)) : '';
+  // 畫面上只寫「思考」（開的時候燈泡實心、亮色）；分程度的模型多寫程度；讀螢幕唸完整的
+  const thinkText = level ? t('思考：{p0}', { p0: level }) : t('思考');
+  const thinkLabel = always ? t('一定會先思考') : level ? t('深入思考：{p0}', { p0: level }) : t('深入思考');
 
 
   return (
@@ -278,9 +274,9 @@ export function Composer(p: Props) {
             hitSlop={PILL_HIT}
             accessibilityRole={p.think.kind === 'toggle' ? 'switch' : 'button'}
             accessibilityState={p.think.kind === 'toggle' ? { checked: !!p.thinkValue } : undefined}
-            accessibilityLabel={thinkText}
+            accessibilityLabel={thinkLabel}
             style={({ pressed }) => [styles.pill, styles.pillFixed, thinkOn ? styles.pillOn : null, pressed && styles.pressed]}>
-            <SymbolView name="lightbulb" size={11} tintColor={thinkOn ? C.accent : C.secondary} />
+            <SymbolView name={thinkOn ? 'lightbulb.fill' : 'lightbulb'} size={11} tintColor={thinkOn ? C.accent : C.secondary} />
             <Text style={[styles.footerText, thinkOn ? { color: C.accent } : null]} numberOfLines={1} maxFontSizeMultiplier={FOOTER_MAX_SCALE}>
               {thinkText}
             </Text>
