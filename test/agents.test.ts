@@ -354,7 +354,7 @@ describe('備份與升級', () => {
       PRAGMA user_version = 1;`);
     const repo = new Repo(db);
     await repo.migrate();
-    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 8 });
+    expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 10 });
     expect((await repo.listMessages('s1')).map((m) => [m.content, m.agentId, m.replyTo])).toEqual([['舊訊息', null, null]]);
     expect((await repo.getSession('s1'))!.group).toBeNull();
     expect(await repo.listMembers('s1')).toEqual([]);

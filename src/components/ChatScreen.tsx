@@ -30,6 +30,7 @@ import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer, project, rubberband } from './SideDrawer';
 import { Toast, type ToastData } from './Toast';
 import { UndoToast } from './UndoToast';
+import { UsageMeter, UsageSheet } from './UsageSheet';
 import { t } from '../i18n';
 
 export type ChatScreenProps = {
@@ -92,6 +93,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const [toast, setToast] = useState<ToastData | null>(null);
   // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
   const [membersOpen, setMembersOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   // 點 Agent 頭像看的資料卡（at：頭像的位置）、從資料卡按「編輯」打開的編輯面板
   const [profile, setProfile] = useState<{ id: string; at: { x: number; y: number } | null } | null>(null);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -496,7 +498,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const session = state.session;
   const model = store.currentModel();
-  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen;
+  const anySheetOpen = sheetOpen || listOpen || appSettingsOpen || !!connect || membersOpen || usageOpen;
   // 多 AI 討論：「回覆 某某」（回的不是上一則才顯示）、打 @ 時的名單、要不要給「繼續討論」
   const replies = bubbles ? replyTargets(state.messages, state.agents, t('你')) : null;
   // 一般聊天也有 @ 名單（只列「我的 Agent」）：選了送出就把他拉進來
@@ -611,7 +613,8 @@ export function ChatScreen(p: ChatScreenProps) {
         {hasChat ? <SymbolView name="chevron.down" size={11} tintColor={C.secondary} /> : null}
       </Pressable>
       <View style={[styles.headerSide, styles.headerRight]}>
-        <HeaderButton name="square.and.pencil" text={t('新對話')} label={t('新對話')} disabled={state.messages.length === 0 || !!state.streaming} onPress={() => store.newSession()} />
+        {/* 右上角放用量（不放「新對話」：盡量留在這段聊，快滿了會自動整理；要開新的從對話清單） */}
+        <UsageMeter context={state.context} reduceMotion={reduceMotion} onPress={() => setUsageOpen(true)} />
       </View>
     </View>
   );
@@ -781,7 +784,8 @@ export function ChatScreen(p: ChatScreenProps) {
       />
     ) : null}
     {state.notice ? <Banner text={state.notice} tone="warn" onClose={() => store.dismissNotice()} /> : null}
-    {state.context && state.context.level !== 'ok' ? (
+    {/* 多 AI 討論自己會整理前情摘要，不用提醒 */}
+    {!group && state.context && state.context.level !== 'ok' ? (
       <Banner
         tone={state.context.level === 'full' ? 'error' : 'warn'}
         text={
@@ -953,6 +957,9 @@ export function ChatScreen(p: ChatScreenProps) {
                 setTimeout(connectClosed, 1500);
               }}
             />
+          </Modal>
+          <Modal visible={usageOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setUsageOpen(false)}>
+            <UsageSheet store={store} version={state.context?.used ?? 0} reduceMotion={reduceMotion} onClose={() => setUsageOpen(false)} />
           </Modal>
           <Modal visible={membersOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setMembersOpen(false)}>
             <MembersSheet store={store} state={state} topic={topic} onClose={() => setMembersOpen(false)} />

@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import { getLanguage, t } from '../i18n';
 
 // 秒數寫法照 Codex：59s、1m 05s、1h 02m 03s
 export function fmtElapsed(seconds: number): string {
@@ -31,6 +31,36 @@ export function contextLevel(usedTokens: number, limit: number | null): ContextL
   if (ratio >= 1) return 'full';
   if (ratio >= 0.8) return 'near';
   return 'ok';
+}
+
+/** 大數字縮短：中文「15.2 萬」、英文「15.2K」；中文一萬、英文一千以下照寫 */
+export function fmtCount(n: number): string {
+  const x = Math.max(0, Math.round(n));
+  const short = (v: number) => (v >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, ''));
+  if (getLanguage() === 'en') {
+    if (x < 1000) return String(x);
+    return x < 1e6 ? `${short(x / 1e3)}K` : `${short(x / 1e6)}M`;
+  }
+  if (x < 1e4) return x.toLocaleString('en-US');
+  return x < 1e8 ? `${short(x / 1e4)} 萬` : `${short(x / 1e8)} 億`; // i18n-ignore：中文的數字單位，英文在上面另外寫
+}
+
+/** 估出來的 token 數：一千以上取到百位、一百以上取到十位（看起來才不會像精確值） */
+export function fmtRough(n: number): string {
+  const x = Math.max(0, n);
+  const r = x >= 1000 ? Math.round(x / 100) * 100 : x >= 100 ? Math.round(x / 10) * 10 : Math.round(x);
+  return r.toLocaleString('en-US');
+}
+
+/** 載入的模型多久後卸載（Ollama 的 expires_at）；設成一直載入的（年份很遠）寫「一直載入」 */
+export function fmtUnload(expiresAt: string, now: number): string {
+  const ms = Date.parse(expiresAt) - now;
+  if (!Number.isFinite(ms)) return '';
+  if (ms > 365 * 24 * 60 * 60 * 1000) return t('一直載入');
+  if (ms < 60 * 1000) return t('快要卸載了');
+  const min = Math.round(ms / 60000);
+  if (min < 60) return t('{n} 分鐘後卸載', { n: min });
+  return t('{n} 小時後卸載', { n: Math.round(min / 60) });
 }
 
 /** 對話清單的時間：今天只寫時間，昨天、今年寫月日，其他寫年月日 */

@@ -38,10 +38,11 @@ const swipeDelete = (el: any) => fireEvent(el, 'accessibilityAction', { nativeEv
 
 afterEach(() => jest.restoreAllMocks());
 
-test('標題列的按鈕有文字：「對話」「新對話」；標題旁有 ⌄ 表示可以點', async () => {
+test('標題列：左邊「對話」有文字、右邊是用量（不放「新對話」，盡量留在這段聊）；標題旁有 ⌄ 表示可以點', async () => {
   await setup();
   expect(screen.getByText('對話')).toBeTruthy();
-  expect(screen.getByText('新對話')).toBeTruthy();
+  expect(screen.queryByText('新對話')).toBeNull();
+  expect(screen.getByTestId('usage-button').props.accessibilityLabel).toMatch(/^用量，這段用了 \d+%$/);
   expect(screen.getByTestId('symbol-chevron.down')).toBeTruthy();
 });
 

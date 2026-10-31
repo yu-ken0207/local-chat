@@ -87,6 +87,34 @@ export type Agent = {
 /** 怎麼加入討論的：你加的、AI 自己加入、被 @ 拉進來、跟著原對話進討論串 */
 export type JoinedBy = 'user' | 'auto' | 'mention' | 'thread';
 export type Member = { agent: Agent; position: number; joinedBy: JoinedBy; joinedAt: number };
+
+/** 問模型做什麼：回答、Agent 發言、舉手、主持人點名、前情摘要、收尾（列方案、投票、結論、筆記）、取標題、找 Agent、一句話生成角色 */
+export type UsageKind = 'answer' | 'speak' | 'bid' | 'host' | 'summary' | 'conclude' | 'title' | 'find' | 'draft';
+export type UsageEntry = {
+  at: number;
+  sessionId: string | null;
+  agentId: string | null;
+  kind: UsageKind;
+  hostUrl: string;
+  model: string;
+  promptTokens: number;
+  outputTokens: number;
+  totalMs: number;
+  evalMs: number;
+  /** 回答、發言當時模型能記住多少 tokens（背景工作不記） */
+  contextLimit?: number | null;
+};
+/** 一段時間的用量（依電腦、模型加總） */
+export type UsageTotals = {
+  calls: number;
+  promptTokens: number;
+  outputTokens: number;
+  totalMs: number;
+  evalMs: number;
+  /** 回答、發言以外（舉手、摘要、收尾、取標題、找 Agent…）的呼叫用掉的 token */
+  backgroundTokens: number;
+  byModel: { hostUrl: string; model: string; calls: number; promptTokens: number; outputTokens: number; totalMs: number; evalMs: number }[];
+};
 /** session_members 的一列（刪掉 Agent 時記下來，復原時放回去） */
 export type MemberRow = { session_id: string; agent_id: string; position: number; joined_by: JoinedBy; joined_at: number };
 
@@ -169,7 +197,7 @@ export const isRecordNote = (m: Pick<Message, 'role' | 'detail'>) => m.role === 
 
 // ---- 資料表 ----
 
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 10;
 
 /** 每一版要做的改變（舊版資料庫照順序補上） */
 const MIGRATIONS: Record<number, string> = {
@@ -251,7 +279,28 @@ const MIGRATIONS: Record<number, string> = {
   // 從圖鑑來的 Agent：名字、介紹有沒有改過（沒改過的跟著 App 語言；舊資料一律當沒改過）
   8: `ALTER TABLE agents ADD COLUMN name_custom INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE agents ADD COLUMN intro_custom INTEGER NOT NULL DEFAULT 0;`,
+  // 用量紀錄：每次問模型記一筆（只有數字，沒有內容）；對話刪掉也留著，算累計用
+  9: `CREATE TABLE IF NOT EXISTS usage_log (
+        id TEXT PRIMARY KEY,
+        at INTEGER NOT NULL,
+        session_id TEXT,
+        agent_id TEXT,
+        kind TEXT NOT NULL,
+        host_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        prompt_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        total_ms INTEGER NOT NULL DEFAULT 0,
+        eval_ms INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS usage_by_time ON usage_log(at);
+      CREATE INDEX IF NOT EXISTS usage_by_session ON usage_log(session_id, at);`,
+  // 回答、發言當時模型能記住多少（模型閒置卸載後，儀表照樣用這個上限，不會改用模型的最大值）
+  10: `ALTER TABLE usage_log ADD COLUMN context_limit INTEGER;`,
 };
+
+/** 用量紀錄保留幾天 */
+export const USAGE_DAYS = 90;
 
 /** 最近刪除保留幾天 */
 export const TRASH_DAYS = 30;
@@ -320,7 +369,7 @@ export type Snapshot = {
 };
 
 /** 備份會帶走的資料表（照這個順序放回去，先放被參照的） */
-const BACKUP_TABLES = ['hosts', 'sessions', 'agents', 'session_members', 'messages', 'attachments', 'actions', 'agent_notes', 'templates', 'settings'] as const;
+const BACKUP_TABLES = ['hosts', 'sessions', 'agents', 'session_members', 'messages', 'attachments', 'actions', 'agent_notes', 'templates', 'settings', 'usage_log'] as const;
 
 export class NotBackupError extends Error {
   constructor() {
@@ -738,6 +787,70 @@ export class Repo {
     // 開討論串的那一題已經真的刪掉了：討論串再也點不到，一起刪
     await this.db.run('DELETE FROM sessions WHERE parent_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.id = sessions.parent_message_id)');
     await this.purgeUnusedAgents(cutoff);
+    await this.db.run('DELETE FROM usage_log WHERE at < ?', [this.now() - USAGE_DAYS * DAY_MS]);
+  }
+
+  // ---- 用量紀錄 ----
+
+  async addUsage(u: UsageEntry): Promise<void> {
+    await this.db.run(
+      'INSERT INTO usage_log (id, at, session_id, agent_id, kind, host_url, model, prompt_tokens, output_tokens, total_ms, eval_ms, context_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [newId(), u.at, u.sessionId, u.agentId, u.kind, u.hostUrl, u.model, Math.round(u.promptTokens), Math.round(u.outputTokens), Math.round(u.totalMs), Math.round(u.evalMs), u.contextLimit ?? null]
+    );
+  }
+
+  /** 這段對話最後一次回答或發言（算上下文用了多少） */
+  async lastUsage(sessionId: string): Promise<UsageEntry | null> {
+    const r = await this.db.get<Record<string, SqlValue>>(
+      "SELECT * FROM usage_log WHERE session_id = ? AND kind IN ('answer', 'speak') ORDER BY at DESC, rowid DESC LIMIT 1",
+      [sessionId]
+    );
+    return r
+      ? {
+          at: Number(r.at),
+          sessionId: (r.session_id as string) ?? null,
+          agentId: (r.agent_id as string) ?? null,
+          kind: r.kind as UsageKind,
+          hostUrl: String(r.host_url),
+          model: String(r.model),
+          promptTokens: Number(r.prompt_tokens),
+          outputTokens: Number(r.output_tokens),
+          totalMs: Number(r.total_ms),
+          evalMs: Number(r.eval_ms),
+          contextLimit: r.context_limit == null ? null : Number(r.context_limit),
+        }
+      : null;
+  }
+
+  /** 這段對話最後一次某種呼叫是什麼時候（例如整理成摘要） */
+  async lastUsageAt(sessionId: string, kind: UsageKind): Promise<number | null> {
+    const r = await this.db.get<{ at: number | null }>('SELECT MAX(at) AS at FROM usage_log WHERE session_id = ? AND kind = ?', [sessionId, kind]);
+    return r?.at ?? null;
+  }
+
+  /** 這台電腦的這個模型上次回答時能記住多少（模型卸載了、還沒問過時用） */
+  async lastContextLimit(hostUrl: string, model: string): Promise<number | null> {
+    const r = await this.db.get<{ n: number }>(
+      'SELECT context_limit AS n FROM usage_log WHERE host_url = ? AND model = ? AND context_limit IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT 1',
+      [hostUrl, model]
+    );
+    return r ? Number(r.n) : null;
+  }
+
+  /** since 之後的用量，依電腦、模型加總（用得多的在前面） */
+  async usageTotals(since: number): Promise<UsageTotals> {
+    const rows = await this.db.all<{ host_url: string; model: string; calls: number; p: number; o: number; t: number; e: number }>(
+      `SELECT host_url, model, COUNT(*) AS calls, SUM(prompt_tokens) AS p, SUM(output_tokens) AS o, SUM(total_ms) AS t, SUM(eval_ms) AS e
+       FROM usage_log WHERE at >= ? GROUP BY host_url, model ORDER BY SUM(prompt_tokens) + SUM(output_tokens) DESC`,
+      [since]
+    );
+    const bg = await this.db.get<{ n: number | null }>(
+      "SELECT SUM(prompt_tokens) + SUM(output_tokens) AS n FROM usage_log WHERE at >= ? AND kind NOT IN ('answer', 'speak')",
+      [since]
+    );
+    const byModel = rows.map((r) => ({ hostUrl: r.host_url, model: r.model, calls: r.calls, promptTokens: r.p ?? 0, outputTokens: r.o ?? 0, totalMs: r.t ?? 0, evalMs: r.e ?? 0 }));
+    const sum = (k: 'calls' | 'promptTokens' | 'outputTokens' | 'totalMs' | 'evalMs') => byModel.reduce((n, x) => n + x[k], 0);
+    return { calls: sum('calls'), promptTokens: sum('promptTokens'), outputTokens: sum('outputTokens'), totalMs: sum('totalMs'), evalMs: sum('evalMs'), backgroundTokens: bg?.n ?? 0, byModel };
   }
 
   /** 刪掉的 Agent：沒有任何對話、訊息還用到它就真的刪掉（before 之前刪的才算） */
@@ -1267,6 +1380,8 @@ export class Repo {
     for (const id of sessionIds) if (trashed.has(id)) await this.deleteSession(id);
     await this.clearSettings();
     await this.purgeUnusedAgents(this.now());
+    // 清除全部資料：用量紀錄也清掉（可以復原的那幾秒內不動）
+    await this.db.run('DELETE FROM usage_log');
     await this.db.exec('VACUUM');
   }
 

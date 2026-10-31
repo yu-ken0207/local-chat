@@ -1,3 +1,5 @@
+import { waitFor } from '@testing-library/react-native';
+
 import { PromptStore, getEntry, suggestAvatar } from '../src/agents/catalog';
 import { ChatStore, ROLE_MISSING, ROLE_TRUNCATED } from '../src/state/chatStore';
 import { DEFAULT_GROUP, Repo, type Agent } from '../src/store/repo';
@@ -61,6 +63,26 @@ const said = (store: ChatStore) =>
     .getState()
     .messages.filter((m) => m.role === 'assistant' || m.role === 'user' || m.role === 'error')
     .map((m) => (m.role === 'user' ? `你：${m.content}` : m.role === 'error' ? `錯誤：${m.content}` : `${store.getState().agents[m.agentId!]?.name}：${m.content}`));
+
+test('用量：發言、舉手都記下來；儀表照最後一位發言的、講的時候一路跟著變；面板照他送出去的樣子拆', async () => {
+  const { net, repo, store } = await setup();
+  let release!: () => void;
+  script(net, { 財務長: [8] }, { hold: new Promise<void>((r) => (release = r)) });
+  const sending = store.send('要不要換新伺服器？');
+  // 講到一半：他送出去的（估的）加上講出來的
+  await waitFor(() => expect(store.getState().streaming?.content).toBe('財務長說第1次'));
+  await waitFor(() => expect(store.getState().context).toMatchObject({ limit: 8192, level: 'ok' }));
+  expect(store.getState().context!.used).toBeGreaterThan(0);
+  release();
+  await sending;
+  const s = store.getState().session!;
+  expect(await repo.lastUsage(s.id)).toMatchObject({ kind: 'speak', promptTokens: 50, outputTokens: 5 });
+  expect(store.getState().context).toEqual({ used: 55, limit: 8192, level: 'ok' });
+  // 舉手是背景工作
+  expect((await repo.usageTotals(0)).backgroundTokens).toBeGreaterThan(0);
+  const r = await store.usageReport();
+  expect(r.context!.parts.map((p) => p.key)).toEqual(expect.arrayContaining(['role', 'system', 'messages']));
+});
 
 test('自由搶話：分數最高的講、回你；剛講完的扣分換人；都不想講就停', async () => {
   const { net, store, agents } = await setup();

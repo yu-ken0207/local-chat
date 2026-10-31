@@ -4,10 +4,10 @@ import { contextLevel, type ContextLevel } from '../lib/format';
 import { cleanTitle, fallbackTitle } from '../lib/title';
 import { REPLY_PROMPTS, buildChatMessages, defaultImageQuestion } from '../lib/history';
 import { pickDefaultModel } from '../lib/modelPick';
-import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
+import { OllamaError, splitThink, type ChatMessage, type ChatResult, type DownloadJob, type Hardware, type HelperHello, type HelperInfo, type LoadedModel, type ModelInfo, type OllamaClient, type ThinkSetting } from '../lib/ollama';
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
-import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
+import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote, type UsageEntry, type UsageKind, type UsageTotals } from '../store/repo';
 import { PromptStore, avatarId, entryIntro, entryName, getEntry, searchCatalog, similarEntries, suggestAvatar } from '../agents/catalog';
 import {
   AGENT_DRAFT_SCHEMA,
@@ -121,6 +121,27 @@ const sameSubnet = (a: string, b: string) => a.split('.').slice(0, 3).join('.') 
 
 export type ContextInfo = { used: number; limit: number | null; level: ContextLevel };
 
+/** 用量面板「這段的上下文」的一部分：系統提示詞、工具說明、角色說明與筆記、前情摘要、對話文字、照片 */
+export type UsagePartKey = 'system' | 'tools' | 'role' | 'summary' | 'messages' | 'images';
+export type UsageReport = {
+  /** 這段的上下文：used 是最後一次回答或發言的實際值（Ollama 給的）；各部分是估算後按比例對齊 used 的（estimated：還沒問過模型，全部是估的） */
+  context: { used: number; limit: number | null; estimated: boolean; parts: { key: UsagePartKey; tokens: number }[] } | null;
+  /** 這段用的那台電腦：現在載入的模型（顯示卡記憶體、上下文上限、多久後卸載） */
+  computer: { url: string; label: string; reachable: boolean; models: LoadedModel[]; hardware: Hardware | null } | null;
+  today: UsageTotals;
+  week: UsageTotals;
+};
+
+/** 估上下文時，一張照片大約佔幾個 token（Gemma、Qwen 這類看圖模型大約 256） */
+const IMAGE_TOKENS = 256;
+/** 每則訊息的格式本身大約多幾個 token */
+const MESSAGE_OVERHEAD = 4;
+
+/** 一串要送出去的訊息大約多少 tokens（照片、叫工具的內容也算） */
+function estimateMessages(list: ChatMessage[]): number {
+  return list.reduce((n, m) => n + estimateTokens(m.content) + MESSAGE_OVERHEAD + (m.images?.length ?? 0) * IMAGE_TOKENS + (m.tool_calls ? estimateTokens(JSON.stringify(m.tool_calls)) : 0), 0);
+}
+
 /** 掃描時找到、還沒配對的小幫手（要輸入配對碼） */
 export type FoundHelper = { url: string; id: string; name: string; pairing: boolean };
 
@@ -230,6 +251,9 @@ function newRun(parentId: string | null, streaming: Streaming | null): Run {
 
 /** 等這些 run 收完尾；卡在不理會停止的地方（例如工具還在跑）時，最多等這麼久 */
 const STOP_WAIT_MS = 5000;
+
+/** 這次問模型是為了什麼、哪段、哪個 Agent（記用量用） */
+type UsageTag = { kind: UsageKind; sessionId?: string | null; agentId?: string | null; contextLimit?: number | null };
 
 /** 討論為什麼停下來：沒人想講、到連續上限、按了暫停、出錯 */
 type StopReason = 'quiet' | 'cap' | 'stopped' | 'error';
@@ -518,8 +542,15 @@ export class ChatStore {
   private async openLatestOrNew(): Promise<void> {
     const { repo } = this.deps;
     const latest = (await repo.listSessions())[0];
-    if (latest) this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '', threads: await this.threadMap(latest), streaming: this.runs.get(latest.id)?.streaming ?? null });
-    else this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {}, streaming: null });
+    if (latest) {
+      this.set({ session: latest, messages: await repo.listMessages(latest.id), context: null, notice: '', threads: await this.threadMap(latest), streaming: this.runs.get(latest.id)?.streaming ?? null });
+      void this.loadContext(latest.id);
+    }
+    else {
+      const fresh = await this.createSessionFromLast();
+      this.set({ session: fresh, messages: [], context: null, notice: '', threads: {}, streaming: null });
+      void this.loadContext(fresh.id);
+    }
   }
 
   // ---- 查詢 ----
@@ -875,6 +906,8 @@ export class ChatStore {
         const info = list.find((m) => m.name === s.model);
         if (info?.think) await this.setThink(defaultThink(info));
       }
+      // 知道模型會不會叫工具了：右上角的用量重算（還沒問過時照內容估）
+      if (s && s.hostUrl === url) void this.loadContext(s.id);
     } catch (e) {
       await this.notePairingLost(url, e);
       this.set({ models: { ...this.state.models, [url]: { list: [], loading: false, error: describeError(e), errorCode: e instanceof OllamaError ? e.code : '' } } });
@@ -908,6 +941,7 @@ export class ChatStore {
     await repo.setSetting(SETTING_LAST_HOST, url);
     await repo.setSetting(SETTING_LAST_MODEL, model);
     this.set({ session: { ...s, hostUrl: url, model, think }, context: null });
+    void this.loadContext(s.id);
   }
 
   async setThink(think: ThinkSetting | null): Promise<void> {
@@ -1135,6 +1169,7 @@ export class ChatStore {
     });
     await repo.deleteEmptySessions(next.id);
     this.set({ session: next, messages: [], context: null, notice: '', threads: {}, streaming: null });
+    void this.loadContext(next.id);
   }
 
   async openSession(id: string): Promise<void> {
@@ -1154,6 +1189,7 @@ export class ChatStore {
       streaming: this.runs.get(id)?.streaming ?? null,
       fresh: this.state.fresh.filter((x) => x !== id),
     });
+    void this.loadContext(id);
     if (current && current.id !== id) await repo.deleteEmptySessions(id);
     if (session.hostUrl && !this.state.models[session.hostUrl]) void this.loadModels(session.hostUrl);
   }
@@ -1531,6 +1567,9 @@ export class ChatStore {
     if (note) history.push({ role: 'system', content: note });
     if (droppedImages > 0 && here()) this.set({ notice: t('目前的模型看不懂圖片，前面的 {p0} 張照片這次不會送出。', { p0: droppedImages }) });
 
+    // 右上角的用量即時跟著變：先估這次送出去的，串流進來的字再一路加上去（答完換成模型回報的實際值）
+    const liveLimit = await this.cachedLimit(url, model);
+    const liveBase = await this.promptEstimate(s, history, tools);
     const hostLabel = this.hostLabel(url);
     const placeholder = await repo.addMessage(s.id, { role: 'assistant', content: '', model, hostLabel, altGroup: options.altGroup ?? null });
     const run = newRun(s.parentId, { messageId: placeholder.id, content: '', thinking: '', startedAt: this.now(), phase: 'waiting' });
@@ -1538,10 +1577,10 @@ export class ChatStore {
     this.runs.set(s.id, run);
     if (here()) this.set({ messages: [...this.state.messages, placeholder] });
     this.publishRuns();
-    const update = (patch: Partial<Streaming>) => {
+    const update = (patch: Partial<Streaming>, context?: ContextInfo) => {
       if (this.runs.get(s.id) !== run || !run.streaming) return;
       run.streaming = { ...run.streaming, ...patch };
-      if (here()) this.set({ streaming: run.streaming });
+      if (here()) this.set(context ? { streaming: run.streaming, context } : { streaming: run.streaming });
     };
 
     // 串流的字先累積，固定間隔才更新畫面
@@ -1556,7 +1595,8 @@ export class ChatStore {
     const flush = () => {
       timer = null;
       const allThinking = thinking + leaked;
-      update({ content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' });
+      const used = liveBase + estimateTokens(raw) + estimateTokens(thinking);
+      update({ content, thinking: allThinking, phase: content ? 'answering' : allThinking ? 'thinking' : 'waiting' }, { used, limit: liveLimit, level: contextLevel(used, liveLimit) });
     };
 
     const signal = abort.signal;
@@ -1610,6 +1650,7 @@ export class ChatStore {
       await repo.updateMessage(placeholder.id, { content, thinking, stats, ...(toolCalls.length > 0 ? { toolCalls } : {}) });
       if (leaked) await this.markAlwaysThinks(url, model);
       const limit = await this.contextLimit(url, model);
+      await this.recordUsage(url, model, result, { kind: 'answer', sessionId: s.id, contextLimit: limit });
       const used = result.promptEvalCount + result.evalCount;
       if (here()) this.set({ context: { used, limit, level: contextLevel(used, limit) } });
       // AI 要叫工具：只讀的直接做，會改東西的等使用者確認
@@ -1701,6 +1742,7 @@ export class ChatStore {
       think: quickThink(m.info),
       format: AGENT_DRAFT_SCHEMA,
       options: { temperature: avoid ? 0.9 : 0.6, num_predict: 600 },
+      usage: { kind: 'draft', sessionId: s?.id ?? null },
     });
     let v: any = {};
     try {
@@ -1901,7 +1943,7 @@ export class ChatStore {
     const mine = (await repo.listMyAgents()).filter((a) => !taken.has(`mine:${a.id}`) && !(a.catalogId && taken.has(`catalog:${a.catalogId}`))).slice(0, MAX_MINE_SHOWN);
     const mineCatalog = new Set(mine.flatMap((a) => (a.catalogId ? [a.catalogId] : [])));
     // 1. 要哪些角色
-    const r = json(await this.collect(m.url, m.model, rolesMessages(topic), { think: quickThink(m.info), format: ROLES_SCHEMA, options: { temperature: 0.4, num_predict: budget(500, m.info) }, signal }));
+    const r = json(await this.collect(m.url, m.model, rolesMessages(topic), { think: quickThink(m.info), format: ROLES_SCHEMA, options: { temperature: 0.4, num_predict: budget(500, m.info) }, signal, usage: { kind: 'find', sessionId } }));
     const roles: { zh: string; en: string; keywords: string[] }[] = (Array.isArray(r.roles) ? r.roles : []).map((x: any) => ({
       zh: str(x?.zh),
       en: str(x?.en),
@@ -1923,6 +1965,7 @@ export class ChatStore {
         format: chooseSchema(names),
         options: { temperature: 0.4, num_predict: budget(400, m.info) },
         signal,
+        usage: { kind: 'find', sessionId },
       })
     );
     const out: AgentCandidate[] = [];
@@ -2031,7 +2074,7 @@ export class ChatStore {
       const names = new Map(members.map((m) => [m.agent.id, m.agent.name]));
       const lines = toLines(await repo.listMessages(sessionId), names);
       // 1. 要決定什麼、有哪些方案
-      const o = json(await this.collect(sm.url, sm.model, optionsMessages(lines, s.summary), { think: quickThink(sm.info), format: OPTIONS_SCHEMA, options: { num_predict: budget(500, sm.info) }, signal }), sm.info);
+      const o = json(await this.collect(sm.url, sm.model, optionsMessages(lines, s.summary), { think: quickThink(sm.info), format: OPTIONS_SCHEMA, options: { num_predict: budget(500, sm.info) }, signal, usage: { kind: 'conclude', sessionId } }), sm.info);
       let options = strings(o.options, 4);
       if (options.length < 2) options = [t('同意目前的結論'), t('不同意')];
       const question = typeof o.question === 'string' && o.question.trim() ? o.question.trim() : t('結論是什麼？');
@@ -2042,7 +2085,7 @@ export class ChatStore {
           const mm = this.modelFor(m.agent, s);
           if (!mm) return;
           try {
-            const v = json(await this.collect(mm.url, mm.model, voteMessages(this.toSpeaker(m), question, options, lines, s.summary), { think: quickThink(mm.info), format: VOTE_SCHEMA, options: { num_predict: budget(200, mm.info) }, signal }), mm.info);
+            const v = json(await this.collect(mm.url, mm.model, voteMessages(this.toSpeaker(m), question, options, lines, s.summary), { think: quickThink(mm.info), format: VOTE_SCHEMA, options: { num_predict: budget(200, mm.info) }, signal, usage: { kind: 'conclude', sessionId, agentId: m.agent.id } }), mm.info);
             const i = Math.round(Number(v.choice)) - 1;
             if (i >= 0 && i < options.length) card.options[i].votes.push({ who: m.agent.id, name: m.agent.name, reason: typeof v.reason === 'string' ? v.reason.trim() : '' });
           } catch {
@@ -2052,7 +2095,7 @@ export class ChatStore {
       );
       if (signal.aborted) throw new OllamaError('cancelled', t('已取消。'));
       // 3. 結論卡
-      const c = json(await this.collect(sm.url, sm.model, conclusionMessages(card, lines, s.summary), { think: quickThink(sm.info), format: CONCLUSION_SCHEMA, options: { num_predict: budget(800, sm.info) }, signal }), sm.info);
+      const c = json(await this.collect(sm.url, sm.model, conclusionMessages(card, lines, s.summary), { think: quickThink(sm.info), format: CONCLUSION_SCHEMA, options: { num_predict: budget(800, sm.info) }, signal, usage: { kind: 'conclude', sessionId } }), sm.info);
       card.consensus = typeof c.consensus === 'string' ? c.consensus.trim() : '';
       card.disagreements = strings(c.disagreements, 3);
       card.todos = strings(c.todos, 4);
@@ -2070,7 +2113,7 @@ export class ChatStore {
           const mm = this.modelFor(m.agent, s);
           if (!mm) return;
           try {
-            const text = await this.collect(mm.url, mm.model, noteMessages(this.toSpeaker(m), card, lines), { think: quickThink(mm.info), options: { num_predict: budget(250, mm.info) }, signal });
+            const text = await this.collect(mm.url, mm.model, noteMessages(this.toSpeaker(m), card, lines), { think: quickThink(mm.info), options: { num_predict: budget(250, mm.info) }, signal, usage: { kind: 'conclude', sessionId, agentId: m.agent.id } });
             const note = (mm.info?.think ? (splitThink(text)?.content ?? text) : text).trim().slice(0, 400);
             if (note) await repo.addNote(m.agent.id, sessionId, note);
           } catch {
@@ -2169,10 +2212,162 @@ export class ChatStore {
   }
 
   /** 不串流到畫面的小呼叫：把回答收成一段文字 */
-  private async collect(url: string, model: string, messages: ChatMessage[], opts: { think?: ThinkSetting; format?: unknown; options?: Record<string, unknown>; signal?: AbortSignal }): Promise<string> {
+  private async collect(
+    url: string,
+    model: string,
+    messages: ChatMessage[],
+    opts: { think?: ThinkSetting; format?: unknown; options?: Record<string, unknown>; signal?: AbortSignal; usage?: UsageTag }
+  ): Promise<string> {
     let text = '';
-    await this.clientFor(url).chat({ model, messages, think: opts.think, format: opts.format, options: opts.options }, (d) => (text += d.content ?? ''), opts.signal);
+    const result = await this.clientFor(url).chat({ model, messages, think: opts.think, format: opts.format, options: opts.options }, (d) => (text += d.content ?? ''), opts.signal);
+    if (opts.usage) await this.recordUsage(url, model, result, opts.usage);
     return text;
+  }
+
+  /** 記一筆用量（只有數字，沒有內容）；記不進去不影響回答 */
+  private async recordUsage(url: string, model: string, r: ChatResult, tag: UsageTag): Promise<void> {
+    try {
+      await this.deps.repo.addUsage({
+        at: this.now(),
+        sessionId: tag.sessionId ?? null,
+        agentId: tag.agentId ?? null,
+        kind: tag.kind,
+        hostUrl: url,
+        model,
+        promptTokens: r.promptEvalCount,
+        outputTokens: r.evalCount,
+        totalMs: r.totalDurationNs / 1e6,
+        evalMs: r.evalDurationNs / 1e6,
+        contextLimit: tag.contextLimit ?? null,
+      });
+    } catch {
+      // 用量只是參考
+    }
+  }
+
+  /** 打開一段對話、換模型時：右上角的用量照最後一次回答或發言的實際值；還沒問過（或之後整理過、換過模型）就照內容估 */
+  private async loadContext(sessionId: string): Promise<void> {
+    const s = this.state.session;
+    if (s?.id !== sessionId) return;
+    const c = await this.contextParts(s, await this.deps.repo.lastUsage(sessionId));
+    if (this.state.session?.id !== sessionId) return;
+    this.set({ context: c ? { used: c.used, limit: c.limit, level: contextLevel(c.used, c.limit) } : null });
+  }
+
+  /** 模型能記住多少（不連電腦：用上次查到的、上次回答時的，最後才用模型的最大值） */
+  private async cachedLimit(url: string, model: string): Promise<number | null> {
+    return (
+      this.state.loaded[url]?.find((m) => m.name === model)?.contextLength ??
+      (await this.deps.repo.lastContextLimit(url, model)) ??
+      this.state.models[url]?.list.find((m) => m.name === model)?.contextLength ??
+      null
+    );
+  }
+
+  /** 最後一次回答的實際值還能不能用：之後換了模型、或前面又整理成摘要，送出去的就不一樣了 */
+  private async actualUsage(s: Session, last: UsageEntry | null, group: boolean): Promise<UsageEntry | null> {
+    if (!last) return null;
+    if (!group && (last.hostUrl !== s.hostUrl || last.model !== s.model)) return null;
+    const summarized = await this.deps.repo.lastUsageAt(s.id, 'summary');
+    return summarized !== null && summarized > last.at ? null : last;
+  }
+
+  /** 一般聊天這次送出去的大約多少：上次回答的實際值加上之後新的訊息；沒有可用的實際值就整段估 */
+  private async promptEstimate(s: Session, history: ChatMessage[], tools: PhoneTool[]): Promise<number> {
+    const last = await this.actualUsage(s, await this.deps.repo.lastUsage(s.id), false);
+    if (last) {
+      const fresh = (await this.deps.repo.listMessages(s.id)).filter((m) => m.createdAt > last.at);
+      return last.promptTokens + last.outputTokens + fresh.reduce((n, m) => n + estimateTokens(m.content) + MESSAGE_OVERHEAD + m.attachments.length * IMAGE_TOKENS, 0);
+    }
+    return estimateMessages(history) + (tools.length > 0 ? estimateTokens(JSON.stringify(toOllamaTools(tools))) : 0);
+  }
+
+  /**
+   * 用量面板：這段的上下文（實際用了多少，各部分估算後按比例對齊）、這台電腦（載入的模型）、今天與這 7 天的累計
+   */
+  async usageReport(): Promise<UsageReport> {
+    const { repo } = this.deps;
+    const now = this.now();
+    const midnight = new Date(now);
+    midnight.setHours(0, 0, 0, 0);
+    const [today, week] = await Promise.all([repo.usageTotals(midnight.getTime()), repo.usageTotals(now - 7 * 24 * 60 * 60 * 1000)]);
+    const s = this.state.session;
+    if (!s) return { context: null, computer: null, today, week };
+    const last = await repo.lastUsage(s.id);
+    const url = last?.hostUrl ?? s.hostUrl;
+    let computer: UsageReport['computer'] = null;
+    if (url) {
+      let models: LoadedModel[] = [];
+      let reachable = true;
+      try {
+        models = await this.clientFor(url).loaded();
+        this.set({ loaded: { ...this.state.loaded, [url]: models } });
+      } catch {
+        reachable = false;
+      }
+      computer = { url, label: this.hostLabel(url), reachable, models, hardware: this.state.helperInfo[url]?.hardware ?? null };
+    }
+    return { context: await this.contextParts(s, last), computer, today, week };
+  }
+
+  /** 估這段送給模型的東西各佔多少（照真的送出去的樣子組），再按比例對齊最後一次的實際值 */
+  private async contextParts(s: Session, lastUsage: UsageEntry | null): Promise<UsageReport['context']> {
+    const { repo } = this.deps;
+    const members = await repo.listMembers(s.id);
+    const last = await this.actualUsage(s, lastUsage, members.length > 0);
+    // 多 AI 討論的模型跟著發言的人（不一定是這段的預設模型）
+    const url = last?.hostUrl ?? (members.length > 0 ? lastUsage?.hostUrl : null) ?? s.hostUrl;
+    const model = last?.model ?? (members.length > 0 ? lastUsage?.model : null) ?? s.model;
+    if (!url || !model) return null;
+    const info = this.state.models[url]?.list.find((m) => m.name === model);
+    const msgs = await repo.listMessages(s.id);
+    const est: Record<UsagePartKey, number> = { system: 0, tools: 0, role: 0, summary: 0, messages: 0, images: 0 };
+    const images = (list: Message[]) => (info?.vision === false ? 0 : list.reduce((n, m) => n + (m.role === 'user' ? m.attachments.length : 0), 0) * IMAGE_TOKENS);
+    if (members.length === 0) {
+      // 一般聊天：照 answer() 送出去的樣子
+      const tools = this.toolsFor(info);
+      const system = REPLY_PROMPTS[this.appLanguage()] + (tools.some((x) => x !== this.inviteTool) ? '\n\n' + toolSystemPrompt(this.now(), this.timeZone()) : '') + (tools.length === 0 ? '\n\n' + inviteHintPrompt() : '');
+      est.system = estimateTokens(system);
+      est.tools = tools.length > 0 ? estimateTokens(JSON.stringify(toOllamaTools(tools))) : 0;
+      const sent = buildChatMessages(msgs, { vision: info ? info.vision : true, systemPrompt: '' }).messages.slice(1);
+      est.messages = sent.reduce((n, m) => n + estimateTokens(m.content) + MESSAGE_OVERHEAD + ('tool_calls' in m && m.tool_calls ? estimateTokens(JSON.stringify(m.tool_calls)) : 0), 0);
+      est.images = images(msgs);
+    } else {
+      // 多 AI 討論：照最後一位發言的人送出去的樣子
+      const a = members.find((x) => x.agent.id === lastUsage?.agentId)?.agent ?? members[0].agent;
+      const role = await this.roleOf(a);
+      const notes = (await repo.listNotes(a.id, 5)).map((n) => n.content);
+      const names = new Map(members.map((x) => [x.agent.id, x.agent.name]));
+      for (const id of msgs.flatMap((x) => (x.agentId && !names.has(x.agentId) ? [x.agentId] : []))) names.set(id, this.state.agents[id]?.name ?? 'AI');
+      const out = speakMessages({
+        me: this.toSpeaker(a),
+        members: members.map((x) => this.toSpeaker(x)),
+        role: role.text,
+        notes,
+        summary: s.summary,
+        summarySeq: s.summarySeq,
+        lines: toLines(msgs, names),
+        replyTo: '',
+        contextTokens: await this.runtimeContext(url, model),
+      });
+      const [first, ...rest] = out.messages;
+      est.role = Math.min(estimateTokens(first.content), estimateTokens(role.text) + estimateTokens(notes.join('\n')));
+      est.system = Math.max(0, estimateTokens(first.content) - est.role);
+      const summary = s.summary && rest[0]?.role === 'system' ? rest.shift()! : null;
+      est.summary = summary ? estimateTokens(summary.content) : 0;
+      est.messages = rest.reduce((n, m) => n + estimateTokens(m.content) + MESSAGE_OVERHEAD, 0);
+      est.images = images(msgs.slice(-1));
+    }
+    const sum = Object.values(est).reduce((n, x) => n + x, 0);
+    const used = last ? last.promptTokens + last.outputTokens : sum;
+    const k = last && sum > 0 ? used / sum : 1;
+    const keys: UsagePartKey[] = ['messages', 'system', 'tools', 'role', 'summary', 'images'];
+    return {
+      used,
+      limit: await this.contextLimit(url, model),
+      estimated: !last,
+      parts: keys.map((key) => ({ key, tokens: Math.round(est[key] * k) })).filter((p) => p.tokens > 0),
+    };
   }
 
   private setPhase(sessionId: string, run: Run, phase: DiscussionPhase | null): void {
@@ -2390,7 +2585,7 @@ export class ChatStore {
     if (group.mode === 'host') {
       this.setPhase(s.id, run, { phase: 'hosting', agentId: null });
       try {
-        const text = await this.collect(sm.url, sm.model, hostMessages(speakers, lines), { think: quickThink(sm.info), format: HOST_SCHEMA, options: { num_predict: budget(120, sm.info) }, signal: run.abort.signal });
+        const text = await this.collect(sm.url, sm.model, hostMessages(speakers, lines), { think: quickThink(sm.info), format: HOST_SCHEMA, options: { num_predict: budget(120, sm.info) }, signal: run.abort.signal, usage: { kind: 'host', sessionId: s.id } });
         const json = JSON.parse((sm.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}');
         onSuggest(json.conclude === true);
         const id = idByName(String(json.next ?? ''), people) ?? (mustReply ? (nextInRound(speakers, lastAgent)?.id ?? null) : null);
@@ -2418,6 +2613,7 @@ export class ChatStore {
             format: BID_SCHEMA,
             options: { num_predict: budget(80, m.info), temperature: 0.4 },
             signal: run.abort.signal,
+            usage: { kind: 'bid', sessionId: s.id, agentId: p.id },
           });
           return parseBid(p.id, m.info?.think ? (splitThink(text)?.content ?? text) : text);
         } catch (e) {
@@ -2513,11 +2709,14 @@ export class ChatStore {
     let content = '';
     let thinking = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // 右上角的用量跟著發言即時變：他這次送出去的（估的）加上講出來的字
+    const liveBase = estimateMessages(out.messages);
     const flush = () => {
       timer = null;
       if (!run.streaming) return;
       run.streaming = { ...run.streaming, content: cleanReply(content, a.name), thinking, phase: content ? 'answering' : thinking ? 'thinking' : 'waiting' };
-      if (here()) this.set({ streaming: run.streaming });
+      const used = liveBase + estimateTokens(content) + estimateTokens(thinking);
+      if (here()) this.set({ streaming: run.streaming, context: { used, limit: contextTokens, level: contextLevel(used, contextTokens) } });
     };
     try {
       const sentThink = thinkToSend(m.info, s.think);
@@ -2539,6 +2738,12 @@ export class ChatStore {
       );
       const stats = { evalCount: result.evalCount, evalDurationNs: result.evalDurationNs, promptEvalCount: result.promptEvalCount, totalDurationNs: result.totalDurationNs };
       await repo.updateMessage(placeholder.id, { content: cleanReply(content, a.name).trim(), thinking, stats });
+      await this.recordUsage(m.url, m.model, result, { kind: 'speak', sessionId, agentId: a.id, contextLimit: contextTokens });
+      // 輸入框下方的儀表：最後一位發言的人用了多少上下文
+      if (here()) {
+        const used = result.promptEvalCount + result.evalCount;
+        this.set({ context: { used, limit: contextTokens, level: contextLevel(used, contextTokens) } });
+      }
       return true;
     } catch (e) {
       await this.notePairingLost(m.url, e);
@@ -2581,7 +2786,7 @@ export class ChatStore {
         if (room < 0 && chunk.length > 0) break;
         chunk.push(l);
       }
-      const text = await this.collect(url, model, summaryMessages(s.summary, chunk), { think: quickThink(info), options: { num_predict: budget(700, info) }, signal: run.abort.signal });
+      const text = await this.collect(url, model, summaryMessages(s.summary, chunk), { think: quickThink(info), options: { num_predict: budget(700, info) }, signal: run.abort.signal, usage: { kind: 'summary', sessionId } });
       const summary = (info?.think ? (splitThink(text)?.content ?? text) : text).trim();
       // 摘要是空的（例如思考把字數用光）：不要往前推，不然這幾則同時從摘要和最近對話裡消失
       if (!summary) return;
@@ -2923,7 +3128,7 @@ export class ChatStore {
     try {
       let text = '';
       const think = !info?.think ? undefined : info.think.kind === 'always' ? true : info.think.kind === 'toggle' ? false : info.think.levels[0];
-      await this.clientFor(url).chat(
+      const result = await this.clientFor(url).chat(
         {
           model,
           think,
@@ -2934,6 +3139,7 @@ export class ChatStore {
         },
         (d) => (text += d.content ?? '')
       );
+      await this.recordUsage(url, model, result, { kind: 'title', sessionId });
       // 一定會思考的模型：只拿思考之後的部分
       title = cleanTitle(info?.think ? (splitThink(text)?.content ?? text) : text);
     } catch {
@@ -2953,6 +3159,7 @@ export class ChatStore {
     await this.dismissUndo();
     const ids = await repo.trashAllSessions();
     this.set({ session: await this.createSessionFromLast(), messages: [], context: null, notice: '', threads: {}, streaming: null, fresh: [], suggestConclude: [] });
+    void this.loadContext(this.state.session!.id);
     await this.offerUndo(t('已刪除 {p0} 段對話', { p0: ids.length }), async () => {
       await repo.restoreSessions(ids);
       await repo.deleteEmptySessions();
@@ -3089,8 +3296,9 @@ export class ChatStore {
       const hit = loaded.find((m) => m.name === model);
       if (hit?.contextLength) return hit.contextLength;
     } catch {
-      // 查不到就用模型資訊
+      // 查不到就用上次的或模型資訊
     }
-    return this.state.models[url]?.list.find((m) => m.name === model)?.contextLength ?? null;
+    // 沒載入（閒置卸載了）：下次載入通常跟上次一樣大，用上次回答時的；從來沒問過才用模型的最大值
+    return (await this.deps.repo.lastContextLimit(url, model)) ?? this.state.models[url]?.list.find((m) => m.name === model)?.contextLength ?? null;
   }
 }
