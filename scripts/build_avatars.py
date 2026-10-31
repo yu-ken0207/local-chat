@@ -2,9 +2,9 @@
 """圖鑑 788 個角色的像素頭像。
 
 三步：
-  python3 scripts/build_avatars.py describe --ollama http://100.100.0.31:11434
+  python3 scripts/build_avatars.py describe --ollama http://<電腦位址>:11434
       每個角色寫一句英文外觀描述（給生圖用），存 scripts/catalog/avatar-subjects.json；已經寫過的跳過
-  python3 scripts/build_avatars.py generate --style A --comfy http://100.100.0.31:8188
+  python3 scripts/build_avatars.py generate --style A --comfy http://<電腦位址>:8188
       用本機或區網的 ComfyUI（Z-Image Turbo）每個角色生一張 512×512，存在 ~/.cache/local-chat-catalog/avatars/<風格>/；已經生過的跳過
   python3 scripts/build_avatars.py pack --style A
       縮成 48×48 的像素格、放大兩倍成 96×96，每個角色一個檔 assets/agents/avatars/N.png，對照表 src/agents/avatars.ts
@@ -15,6 +15,7 @@
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.parse
@@ -175,11 +176,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
     d = sub.add_parser('describe')
-    d.add_argument('--ollama', default='http://100.100.0.31:11434')
+    d.add_argument('--ollama', default=os.environ.get('OLLAMA_URL', 'http://localhost:11434'))
     d.add_argument('--model', default='gemma4:31b')
     g = sub.add_parser('generate')
     g.add_argument('--style', choices=list(STYLES), required=True)
-    g.add_argument('--comfy', default='http://100.100.0.31:8188')
+    g.add_argument('--comfy', default=os.environ.get('COMFY_URL', 'http://localhost:8188'))
     s = sub.add_parser('pack')
     s.add_argument('--style', choices=list(STYLES), required=True)
     a = ap.parse_args()

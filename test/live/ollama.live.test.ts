@@ -2,7 +2,7 @@
  * @jest-environment node
  *
  * 打真的 Ollama 主機（不在 npm test 裡跑）：
- *   LIVE_HOSTS=http://100.100.0.31:11434,http://100.100.50.123:11434 LIVE_CHAT_HOST=http://100.100.0.31:11434 npm run test:live
+ *   LIVE_HOSTS=http://<電腦一>:11434,http://<電腦二>:11434 LIVE_CHAT_HOST=http://<電腦一>:11434 npm run test:live
  * LIVE_CHAT_HOST 會載入一個小模型（LIVE_CHAT_MODEL，預設 gemma4:e2b）來測串流與看圖，測完如果原本沒載入就卸載。
  * 別把 LIVE_CHAT_HOST 指到正在給其他服務用、顯示卡吃緊的主機。
  * LIVE_SCAN_FROM=192.168.50.170 會假裝手機在這個位址，掃同網段，期望找到 LIVE_SCAN_EXPECT。

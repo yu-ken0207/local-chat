@@ -17,7 +17,7 @@
 
 用法：
   python3 scripts/build_catalog.py                       下載（有快取）並產生上面的檔案
-  python3 scripts/build_catalog.py --translate URL       用 Ollama（URL 例如 http://100.100.0.31:11434）把還沒翻的 agency 欄位翻成繁中
+  python3 scripts/build_catalog.py --translate URL       用 Ollama（URL 例如 http://<電腦位址>:11434）把還沒翻的 agency 欄位翻成繁中
   python3 scripts/build_catalog.py --translate-lobe URL  同上，翻 lobe 繁中版沒翻到的名字和介紹
 """
 

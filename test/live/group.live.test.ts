@@ -2,7 +2,7 @@
  * @jest-environment node
  *
  * 多 AI 討論打真的模型（不在 npm test 裡跑）：
- *   LIVE_GROUP_HOST=http://100.100.0.31:11434 LIVE_GROUP_MODEL=gemma4:31b npm run test:live -- group
+ *   LIVE_GROUP_HOST=http://<電腦位址>:11434 LIVE_GROUP_MODEL=gemma4:31b npm run test:live -- group
  * 從圖鑑挑 3 個角色（用真的角色原文），丟一個話題，跑完一輪討論再收尾，整段印出來看品質。
  */
 /// <reference types="node" />
