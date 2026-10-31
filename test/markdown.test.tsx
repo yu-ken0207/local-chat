@@ -50,6 +50,25 @@ describe('Markdown', () => {
     expect(allText()).toContain('const a');
   });
 
+  test('數學式：$...$ 在句子裡、$$...$$ 自成一段，都轉成符號顯示', async () => {
+    await render(<Markdown text={'只要檢查到 $\\sqrt{n}$ 就好，複雜度 $O(\\sqrt{n})$。\n\n$$\nx^2 + y^2 = r^2\n$$\n\n下一段'} />);
+    const json = allText();
+    expect(json).toContain('√n');
+    expect(json).toContain('O(√n)');
+    expect(screen.getByText('x² + y² = r²')).toBeTruthy();
+    expect(screen.getByText('下一段')).toBeTruthy();
+    expect(json).not.toContain('\\\\sqrt');
+    expect(json).not.toContain('$$');
+  });
+
+  test('數學式：金額與程式碼裡的 $ 照原樣', async () => {
+    await render(<Markdown text={'便當 $80，飲料 $35。\n\n`echo $HOME$PATH`\n\n```sh\nexport A=$B$C\n```'} />);
+    const json = allText();
+    expect(json).toContain('便當 $80，飲料 $35。');
+    expect(json).toContain('echo $HOME$PATH');
+    expect(screen.getByText('export A=$B$C')).toBeTruthy();
+  });
+
   test('引用與分隔線', async () => {
     await render(<Markdown text={'> 引用的話\n\n---\n\n下一段'} />);
     expect(screen.getByText('引用的話')).toBeTruthy();

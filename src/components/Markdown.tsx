@@ -1,11 +1,43 @@
-import { Lexer, type Token, type Tokens } from 'marked';
+import { Marked, type Token, type Tokens } from 'marked';
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View, type TextStyle } from 'react-native';
 
 import { C, MONO, TEXT } from '../ui/theme';
 import { t } from '../i18n';
+import { matchBlock, matchInline, texToText } from '../lib/math';
 
 // 把 Markdown 畫成原生元件。串流時文字一直變長，每次重新解析（有 useMemo，內容沒變就不重算）。
+
+// 數學式：$$...$$、\[...\] 自成一段；$...$、\(...\) 在句子裡（轉成 Unicode 符號顯示，見 lib/math）
+const md = new Marked({
+  extensions: [
+    {
+      name: 'mathBlock',
+      level: 'block',
+      // 只在一行的開頭算數（句子中間的 $$ 交給行內處理）
+      start: (src) => {
+        const m = /(^|\n) {0,3}(?:\$\$|\\\[)/.exec(src);
+        return m ? m.index + m[1].length : undefined;
+      },
+      tokenizer: (src) => {
+        const m = matchBlock(src);
+        return m ? { type: 'mathBlock', raw: m.raw, text: m.tex } : undefined;
+      },
+    },
+    {
+      name: 'mathInline',
+      level: 'inline',
+      start: (src) => {
+        const i = src.search(/\$|\\\(/);
+        return i < 0 ? undefined : i;
+      },
+      tokenizer: (src) => {
+        const m = matchInline(src);
+        return m ? { type: 'mathInline', raw: m.raw, text: m.tex } : undefined;
+      },
+    },
+  ],
+});
 
 const ENTITIES: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 const decode = (s: string) => s.replace(/&(amp|lt|gt|quot|#39);/g, (m) => ENTITIES[m] ?? m);
@@ -24,7 +56,7 @@ type Props = {
 };
 
 export const Markdown = memo(function Markdown({ text, onCopyCode, dim, onPress, onLongPress, onSurface }: Props) {
-  const tokens = useMemo(() => Lexer.lex(text), [text]);
+  const tokens = useMemo(() => md.lexer(text), [text]);
   const base: TextStyle = { ...TEXT.body, color: dim ? C.secondary : C.label };
   return <View style={styles.blocks}>{blocks(tokens, { base, onCopyCode, onPress, onLongPress, onSurface })}</View>;
 });
@@ -86,6 +118,12 @@ function block(token: Token, ctx: Ctx, key: string): ReactNode {
       return <Table key={key} table={token as Tokens.Table} ctx={ctx} />;
     case 'hr':
       return <View key={key} style={styles.hr} />;
+    case 'mathBlock':
+      return (
+        <Text key={key} style={[ctx.base, styles.math, styles.mathBlock]} selectable>
+          {texToText((token as Tokens.Generic).text)}
+        </Text>
+      );
     case 'html':
       return (
         <Text key={key} style={[ctx.base, { color: C.secondary }]} selectable>
@@ -135,6 +173,12 @@ function inline(tokens: Token[], ctx: Ctx): ReactNode[] {
         );
       case 'br':
         return '\n';
+      case 'mathInline':
+        return (
+          <Text key={i} style={styles.math}>
+            {texToText((token as Tokens.Generic).text)}
+          </Text>
+        );
       case 'link': {
         const link = token as Tokens.Link;
         return (
@@ -255,6 +299,9 @@ const styles = StyleSheet.create({
   strong: { fontWeight: '700' },
   em: { fontStyle: 'italic' },
   del: { textDecorationLine: 'line-through' },
+  // 數學式用襯線字型，跟等寬的內文分得出來
+  math: { fontFamily: Platform.select({ ios: 'Times New Roman', default: 'serif' }), fontSize: 17 },
+  mathBlock: { textAlign: 'center' },
   codespan: { fontFamily: MONO, backgroundColor: C.surface, color: C.accent },
   link: { color: C.accent, textDecorationLine: 'underline' },
   quote: { borderLeftWidth: 2, borderLeftColor: C.separator, paddingLeft: 10, gap: 8 },
