@@ -2,8 +2,8 @@ import { isPrivateIPv4, parseHostInput, scanHosts, subnetCandidates } from '../s
 
 describe('isPrivateIPv4', () => {
   test.each([
-    ['192.168.50.171', true],
-    ['10.2.238.157', true],
+    ['192.168.1.171', true],
+    ['10.0.0.157', true],
     ['172.16.0.1', true],
     ['172.31.255.1', true],
     ['172.32.0.1', false],
