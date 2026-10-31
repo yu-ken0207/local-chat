@@ -1,10 +1,10 @@
-import { SymbolView, type SFSymbol } from 'expo-symbols';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 
 import { describeHardware } from '../lib/catalog';
-import { contextLevel, fmtBytes, fmtCount, fmtK, fmtRough, fmtUnload, type ContextLevel } from '../lib/format';
+import { contextLevel, fmtBytes, fmtCount, fmtRough, fmtUnload, type ContextLevel } from '../lib/format';
 import { friendlyModelName } from '../lib/modelName';
 import type { ChatStore, ContextInfo, UsagePartKey, UsageReport } from '../state/chatStore';
 import type { UsageTotals } from '../store/repo';
@@ -58,26 +58,63 @@ function arc(from: number, to: number) {
 
 /** 右上角的字最多放大到 1.3 倍（跟標題列一樣，大字時還放得下） */
 const METER_MAX_SCALE = 1.3;
+/** 右上角小儀表：跟 SF Symbols 的 gauge.with.dots.needle 同樣子（圓框、一圈點、指針），但指針照實際的百分比轉 */
+const MINI = 20;
+const MINI_C = MINI / 2;
+const MINI_NEEDLE = 6.5;
+/** 指針從左下（0%）經過正上方（50%）轉到右下（100%），共 270 度 */
+const MINI_SWEEP = 270;
+const MINI_DOTS = [0, 0.25, 0.5, 0.75, 1];
+// 小儀表的顏色：平常是次要文字的灰，快滿、滿了跟字一樣是高對比的橘、紅
+const MINI_COLORS = {
+  light: { ok: '#8A8A8E', near: '#C93400', full: '#D70015' },
+  dark: { ok: '#98989F', near: '#FF9F0A', full: '#FF6961' },
+} as const;
+/** 指針轉動用的彈簧（臨界阻尼，跟著回答一路轉不會晃） */
+const MINI_SPRING = { stiffness: 300, damping: 35, mass: 1, useNativeDriver: true } as const;
 
-/** 右上角的儀表圖示：指針停在最接近的位置（SF Symbols 只有這五格；確切的數字寫在旁邊） */
-export function gaugeSymbol(ratio: number | null): SFSymbol {
-  if (ratio === null || ratio < 0.17) return 'gauge.with.dots.needle.0percent';
-  if (ratio < 0.42) return 'gauge.with.dots.needle.33percent';
-  if (ratio < 0.59) return 'gauge.with.dots.needle.50percent';
-  if (ratio < 0.84) return 'gauge.with.dots.needle.67percent';
-  return 'gauge.with.dots.needle.100percent';
+function MiniGauge({ ratio, level, reduceMotion }: { ratio: number; level: ContextLevel; reduceMotion: boolean }) {
+  const color = MINI_COLORS[useColorScheme() === 'dark' ? 'dark' : 'light'][level];
+  const v = Math.min(1, Math.max(0, ratio));
+  const angle = useRef(new Animated.Value(v)).current;
+  // 第一次出現（打開、換到別段）直接到位；同一段裡跟著回答變才用彈簧轉
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current || reduceMotion) angle.setValue(v);
+    else Animated.spring(angle, { toValue: v, ...MINI_SPRING }).start();
+    first.current = false;
+  }, [angle, v, reduceMotion]);
+  // 指針畫成朝左，轉 -45 度是左下（0%）、轉 225 度是右下（100%）
+  const rotate = angle.interpolate({ inputRange: [0, 1], outputRange: ['-45deg', `${MINI_SWEEP - 45}deg`] });
+  const dot = (x: number) => {
+    const a = ((225 - MINI_SWEEP * x) * Math.PI) / 180;
+    return { cx: MINI_C + 6.2 * Math.cos(a), cy: MINI_C - 6.2 * Math.sin(a) };
+  };
+  return (
+    <View style={styles.mini} pointerEvents="none" testID="usage-mini-gauge">
+      <Svg width={MINI} height={MINI}>
+        <Circle cx={MINI_C} cy={MINI_C} r={MINI_C - 0.9} stroke={color} strokeWidth={1.6} fill="none" />
+        {MINI_DOTS.map((x) => (
+          <Circle key={x} {...dot(x)} r={0.9} fill={color} />
+        ))}
+      </Svg>
+      <Animated.View style={[styles.miniNeedleBox, { transform: [{ rotate }] }]} testID="usage-mini-needle">
+        <View style={[styles.miniNeedle, { backgroundColor: color }]} />
+      </Animated.View>
+      <View style={[styles.miniHub, { backgroundColor: color }]} />
+    </View>
+  );
 }
 
 /**
- * 右上角的用量：儀表圖示加百分比，下面一行是用了多少／最多記住多少；AI 回答時一路跟著變，點了打開用量面板。
+ * 右上角的用量：小儀表加百分比，指針照用了多少轉；AI 回答時一路跟著變。細節（用了多少 tokens、各部分）點了在用量面板看。
  * 快滿變橘、滿了變紅
  */
-export function UsageMeter({ context, onPress }: { context: ContextInfo | null; onPress: () => void }) {
+export function UsageMeter({ context, reduceMotion, onPress }: { context: ContextInfo | null; reduceMotion: boolean; onPress: () => void }) {
   const ratio = context?.limit ? context.used / context.limit : null;
   const pct = ratio !== null ? Math.min(100, Math.round(ratio * 100)) : null;
-  const color = levelColor(context?.level ?? 'ok');
-  // 半形斜線、不留空白：標題列放得下，標題才維持置中
-  const numbers = context ? (context.limit ? `${fmtK(context.used)}/${fmtK(context.limit)}` : fmtK(context.used)) : '';
+  const level = context?.level ?? 'ok';
+  const color = levelColor(level);
   return (
     <Pressable
       onPress={onPress}
@@ -87,18 +124,11 @@ export function UsageMeter({ context, onPress }: { context: ContextInfo | null; 
       accessibilityValue={context ? { text: context.limit ? t('{p0}／{p1} tokens', { p0: context.used.toLocaleString('en-US'), p1: context.limit.toLocaleString('en-US') }) : t('{p0} tokens', { p0: context.used.toLocaleString('en-US') }) } : undefined}
       style={({ pressed }) => [styles.meter, pressed && styles.pressed]}
       testID="usage-button">
-      <SymbolView name={gaugeSymbol(ratio)} size={20} tintColor={color ?? C.secondary} />
-      {context ? (
-        <View>
-          {pct !== null ? (
-            <Text style={[styles.meterPct, color ? { color } : null]} maxFontSizeMultiplier={METER_MAX_SCALE}>
-              {`${pct}%`}
-            </Text>
-          ) : null}
-          <Text style={styles.meterNumbers} maxFontSizeMultiplier={METER_MAX_SCALE}>
-            {numbers}
-          </Text>
-        </View>
+      <MiniGauge ratio={ratio ?? 0} level={level} reduceMotion={reduceMotion} />
+      {pct !== null ? (
+        <Text style={[styles.meterPct, color ? { color } : null]} maxFontSizeMultiplier={METER_MAX_SCALE}>
+          {`${pct}%`}
+        </Text>
       ) : null}
     </Pressable>
   );
@@ -407,9 +437,12 @@ const styles = StyleSheet.create({
   segmentOn: { backgroundColor: C.groupedCard },
   segmentText: { fontSize: 14, color: C.secondary },
   segmentTextOn: { color: C.label, fontWeight: '600' },
-  meter: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  meterPct: { fontSize: 13, lineHeight: 15, fontWeight: '600', color: C.label, fontVariant: ['tabular-nums'] },
-  meterNumbers: { fontSize: 10, lineHeight: 12, color: C.secondary, fontVariant: ['tabular-nums'] },
+  meter: { height: 38, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  meterPct: { fontSize: 14, fontWeight: '600', color: C.label, fontVariant: ['tabular-nums'] },
+  mini: { width: MINI, height: MINI },
+  miniNeedleBox: { position: 'absolute', left: MINI_C - MINI_NEEDLE, top: MINI_C - MINI_NEEDLE, width: MINI_NEEDLE * 2, height: MINI_NEEDLE * 2 },
+  miniNeedle: { position: 'absolute', left: 0, top: MINI_NEEDLE - 0.8, width: MINI_NEEDLE, height: 1.6, borderRadius: 0.8 },
+  miniHub: { position: 'absolute', left: MINI_C - 1.8, top: MINI_C - 1.8, width: 3.6, height: 3.6, borderRadius: 1.8 },
   stats: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 8 },
   stat: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
   statLabel: { ...TEXT.meta, color: C.secondary },

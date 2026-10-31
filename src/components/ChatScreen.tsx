@@ -614,7 +614,7 @@ export function ChatScreen(p: ChatScreenProps) {
       </Pressable>
       <View style={[styles.headerSide, styles.headerRight]}>
         {/* 右上角放用量（不放「新對話」：盡量留在這段聊，快滿了會自動整理；要開新的從對話清單） */}
-        <UsageMeter context={state.context} onPress={() => setUsageOpen(true)} />
+        <UsageMeter context={state.context} reduceMotion={reduceMotion} onPress={() => setUsageOpen(true)} />
       </View>
     </View>
   );

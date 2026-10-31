@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
+import { StyleSheet } from 'react-native';
+
 import { ChatScreen } from '../src/components/ChatScreen';
-import { UsageSheet, gaugeSymbol } from '../src/components/UsageSheet';
+import { UsageMeter, UsageSheet } from '../src/components/UsageSheet';
 import { setLanguage } from '../src/i18n';
-import { fmtCount, fmtK, fmtRough, fmtUnload } from '../src/lib/format';
+import { fmtCount, fmtRough, fmtUnload } from '../src/lib/format';
 import { ChatStore, type UsageReport } from '../src/state/chatStore';
 import { Repo, type UsageTotals } from '../src/store/repo';
 import { FakeOllamaNet } from './helpers/fakeOllama';
@@ -53,24 +55,6 @@ describe('格式', () => {
     expect(fmtRough(456)).toBe('460');
     expect(fmtRough(42)).toBe('42');
     expect(fmtRough(-3)).toBe('0');
-  });
-
-  test('上下文大小短寫：以 1024 算一 K（8K、32K、128K）', () => {
-    expect(fmtK(120)).toBe('120');
-    expect(fmtK(1203)).toBe('1.2K');
-    expect(fmtK(8192)).toBe('8K');
-    expect(fmtK(27_000)).toBe('26.4K');
-    expect(fmtK(32_768)).toBe('32K');
-    expect(fmtK(131_072)).toBe('128K');
-  });
-
-  test('右上角的儀表圖示：指針停在最接近的格', () => {
-    expect(gaugeSymbol(null)).toBe('gauge.with.dots.needle.0percent');
-    expect(gaugeSymbol(0.1)).toBe('gauge.with.dots.needle.0percent');
-    expect(gaugeSymbol(0.3)).toBe('gauge.with.dots.needle.33percent');
-    expect(gaugeSymbol(0.5)).toBe('gauge.with.dots.needle.50percent');
-    expect(gaugeSymbol(0.8)).toBe('gauge.with.dots.needle.67percent');
-    expect(gaugeSymbol(0.9)).toBe('gauge.with.dots.needle.100percent');
   });
 
   test('多久後卸載；一直載入的（年份很遠）不寫倒數', () => {
@@ -183,11 +167,11 @@ describe('畫面', () => {
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '你好');
     await fireEvent.press(screen.getByLabelText('送出'));
     const button = await screen.findByLabelText('用量，這段用了 1%');
-    // 儀表圖示、百分比，下面一行是用了多少／最多記住多少
+    // 只有小儀表和百分比；數字讀螢幕唸、點進面板看
     expect(button.props.accessibilityValue).toMatchObject({ text: '120／8,192 tokens' });
     expect(within(button).getByText('1%')).toBeTruthy();
-    expect(within(button).getByText('120/8K')).toBeTruthy();
-    expect(within(button).getByTestId('symbol-gauge.with.dots.needle.0percent')).toBeTruthy();
+    expect(within(button).getByTestId('usage-mini-gauge')).toBeTruthy();
+    expect(within(button).queryByText(/tokens|K$/)).toBeNull();
     await fireEvent.press(button);
     const gauge = await screen.findByLabelText('AI 記住的內容');
     expect(gauge.props.accessibilityValue).toMatchObject({ min: 0, max: 100, now: 1 });
@@ -276,6 +260,20 @@ describe('畫面', () => {
     expect(screen.queryByText('剩餘空間')).toBeNull();
     expect(screen.getByText('這段還沒問過 AI，全部是估的。')).toBeTruthy();
     expect(screen.getByText('現在沒有載入的模型，下次回答要先載入，會慢一點。')).toBeTruthy();
+  });
+
+  test('右上角小儀表：指針照實際的百分比轉（0% 左下、50% 正上、100% 右下），快滿變橘', async () => {
+    const needle = () => StyleSheet.flatten(screen.getByTestId('usage-mini-needle').props.style).transform;
+    const meter = (used: number) => <UsageMeter context={{ used, limit: 1000, level: used >= 1000 ? 'full' : used >= 800 ? 'near' : 'ok' }} reduceMotion onPress={jest.fn()} />;
+    const { rerender } = await render(meter(0));
+    expect(needle()).toEqual([{ rotate: '-45deg' }]);
+    await rerender(meter(500));
+    expect(needle()).toEqual([{ rotate: '90deg' }]);
+    await rerender(meter(830));
+    expect(needle()).toEqual([{ rotate: '179.1deg' }]);
+    expect(screen.getByText('83%')).toBeTruthy();
+    await rerender(meter(1000));
+    expect(needle()).toEqual([{ rotate: '225deg' }]);
   });
 
   test('面板開著時又答完一則：重讀，指針接著轉', async () => {
