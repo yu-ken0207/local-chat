@@ -430,10 +430,12 @@ export function ChatScreen(p: ChatScreenProps) {
       const back = returnFocus.current;
       returnFocus.current = null;
       if (back) {
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           const node = findNodeHandle(threadLinkRefs.current.get(back) ?? null);
           if (node) AccessibilityInfo.setAccessibilityFocus(node);
         }, 300);
+        // 畫面先關掉（或馬上換對話）就不用移焦點了，計時器跟著清掉
+        return () => clearTimeout(timer);
       }
       return;
     }
