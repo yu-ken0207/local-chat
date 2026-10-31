@@ -201,7 +201,7 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
       if (input.end && parseLocal(str(input.end)) < parseLocal(str(input.start))) return 'end must be after start.';
       return checkWhen(str(input.start), ctx, 'start time');
     },
-    brief: (input) => `${str(input.title)} · ${fmtEventTime(parseLocal(str(input.start)), input.end ? parseLocal(str(input.end)) : null, !!input.allDay, getLanguage())}`,
+    brief: (input) => t('{p0}，{p1}', { p0: str(input.title), p1: fmtEventTime(parseLocal(str(input.start)), input.end ? parseLocal(str(input.end)) : null, !!input.allDay, getLanguage()) }),
     briefKeys: ['title', 'start', 'end'],
     describe: (input) => {
       const when = fmtEventTime(parseLocal(str(input.start)), input.end ? parseLocal(str(input.end)) : null, !!input.allDay, getLanguage());
@@ -255,7 +255,7 @@ export function calendarTools(api: CalendarApi): PhoneTool[] {
       return { title: t('要提醒的事'), due: t('什麼時候提醒'), notes: t('備註') };
     },
     check: (input, ctx) => (input.due ? checkWhen(str(input.due), ctx, 'reminder time') : null),
-    brief: (input) => (input.due ? `${str(input.title)} · ${fmtEventTime(parseLocal(str(input.due)), null, false, getLanguage())}` : str(input.title)),
+    brief: (input) => (input.due ? t('{p0}，{p1}', { p0: str(input.title), p1: fmtEventTime(parseLocal(str(input.due)), null, false, getLanguage()) }) : str(input.title)),
     briefKeys: ['title', 'due'],
     describe: (input) =>
       input.due

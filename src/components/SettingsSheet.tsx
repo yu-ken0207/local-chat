@@ -163,7 +163,7 @@ export function SettingsView({ store, onClose, onOpenTrash, copyText, pickBackup
 
         <Section title={t('進階')}>
           <View style={styles.infoBox}>
-            <Text style={styles.rowTitle}>{t('資料庫：local-chat.db')}{info ? ` · ${fmtBytes(info.bytes)}` : ''}</Text>
+            <Text style={styles.rowTitle}>{info ? t('{p0}（{p1}）', { p0: t('資料庫：local-chat.db'), p1: fmtBytes(info.bytes) }) : t('資料庫：local-chat.db')}</Text>
             {info?.path ? (
               <Text style={styles.path} selectable accessibilityLabel={t('資料庫位置')}>
                 {info.path}
@@ -227,7 +227,7 @@ function DoneActions({ store, onClose }: { store: ChatStore; onClose: () => void
                   <View style={styles.row}>
                     <View style={styles.flex}>
                       <Text style={[styles.rowTitle, undone && { color: C.secondary }]}>{a.summary || store.toolFor(a.tool)?.label || a.tool}</Text>
-                      <Text style={styles.path}>{undone ? t('{p0} · 已復原', { p0: fmtWhen(a.createdAt, now) }) : fmtWhen(a.createdAt, now)}</Text>
+                      <Text style={styles.path}>{undone ? t('{p0}，已復原', { p0: fmtWhen(a.createdAt, now) }) : fmtWhen(a.createdAt, now)}</Text>
                     </View>
                     {canUndo ? (
                       <Pressable

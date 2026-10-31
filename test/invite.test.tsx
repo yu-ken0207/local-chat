@@ -184,7 +184,7 @@ describe('畫面', () => {
     expect(await screen.findByText('財務長說了')).toBeTruthy();
     expect(screen.getByText('邀請了 財務長 一起討論')).toBeTruthy();
     expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長']);
-    expect(await screen.findByText('1 位成員 · 自由搶話')).toBeTruthy();
+    expect(await screen.findByText('1 位成員')).toBeTruthy();
   });
 
   test('一般聊天打 @ 也跳出「我的 Agent」名單', async () => {

@@ -61,7 +61,7 @@ test('空白對話可以邀請 Agent：從我的 Agent 加進來，上面出現�
   await fireEvent.press(await screen.findByLabelText('加入 工程師'));
   await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', '工程師']));
   await fireEvent.press(screen.getByText('完成'));
-  expect(await screen.findByText('2 位成員 · 自由搶話')).toBeTruthy();
+  expect(await screen.findByText('2 位成員')).toBeTruthy();
   expect(screen.getByText('2 位 Agent 已經準備好，說說要討論什麼。')).toBeTruthy();
 });
 
@@ -86,7 +86,9 @@ test('討論：你在右、Agent 在左帶名字；討論中可以插話、可�
   expect(screen.getByLabelText('你說：要換伺服器嗎')).toBeTruthy();
   expect(screen.getAllByText('財務長').length).toBeGreaterThan(0);
   await waitFor(() => expect(store.getState().running).toEqual({}));
-  expect(await screen.findByText('大家說完了')).toBeTruthy();
+  expect(await screen.findByText('繼續討論')).toBeTruthy();
+  // 畫面不寫「大家說完了」，只留按鈕
+  expect(screen.queryByText('大家說完了')).toBeNull();
   script(net, { 財務長: [6, 0], 工程師: [0, 0] });
   await fireEvent.press(screen.getByText('繼續討論'));
   await waitFor(() => expect(screen.getAllByText('財務長說第1次')).toHaveLength(2));
@@ -170,7 +172,7 @@ test('成員面板：改發言方式、拿掉成員；幫我挑照話題從圖�
   for (const a of Object.values(agents)) await store.addMember(a.id);
   script(net, {});
   await screenOf(store);
-  await fireEvent.press(await screen.findByText('2 位成員 · 自由搶話'));
+  await fireEvent.press(await screen.findByText('2 位成員'));
   jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation((o, cb) => cb(o.options.indexOf('輪流')));
   await fireEvent.press(await screen.findByLabelText('發言方式，自由搶話'));
   expect(await screen.findByLabelText('發言方式，輪流')).toBeTruthy();
@@ -202,24 +204,24 @@ test('收尾：按「收尾」出結論卡（票數、共識、待辦），可�
   expect(await screen.findByText('要不要換？')).toBeTruthy();
   expect(screen.getByLabelText('方案 2：先修再說，2 票')).toBeTruthy();
   expect(screen.getByText('先修再說', { exact: true })).toBeTruthy();
-  expect(screen.getByText('• 估修理費')).toBeTruthy();
+  expect(screen.getByText('1. 估修理費')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('投方案 1'));
   expect(await screen.findByLabelText('你投了方案 1')).toBeTruthy();
   expect(screen.getByLabelText('方案 1：今年換，1 票')).toBeTruthy();
   expect(screen.getByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeTruthy();
   await fireEvent.press(screen.getAllByLabelText('取消釘選')[0]);
   await waitFor(() => expect(screen.queryByLabelText('釘選的結論：先修再說，點一下看完整內容')).toBeNull());
-  // 已經收尾了：下面不再顯示「大家說完了」「收尾」
-  expect(screen.queryByText('大家說完了')).toBeNull();
+  // 已經收尾了：下面不再顯示「繼續討論」「收尾」
+  expect(screen.queryByText('繼續討論')).toBeNull();
 });
 
-test('多人對話開討論串：剛開還沒問不顯示「大家說完了」；之前 @ 選人塞進輸入框的字不會跑回來', async () => {
+test('多人對話開討論串：剛開還沒問不顯示「繼續討論」；之前 @ 選人塞進輸入框的字不會跑回來', async () => {
   const { net, store, agents } = await setup();
   for (const a of Object.values(agents)) await store.addMember(a.id);
   script(net, { 財務長: [8, 0], 工程師: [0, 0] });
   await store.send('要換伺服器嗎');
   await screenOf(store);
-  expect(await screen.findByText('大家說完了')).toBeTruthy();
+  expect(await screen.findByText('繼續討論')).toBeTruthy();
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '@財');
   await fireEvent.press(await screen.findByLabelText('提到 財務長'));
   expect(await screen.findByDisplayValue('@財務長 ')).toBeTruthy();
@@ -228,7 +230,7 @@ test('多人對話開討論串：剛開還沒問不顯示「大家說完了」�
     await store.openThread(store.getState().messages[0].id);
   });
   expect(await screen.findByText('以下是討論串')).toBeTruthy();
-  expect(screen.queryByText('大家說完了')).toBeNull();
+  expect(screen.queryByText('繼續討論')).toBeNull();
   expect(screen.queryByDisplayValue('@財務長 ')).toBeNull();
 });
 
@@ -339,7 +341,7 @@ describe('審查修正：畫面與讀螢幕', () => {
     net.hosts.get(A)!.reply = concludeReply;
     await store.conclude();
     await screenOf(store);
-    expect(screen.getByText('1 member · Free for all')).toBeTruthy();
+    expect(screen.getByText('1 member')).toBeTruthy();
     expect(screen.getByLabelText('Option 2: 先修再說, 1 vote')).toBeTruthy();
     expect(screen.getByText('Conclusion: 先修再說')).toBeTruthy();
     await store.setPref('language', 'zh-Hant');

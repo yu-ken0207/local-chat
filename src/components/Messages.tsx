@@ -13,7 +13,7 @@ import { t } from '../i18n';
 import { CONCLUSION, parseConclusion } from '../agents/discussion';
 
 type Handlers = {
-  /** 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（沒給就顯示） */
+  /** 回答下方的「模型，電腦」：只在換了模型或電腦時顯示（沒給就顯示） */
   showMeta?: boolean;
   onOpenImage: (images: Attachment[], index: number) => void;
   onCopyCode: (code: string) => void;
@@ -39,7 +39,7 @@ export function moreActions(onMore?: () => void) {
   return onMore ? { accessibilityActions: [{ name: 'more', label: t('更多動作') }], onAccessibilityAction: () => onMore() } : {};
 }
 
-/** 開著 VoiceOver：回答下的「模型 · 電腦」一律顯示（「更多動作」掛在那一行） */
+/** 開著 VoiceOver：回答下的「模型，電腦」一律顯示（「更多動作」掛在那一行） */
 function useScreenReader(): boolean {
   const [on, setOn] = useState(false);
   useEffect(() => {
@@ -219,7 +219,7 @@ export function ActionButton({ text, onPress, primary, disabled }: { text: strin
  * 關掉後還在背景回答時寫「回答中…」，答完還沒看過寫「新回答」（不震、不跳提示，不打擾在原對話聊）
  */
 export function ThreadLink({ count, running, fresh, onPress, ref }: { count: number; running?: boolean; fresh?: boolean; onPress: (pageY?: number) => void; ref?: Ref<ComponentRef<typeof Pressable>> }) {
-  const status = running ? t('討論串 · 回答中…') : fresh ? t('討論串（{n} 則）· 新回答', { n: count }) : t('討論串（{n} 則）', { n: count });
+  const status = running ? t('討論串（回答中…）') : fresh ? t('討論串（{n} 則，新回答）', { n: count }) : t('討論串（{n} 則）', { n: count });
   return (
     <View style={styles.aiBlock}>
       <Text style={[styles.aiMark, styles.invisible]} {...decorative}>•</Text>
@@ -249,9 +249,9 @@ export function ThreadDivider() {
   );
 }
 
-/** 回答下方的小字：電腦 · 模型（速度、時間這些進階資訊放在長按的「詳細資訊」） */
+/** 回答下方的小字：模型，電腦（速度、時間這些進階資訊放在長按的「詳細資訊」） */
 export function metaLine(m: Message): string {
-  return [m.model ? friendlyModelName(m.model) : null, m.hostLabel].filter(Boolean).join(' · ');
+  return [m.model ? friendlyModelName(m.model) : null, m.hostLabel].filter(Boolean).join(t('，'));
 }
 
 /** 照片縮圖，點了看大圖 */

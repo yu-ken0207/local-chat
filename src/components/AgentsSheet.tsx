@@ -323,7 +323,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
 
   function pickModel() {
     const options: { label: string; hostUrl: string | null; model: string | null }[] = [{ label: t('跟著對話'), hostUrl: null, model: null }];
-    for (const h of state.hosts) for (const m of state.models[h.url]?.list ?? []) options.push({ label: `${m.name} · ${h.label}`, hostUrl: h.url, model: m.name });
+    for (const h of state.hosts) for (const m of state.models[h.url]?.list ?? []) options.push({ label: t('{p0}，{p1}', { p0: m.name, p1: h.label }), hostUrl: h.url, model: m.name });
     chooseOption(
       t('用哪個模型'),
       options.map((o) => o.label),
@@ -332,7 +332,7 @@ function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; on
   }
 
   const setField = (k: keyof AgentCard) => (v: string) => setCard({ expertise: '', stance: '', style: '', blindSpot: '', ...card, [k]: v });
-  const modelLabel = model.model ? `${model.model} · ${state.hosts.find((h) => h.url === model.hostUrl)?.label ?? ''}` : t('跟著對話');
+  const modelLabel = model.model ? t('{p0}，{p1}', { p0: model.model, p1: state.hosts.find((h) => h.url === model.hostUrl)?.label ?? '' }) : t('跟著對話');
 
   return (
     <View style={styles.sheet}>

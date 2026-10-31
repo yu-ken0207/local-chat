@@ -73,7 +73,7 @@ test('回答的「詳細資訊」：原始模型名稱、電腦、速度、時�
   await fireEvent(screen.getByTestId(`message-${store.getState().messages[1].id}`), 'longPress');
   expect(alert.mock.calls[0][0]).toBe('詳細資訊');
   const body = alert.mock.calls[0][1] as string;
-  expect(body).toContain('模型：Gemma 4 · 31B（gemma4:31b）');
+  expect(body).toContain('模型：Gemma 4 31B（gemma4:31b）');
   expect(body).toContain('電腦：192.168.1.20');
   expect(body).toContain('每秒約 40.0 個字詞');
   expect(body).toContain('花費時間：1s');

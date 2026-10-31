@@ -12,7 +12,7 @@ import { t } from '../i18n';
 export type PickSource = 'camera' | 'library';
 
 type Props = {
-  /** 「主機 · 模型」；還沒選模型時是 null */
+  /** 「模型，電腦」；還沒選模型時是 null */
   modelLabel: string | null;
   canAttach: boolean;
   /** 讀得到目前模型的資訊（看不看得懂圖）；讀不到時（電腦沒連上、清單還在讀）不能說成「模型看不懂圖片」 */

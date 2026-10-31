@@ -194,7 +194,7 @@ test('設定 > 進階：資料庫位置與大小；資料 > 備份所有對話',
   await store.init();
   await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
   await openSettings();
-  expect(await screen.findByText(/^資料庫：local-chat\.db · \d+ KB$/)).toBeTruthy();
+  expect(await screen.findByText(/^資料庫：local-chat\.db（\d+ KB）$/)).toBeTruthy();
   expect(screen.getByLabelText('資料庫位置').props.children).toBe('/var/mobile/Containers/Data/Application/X/Documents/SQLite/local-chat.db');
   await fireEvent.press(screen.getByText('備份所有對話'));
   const Sharing = require('expo-sharing');

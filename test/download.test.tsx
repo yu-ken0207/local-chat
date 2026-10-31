@@ -47,12 +47,12 @@ describe('推薦', () => {
   });
 
   test('配備的白話說明', () => {
-    expect(describeHardware(rtx5070)).toBe('GeForce RTX 5070 12 GB · 記憶體 32 GB');
-    expect(describeHardware(spark)).toBe('NVIDIA GB10 · 記憶體 128 GB（跟顯示卡共用）');
+    expect(describeHardware(rtx5070)).toBe('GeForce RTX 5070 12 GB，記憶體 32 GB');
+    expect(describeHardware(spark)).toBe('NVIDIA GB10，記憶體 128 GB（跟顯示卡共用）');
   });
 
   test('撞名的模型顯示時拿掉 @引擎', () => {
-    expect(friendlyModelName('gemma4:12b@lmstudio')).toBe('Gemma 4 · 12B');
+    expect(friendlyModelName('gemma4:12b@lmstudio')).toBe('Gemma 4 12B');
     expect(friendlyModelName('google/gemma-3-4b')).toBe('Gemma 3 4B');
     expect(friendlyModelName('qwen.gguf@server:a1')).toBe('Qwen.gguf');
   });
@@ -99,7 +99,7 @@ describe('透過小幫手下載', () => {
     await act(async () => {
       await store.startDownload(H, 'gemma4:12b');
     });
-    expect(await screen.findByText(/正在下載 Gemma 4 · 12B…（\d+%）/)).toBeTruthy();
+    expect(await screen.findByText(/正在下載 Gemma 4 12B…（\d+%）/)).toBeTruthy();
     await fireEvent.press(screen.getByText('查看下載'));
     expect(await screen.findByRole('header', { name: '選擇模型' })).toBeTruthy();
     // 放行讓下載完成，不然 App 會一直問進度
@@ -167,14 +167,14 @@ describe('畫面', () => {
   test('依配備推薦、標出跑不跑得動；下載中顯示進度，好了可以直接開始用', async () => {
     const { store } = await openModels([]);
     await fireEvent.press(await screen.findByText('選一個模型下載'));
-    expect(await screen.findByText('這台電腦：GeForce RTX 5070 12 GB · 記憶體 32 GB')).toBeTruthy();
+    expect(await screen.findByText('這台電腦：GeForce RTX 5070 12 GB，記憶體 32 GB')).toBeTruthy();
     expect(screen.getAllByText('這台電腦跑得很順').length).toBeGreaterThan(0);
     expect(screen.getAllByText('跑得動，但回答比較慢').length).toBeGreaterThan(0);
     const alert = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.[1]?.onPress?.());
-    await fireEvent.press(screen.getByLabelText('下載 Gemma 4 · 12B'));
-    expect(alert.mock.calls[0][0]).toBe('下載 Gemma 4 · 12B？');
+    await fireEvent.press(screen.getByLabelText('下載 Gemma 4 12B'));
+    expect(alert.mock.calls[0][0]).toBe('下載 Gemma 4 12B？');
     expect(alert.mock.calls[0][1]).toMatch(/關掉 App 也會繼續/);
-    await fireEvent.press(await screen.findByLabelText('使用 Gemma 4 · 12B'));
+    await fireEvent.press(await screen.findByLabelText('使用 Gemma 4 12B'));
     await waitFor(() => expect(store.getState().session?.model).toBe('gemma4:12b'));
   });
 
@@ -182,7 +182,7 @@ describe('畫面', () => {
     await openModels([]);
     await fireEvent.press(await screen.findByText('選一個模型下載'));
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    await fireEvent.press(await screen.findByLabelText('下載 GPT-OSS · 20B'));
+    await fireEvent.press(await screen.findByLabelText('下載 GPT-OSS 20B'));
     expect(alert.mock.calls[0][1]).toMatch(/回答會比較慢/);
   });
 
@@ -195,7 +195,7 @@ describe('畫面', () => {
     const sheet = jest.spyOn(ActionSheetIOS, 'showActionSheetWithOptions').mockImplementation(() => {});
     await fireEvent.press(screen.getByLabelText('Qwen.gguf 的選項'));
     expect(sheet.mock.calls[0][0].options).toEqual(['詳細資訊', '取消']);
-    await fireEvent.press(screen.getByLabelText('Gemma 4 · 12B 的選項'));
+    await fireEvent.press(screen.getByLabelText('Gemma 4 12B 的選項'));
     expect(sheet.mock.calls[1][0].options).toEqual(['詳細資訊', '預先載入（之後第一次回答比較快）', '取消']);
   });
 
@@ -215,7 +215,7 @@ describe('畫面', () => {
     expect(screen.queryByText('連不到這台電腦。')).toBeNull();
     pc.noEngine = false;
     await fireEvent.press(screen.getByText('重試'));
-    expect(await screen.findByLabelText(/模型 Gemma 4 · 12B/)).toBeTruthy();
+    expect(await screen.findByLabelText(/模型 Gemma 4 12B/)).toBeTruthy();
   });
 
   test('用名稱下載打錯：馬上跳出說明，不會留在清單裡', async () => {

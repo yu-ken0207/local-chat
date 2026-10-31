@@ -166,9 +166,9 @@ describe('加行程', () => {
 describe('加提醒', () => {
   test('有時間、沒時間；可以復原；沒給權限丟權限錯誤', async () => {
     const { api, createReminder, createEvent } = tools();
-    // 清單卡上的短版：標題 · 時間
-    expect(createEvent.brief!({ title: '校慶運動會', start: '2026-11-07T09:00', end: '2026-11-07T10:00' })).toBe('校慶運動會 · 11/7（週六）09:00–10:00');
-    expect(createReminder.brief!({ title: '繳電費', due: '2026-10-30T09:00' })).toBe('繳電費 · 10/30（週五）09:00');
+    // 清單卡上的短版：標題，時間
+    expect(createEvent.brief!({ title: '校慶運動會', start: '2026-11-07T09:00', end: '2026-11-07T10:00' })).toBe('校慶運動會，11/7（週六）09:00–10:00');
+    expect(createReminder.brief!({ title: '繳電費', due: '2026-10-30T09:00' })).toBe('繳電費，10/30（週五）09:00');
     expect(createReminder.brief!({ title: '買牛奶' })).toBe('買牛奶');
     expect(createReminder.describe!({ title: '繳電費', due: '2026-10-30T09:00' })).toBe('10/30（週五）09:00 提醒你「繳電費」');
     expect(createReminder.describe!({ title: '買牛奶' })).toBe('在「提醒事項」加一項「買牛奶」');
@@ -268,8 +268,8 @@ describe('接上 App', () => {
     await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '幫我加進行事曆');
     await fireEvent.press(screen.getByLabelText('送出'));
-    expect(await screen.findByText('行事曆：家庭（AI 猜的） · 備註：報名請至 http://example.com/form 截止 11/10，逾期…')).toBeTruthy();
-    expect(screen.getByText('結束（AI 猜的） · 地點：三年二班教室 · 行事曆：家庭（AI 猜的）')).toBeTruthy();
+    expect(await screen.findByText('行事曆：家庭（AI 猜的），備註：報名請至 http://example.com/form 截止 11/10，逾期…')).toBeTruthy();
+    expect(screen.getByText('結束（AI 猜的），地點：三年二班教室，行事曆：家庭（AI 猜的）')).toBeTruthy();
     // 讀螢幕唸完整那句，也唸這行
     expect(screen.getByRole('checkbox', { name: /三年二班教室/ })).toBeTruthy();
     // 改過的照改過的寫；自己選過的行事曆就不再標猜的（沒改的結束時間照樣標）
@@ -279,7 +279,7 @@ describe('接上 App', () => {
     await fireEvent.press(screen.getByLabelText('行事曆：家庭，點一下選'));
     sheet.mockRestore();
     await fireEvent.press(screen.getByText('好'));
-    expect(screen.getByText('結束（AI 猜的） · 地點：禮堂 · 行事曆：Work')).toBeTruthy();
+    expect(screen.getByText('結束（AI 猜的），地點：禮堂，行事曆：Work')).toBeTruthy();
     await fireEvent.press(screen.getByText('加入 2 個'));
     await waitFor(() => expect(api.created).toHaveLength(2));
   });

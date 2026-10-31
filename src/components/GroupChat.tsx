@@ -234,7 +234,7 @@ export function ConclusionCard({
           <Text style={styles.blockTitle}>{t('還有分歧')}</Text>
           {card.disagreements.map((x, i) => (
             <Text key={i} style={styles.rowTitle}>
-              • {x}
+              {i + 1}. {x}
             </Text>
           ))}
         </View>
@@ -244,7 +244,7 @@ export function ConclusionCard({
           <Text style={styles.blockTitle}>{t('接下來')}</Text>
           {card.todos.map((x, i) => (
             <Text key={i} style={styles.rowTitle}>
-              • {x}
+              {i + 1}. {x}
             </Text>
           ))}
         </View>
@@ -273,13 +273,16 @@ export function PinnedConclusion({ card, onPress, onUnpin }: { card: Conclusion;
   );
 }
 
-/** 標題下面那一列：成員頭像疊在一起、幾位、發言方式；點了打開成員面板 */
-export function MembersBar({ members, group, onPress }: { members: Member[]; group: GroupSettings | null; onPress: () => void }) {
-  const g = { ...DEFAULT_GROUP, ...group };
+/** 標題下面那一列：成員頭像疊在一起、幾位；點了打開成員面板（發言方式、全自動是設定，不顯示在這裡） */
+export function MembersBar({ members, onPress }: { members: Member[]; onPress: () => void }) {
   const shown = members.slice(0, 5);
-  const summary = [members.length === 1 ? t('1 位成員') : t('{p0} 位成員', { p0: members.length }), speakModeName(g.mode), g.autopilot ? t('全自動') : ''].filter(Boolean).join(' · ');
+  const summary = members.length === 1 ? t('1 位成員') : t('{p0} 位成員', { p0: members.length });
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={t('成員：{p0}。{p1}', { p0: members.map((m) => m.agent.name).join(t('、')), p1: summary })} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={t('成員：{p0}', { p0: members.map((m) => m.agent.name).join(t('、')) })}
+      accessibilityHint={t('點兩下看成員與討論設定')} style={({ pressed }) => [styles.bar, pressed && styles.pressed]}>
       <View style={styles.stack}>
         {shown.map((m, i) => (
           <View key={m.agent.id} style={[styles.stackItem, { marginLeft: i === 0 ? 0 : -8, zIndex: 10 - i }]}>
@@ -368,16 +371,12 @@ export function DiscussionStatus({
       </View>
     );
   }
+  // 大家說完了：畫面只留按鈕（讀螢幕照樣唸一聲）
   if (canContinue) {
     return (
-      <View style={styles.statusStack}>
-        <Text style={styles.statusText} numberOfLines={2}>
-          {t('大家說完了')}
-        </Text>
-        <View style={styles.statusButtons}>
-          <ActionButton text={t('繼續討論')} onPress={onContinue} />
-          {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} /> : null}
-        </View>
+      <View style={[styles.statusStack, styles.statusButtons]}>
+        <ActionButton text={t('繼續討論')} onPress={onContinue} />
+        {onConclude ? <ActionButton text={t('收尾')} onPress={onConclude} /> : null}
       </View>
     );
   }
@@ -461,7 +460,7 @@ export function MembersSheet({ store, state, topic, onClose }: { store: ChatStor
                 <View style={styles.flex}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
                     {m.agent.name}
-                    {joinedName(m.joinedBy) ? <Text style={styles.dim}>{` · ${joinedName(m.joinedBy)}`}</Text> : null}
+                    {joinedName(m.joinedBy) ? <Text style={styles.dim}>{t('（{p0}）', { p0: joinedName(m.joinedBy) })}</Text> : null}
                   </Text>
                   {m.agent.intro ? (
                     <Text style={styles.sub} numberOfLines={1}>

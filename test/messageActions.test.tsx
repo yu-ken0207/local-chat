@@ -102,8 +102,8 @@ describe('長按 AI 的回答', () => {
     pickActions('換個模型重新產生', 1); // 第二個模型（llama3:latest）
     await longPress(store, 1);
     await waitFor(() => expect(store.getState().messages[1]?.model).toBe('llama3:latest'));
-    // 回答下方寫「模型 · 電腦」；輸入列下方只有一台電腦時只寫模型
-    await waitFor(() => expect(screen.getByText('Llama 3 · 192.168.1.20')).toBeTruthy());
+    // 回答下方寫「模型，電腦」；輸入列下方只有一台電腦時只寫模型
+    await waitFor(() => expect(screen.getByText('Llama 3，192.168.1.20')).toBeTruthy());
     expect(screen.getByText('Llama 3')).toBeTruthy();
   });
 

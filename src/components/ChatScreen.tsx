@@ -454,7 +454,7 @@ export function ChatScreen(p: ChatScreenProps) {
   // 空白畫面要講的那台電腦：這段對話用的；還沒綁電腦時（例如剛配對、電腦上沒有模型）看最近加入的那台
   const statusHost = state.session?.hostUrl ?? state.hosts[state.hosts.length - 1]?.url;
 
-  // 回答下方的「模型 · 電腦」：只在換了模型或電腦時顯示（使用者決定，10/30）
+  // 回答下方的「模型，電腦」：只在換了模型或電腦時顯示（使用者決定，10/30）
   const metaShown = new Set<string>();
   let lastMeta = '';
   for (const m of state.messages) {
@@ -486,7 +486,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const replies = bubbles ? replyTargets(state.messages, state.agents, t('你')) : null;
   // 一般聊天也有 @ 名單（只列「我的 Agent」）：選了送出就把他拉進來
   const mention = group || state.myAgents.length > 0 ? mentionQuery : null;
-  // 討論串帶進來的背景不算（剛開還沒問就不顯示「大家說完了」）；最後一則是結論卡就已經收尾了
+  // 討論串帶進來的背景不算（剛開還沒問就不顯示「繼續討論」）；最後一則是結論卡就已經收尾了
   const lastSpoken = state.messages.findLast((m) => (m.role === 'user' || m.role === 'assistant') && m.content.trim() && !isThreadRoot(m));
   // 最後一則是錯誤：下面已經有「重試」，不再多一列
   const lastShown = state.messages.findLast((m) => !isRecordNote(m));
@@ -506,7 +506,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const modelLabel =
     session?.hostUrl && session.model
       ? state.hosts.length > 1
-        ? `${friendlyModelName(session.model)} · ${store.hostLabel(session.hostUrl)}`
+        ? t('{p0}，{p1}', { p0: friendlyModelName(session.model), p1: store.hostLabel(session.hostUrl) })
         : friendlyModelName(session.model)
       : null;
   const failed = (title: string) => (e: unknown) => Alert.alert(title, e instanceof Error ? e.message : String(e));
@@ -603,7 +603,7 @@ export function ChatScreen(p: ChatScreenProps) {
 
   const conversation = (
     <>
-    {group ? <MembersBar members={state.members} group={session?.group ?? null} onPress={() => setMembersOpen(true)} /> : null}
+    {group ? <MembersBar members={state.members} onPress={() => setMembersOpen(true)} /> : null}
     {pinnedCard && pinnedMessage ? <PinnedConclusion card={pinnedCard} onPress={() => jumpTo(pinnedMessage.id)} onUnpin={() => void store.pinConclusion(null)} /> : null}
     <KeyboardGestureArea style={styles.flex} offset={gestureOffset} textInputNativeID={COMPOSER_INPUT_ID}>
     {/* 訊息區：鍵盤打開時只在看著最新訊息時把內容往上推（往上翻舊訊息時不動）；拖著收鍵盤時跟手 */}

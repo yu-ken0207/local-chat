@@ -146,6 +146,6 @@ describe('選模型面板', () => {
     expect(await screen.findByText('電腦開著，但 Ollama 沒有開，或沒有開放讓區網連線。')).toBeTruthy();
     pc.online = true;
     await fireEvent.press(screen.getByText('重試'));
-    expect(await screen.findByLabelText(/模型 Gemma 4 · 12B/)).toBeTruthy();
+    expect(await screen.findByLabelText(/模型 Gemma 4 12B/)).toBeTruthy();
   });
 });

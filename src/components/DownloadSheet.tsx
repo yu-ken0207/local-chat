@@ -190,7 +190,7 @@ function Meta({ s }: { s: Suggestion }) {
   const parts = [`${s.entry.sizeGB} GB`, s.entry.vision ? t('看得懂圖片') : '', s.entry.think ? t('可以深入思考') : ''].filter(Boolean);
   return (
     <View style={styles.meta}>
-      <Text style={styles.rowSub}>{parts.join(' · ')}</Text>
+      <Text style={styles.rowSub}>{parts.join(t('，'))}</Text>
       {fit ? <Text style={[styles.rowSub, { color: fit.color }]}>{fit.text}</Text> : null}
     </View>
   );
@@ -247,7 +247,7 @@ export function downloadError(job: DownloadJob): string {
 /** 進度條＋已下載多少＋取消 */
 export function DownloadProgress({ job, store, url }: { job: DownloadJob; store: ChatStore; url: string }) {
   const pct = job.total > 0 ? Math.min(100, Math.floor((job.completed / job.total) * 100)) : 0;
-  const text = job.total > 0 ? `${fmtBytes(job.completed)} / ${fmtBytes(job.total)} · ${pct}%` : t('準備中…');
+  const text = job.total > 0 ? t('{p0}（{p1}）', { p0: `${fmtBytes(job.completed)} / ${fmtBytes(job.total)}`, p1: `${pct}%` }) : t('準備中…');
   return (
     <View style={styles.progress} accessibilityLabel={t('下載中 {p0}', { p0: text })} accessibilityLiveRegion="polite">
       <View style={styles.progressTop}>

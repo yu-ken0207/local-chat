@@ -156,7 +156,7 @@ test('討論串還在回答就關掉：不停掉，入口寫「回答中…」�
   await fireEvent.press(screen.getByLabelText('送出'));
   await waitFor(() => expect(store.getState().streaming).not.toBeNull());
   await fireEvent.press(screen.getByLabelText('關閉討論串'));
-  expect(await screen.findByText('討論串 · 回答中…', {}, { timeout: 3000 })).toBeTruthy();
+  expect(await screen.findByText('討論串（回答中…）', {}, { timeout: 3000 })).toBeTruthy();
   // 原對話照樣可以問
   await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '那 Python 呢');
   await fireEvent.press(screen.getByLabelText('送出'));
@@ -166,7 +166,7 @@ test('討論串還在回答就關掉：不停掉，入口寫「回答中…」�
   expect(await screen.findByText('回答中…')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('關閉對話清單'));
   finish();
-  expect(await screen.findByText('討論串（1 則）· 新回答', {}, { timeout: 3000 })).toBeTruthy();
+  expect(await screen.findByText('討論串（1 則，新回答）', {}, { timeout: 3000 })).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('討論串，有新回答，點一下打開'));
   expect(await screen.findByText('阿村牛肉湯')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('關閉討論串'));

@@ -74,11 +74,11 @@ export function bestPick(list: Suggestion[]): Suggestion | null {
   );
 }
 
-/** 電腦配備的白話說明，例如「NVIDIA GeForce RTX 5070（12 GB）· 記憶體 32 GB」 */
+/** 電腦配備的白話說明，例如「NVIDIA GeForce RTX 5070（12 GB），記憶體 32 GB」 */
 export function describeHardware(hw: Hardware | null): string {
   if (!hw) return '';
   const ram = t('記憶體 {p0} GB', { p0: Math.round(hw.memoryBytes / GB) });
-  if (hw.unified) return `${hw.gpus[0]?.name ?? ''} · ${t('{p0}（跟顯示卡共用）', { p0: ram })}`.replace(/^ · /, '');
+  if (hw.unified) return [hw.gpus[0]?.name ?? '', t('{p0}（跟顯示卡共用）', { p0: ram })].filter(Boolean).join(t('，'));
   const gpus = hw.gpus.filter((g) => g.vramBytes > 0).map((g) => `${g.name.replace(/^NVIDIA /, '')} ${Math.round(g.vramBytes / 2 ** 30)} GB`);
-  return [...gpus, ram].join(' · ');
+  return [...gpus, ram].join(t('，'));
 }

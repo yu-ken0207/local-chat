@@ -257,7 +257,7 @@ function details(tool: PhoneTool | undefined, a: Action, input: ToolInput): stri
       const value = clip(shown(tool, key, input[key], input.allDay === true));
       return guessed.has(key) ? t('{p0}：{p1}（AI 猜的）', { p0: label, p1: value }) : t('{p0}：{p1}', { p0: label, p1: value });
     })
-    .join(' · ');
+    .join(t('，'));
 }
 
 /**

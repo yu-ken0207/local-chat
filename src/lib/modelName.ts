@@ -32,7 +32,7 @@ function prettyBase(base: string): string {
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 
-/** 好讀的模型名稱，例如 gemma4:12b → Gemma 4 · 12B；latest 不顯示 */
+/** 好讀的模型名稱，例如 gemma4:12b 寫成 Gemma 4 12B；latest 不顯示 */
 export function friendlyModelName(name: string): string {
   // 小幫手上撞名的模型叫「名稱@引擎」，引擎另外顯示
   const [path, tag = ''] = name.replace(/@[\w:.-]+$/, '').split(':');
@@ -42,7 +42,7 @@ export function friendlyModelName(name: string): string {
   if (!t || t === 'latest') return pretty;
   // 12b、e4b、4b、1.5b、q4_0 這類大寫；instruct 這類字首大寫；用空白分開
   const parts = tag.split('-').map((w) => (/^[a-z]+$/i.test(w) && w.length > 3 ? cap(w.toLowerCase()) : w.toUpperCase()));
-  return `${pretty} · ${parts.join(' ')}`;
+  return `${pretty} ${parts.join(' ')}`;
 }
 
 /** 思考等級的白話說法 */
