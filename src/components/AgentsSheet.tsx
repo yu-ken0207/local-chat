@@ -18,7 +18,7 @@ type Props = { store: ChatStore; onClose: () => void };
 
 /** 積極度三段：安靜、普通、愛講 */
 const TALK_LEVELS = [0.2, 0.5, 0.8] as const;
-const talkLabel = (v: number) => [t('安靜'), t('普通'), t('愛講')][nearestTalk(v)];
+export const talkLabel = (v: number) => [t('安靜'), t('普通'), t('愛講')][nearestTalk(v)];
 const nearestTalk = (v: number) => TALK_LEVELS.reduce((best, x, i) => (Math.abs(x - v) < Math.abs(TALK_LEVELS[best] - v) ? i : best), 0);
 
 export function AgentsView({ store, onClose }: Props) {
@@ -274,7 +274,7 @@ function CatalogDetail({ store, entry, added, onClose }: { store: ChatStore; ent
 }
 
 /** 建立或編輯 Agent。新的：先寫一句話，AI 生成角色卡，再逐欄改 */
-function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; onClose: () => void }) {
+export function AgentEditor({ store, id, onClose }: { store: ChatStore; id?: string; onClose: () => void }) {
   const state = useChatState(store);
   const existing = id ? state.myAgents.find((a) => a.id === id) : undefined;
   const [idea, setIdea] = useState('');

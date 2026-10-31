@@ -25,6 +25,8 @@ type BubbleHandlers = {
   onOpenImage: (images: Attachment[], index: number) => void;
   onCopyCode: (code: string) => void;
   onLongPress?: (message: Message, pageY?: number) => void;
+  /** 點 Agent 的頭像：看他的資料（at：頭像在畫面上的位置，資料卡從這裡長出來） */
+  onOpenAgent?: (agent: Agent, at: { x: number; y: number }) => void;
   /** 點「回覆 某某」跳到那一則 */
   onJump?: (messageId: string) => void;
   onCopy?: () => void;
@@ -96,7 +98,18 @@ export function BubbleView({
   const name = agent?.name ?? 'AI';
   return (
     <Pressable accessible={false} {...press} delayLongPress={350} testID={`message-${m.id}`} style={styles.aiRow}>
-      <AgentAvatar id={agent ? avatarId(agent) : 'ai'} emoji={agent?.emoji || '🤖'} photo={agent?.photo} size={32} />
+      {agent && h.onOpenAgent ? (
+        <Pressable
+          onPress={(e) => h.onOpenAgent!(agent, { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={t('看 {p0} 的資料', { p0: agent.name })}
+          style={({ pressed }) => pressed && styles.pressed}>
+          <AgentAvatar id={avatarId(agent)} emoji={agent.emoji || '🤖'} photo={agent.photo} size={32} />
+        </Pressable>
+      ) : (
+        <AgentAvatar id={agent ? avatarId(agent) : 'ai'} emoji={agent?.emoji || '🤖'} photo={agent?.photo} size={32} />
+      )}
       <View style={styles.aiCol}>
         <Text style={styles.name} numberOfLines={1} accessibilityLabel={t('{p0} 說', { p0: name })} {...more}>
           {name}

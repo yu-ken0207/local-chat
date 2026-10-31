@@ -23,6 +23,8 @@ import { ActionListCard, ActionView, RevealContext, type CardField } from './Act
 import { CONCLUSION, parseConclusion } from '../agents/discussion';
 import { BubbleView, ConclusionCard, DiscussionStatus, MembersBar, MembersSheet, MentionPicker, PinnedConclusion, conclusionText, replyTargets } from './GroupChat';
 import { MessageView, ThreadDivider, ThreadLink, metaLine } from './Messages';
+import { AgentProfile } from './AgentProfile';
+import { AgentEditor } from './AgentsSheet';
 import { ModelSheet } from './ModelSheet';
 import { SessionList, SettingsPages, deleteSession } from './SessionSheets';
 import { SideDrawer, project, rubberband } from './SideDrawer';
@@ -90,6 +92,9 @@ export function ChatScreen(p: ChatScreenProps) {
   const [toast, setToast] = useState<ToastData | null>(null);
   // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
   const [membersOpen, setMembersOpen] = useState(false);
+  // 點 Agent 頭像看的資料卡（at：頭像的位置）、從資料卡按「編輯」打開的編輯面板
+  const [profile, setProfile] = useState<{ id: string; at: { x: number; y: number } } | null>(null);
+  const [editingAgent, setEditingAgent] = useState<string | null>(null);
   // 打的字放在 ref（每打一個字不重畫整個畫面）；只有 @ 後面的字變了才更新名單
   const draftRef = useRef('');
   const mentionRef = useRef<string | null>(null);
@@ -493,6 +498,7 @@ export function ChatScreen(p: ChatScreenProps) {
   const concluded = lastShown?.detail === CONCLUSION || lastShown?.role === 'error';
   const canContinue = group && !discussing && state.members.length > 1 && lastSpoken?.role === 'assistant' && !concluded;
   const topic = state.messages.find((m) => m.role === 'user')?.content ?? draftRef.current;
+  const profileAgent = profile ? (state.agents[profile.id] ?? state.members.find((m) => m.agent.id === profile.id)?.agent ?? null) : null;
   const pinnedMessage = session?.pinnedId ? state.messages.find((m) => m.id === session.pinnedId) : undefined;
   const pinnedCard = pinnedMessage ? parseConclusion(pinnedMessage.content) : null;
   const jumpTo = (id: string) => {
@@ -683,6 +689,10 @@ export function ChatScreen(p: ChatScreenProps) {
                 onOpenImage={(images, index) => setViewer({ images, index })}
                 onCopyCode={copy}
                 onLongPress={messageMenu}
+                onOpenAgent={(a, at) => {
+                  Keyboard.dismiss();
+                  setProfile({ id: a.id, at });
+                }}
                 onJump={jumpTo}
                 onCopy={() => copy(m.content)}
                 onRegenerate={() => confirmLater(m, () => store.regenerate(m.id))}
@@ -931,6 +941,30 @@ export function ChatScreen(p: ChatScreenProps) {
           </Modal>
           <Modal visible={membersOpen} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setMembersOpen(false)}>
             <MembersSheet store={store} state={state} topic={topic} onClose={() => setMembersOpen(false)} />
+          </Modal>
+          {profileAgent ? (
+            <AgentProfile
+              store={store}
+              agent={profileAgent}
+              anchor={profile?.at ?? null}
+              spoken={state.messages.filter((m) => m.role === 'assistant' && m.agentId === profileAgent.id).length}
+              member={state.members.some((m) => m.agent.id === profileAgent.id)}
+              reduceMotion={reduceMotion}
+              onClose={(action) => {
+                const a = profileAgent;
+                setProfile(null);
+                // 縮回頭像之後才做：@ 他填進輸入框、打開編輯、離開討論（可以復原）
+                if (action === 'mention') {
+                  const base = draftRef.current;
+                  setInjected({ text: `${base && !/\s$/.test(base) ? `${base} ` : base}@${a.name} `, nonce: Date.now() });
+                }
+                if (action === 'remove') void store.removeMember(a.id);
+                if (action === 'edit') void store.makeMine(a.id).then(() => setEditingAgent(a.id));
+              }}
+            />
+          ) : null}
+          <Modal visible={!!editingAgent} presentationStyle="pageSheet" animationType="slide" onRequestClose={() => setEditingAgent(null)}>
+            {editingAgent ? <AgentEditor store={store} id={editingAgent} onClose={() => setEditingAgent(null)} /> : null}
           </Modal>
           <ImageViewer images={viewer?.images ?? null} index={viewer?.index ?? 0} onClose={() => setViewer(null)} />
         </View>

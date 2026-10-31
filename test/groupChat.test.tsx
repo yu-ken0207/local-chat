@@ -347,3 +347,56 @@ describe('審查修正：畫面與讀螢幕', () => {
     await store.setPref('language', 'zh-Hant');
   });
 });
+
+describe('點頭像看 Agent 的資料', () => {
+  async function opened() {
+    const { net, repo, store, agents } = await setup();
+    await repo.updateAgent(agents['財務長'].id, { card: { expertise: '預算控管', stance: '保守', style: '直接', blindSpot: '' }, talk: 0.8 });
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    await repo.addNote(agents['財務長'].id, null, '上次主張先修再換');
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    await fireEvent.press(screen.getByLabelText('看 財務長 的資料'), { nativeEvent: { pageX: 30, pageY: 400 } });
+    expect(await screen.findByTestId('agent-profile')).toBeTruthy();
+    return { net, repo, store, agents };
+  }
+
+  test('資料卡：名字、介紹、這段說了幾次與積極度、專長立場風格、最近的筆記', async () => {
+    await opened();
+    const card = screen.getByTestId('agent-profile');
+    expect(within(card).getByText('財務長')).toBeTruthy();
+    expect(within(card).getByText('財務長的介紹')).toBeTruthy();
+    expect(within(card).getByText('這段說了 1 次，積極度：愛講')).toBeTruthy();
+    expect(within(card).getByLabelText('專長：預算控管')).toBeTruthy();
+    expect(within(card).getByLabelText('立場：保守')).toBeTruthy();
+    expect(within(card).getByLabelText('風格：直接')).toBeTruthy();
+    expect(await within(card).findByText('上次主張先修再換')).toBeTruthy();
+    // 點外面縮回去
+    await fireEvent.press(screen.getByTestId('profile-backdrop'));
+    await waitFor(() => expect(screen.queryByTestId('agent-profile')).toBeNull());
+  });
+
+  test('@他：把「@財務長 」填進輸入框', async () => {
+    await opened();
+    await fireEvent.press(screen.getByText('@他'));
+    expect(await screen.findByDisplayValue('@財務長 ')).toBeTruthy();
+  });
+
+  test('移除：離開這段討論，可以復原', async () => {
+    const { store } = await opened();
+    await fireEvent.press(screen.getByText('移除'));
+    await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toEqual(['工程師']));
+    expect(store.getState().undo?.message).toBe('「財務長」離開了討論');
+    await act(async () => {
+      await store.undoLast();
+    });
+    expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', '工程師']);
+  });
+
+  test('編輯：打開 Agent 編輯面板', async () => {
+    await opened();
+    await fireEvent.press(screen.getByText('編輯'));
+    expect(await screen.findByDisplayValue('預算控管', {}, { timeout: 3000 })).toBeTruthy();
+  });
+});

@@ -1744,6 +1744,12 @@ export class ChatStore {
     return (await this.deps.repo.getAgent(a.id))!;
   }
 
+  /** 放進「我的 Agent」（從資料卡按「編輯」時：圖鑑來的先收進來才能改） */
+  async makeMine(agentId: string): Promise<void> {
+    await this.deps.repo.updateAgent(agentId, { mine: true });
+    await this.loadMyAgents();
+  }
+
   /** 刪掉 Agent（說過的話照樣看得到名字），幾秒內可以復原 */
   async deleteAgent(id: string): Promise<void> {
     const { repo } = this.deps;
@@ -1797,11 +1803,18 @@ export class ChatStore {
     await this.addMember(a.id);
   }
 
+  /** 讓某位離開目前這段討論（說過的話留著），幾秒內可以復原 */
   async removeMember(agentId: string): Promise<void> {
+    const { repo } = this.deps;
     const s = this.state.session;
-    if (!s) return;
-    await this.deps.repo.removeMember(s.id, agentId);
+    const m = s ? (await repo.listMembers(s.id)).find((x) => x.agent.id === agentId) : undefined;
+    if (!s || !m) return;
+    await repo.removeMember(s.id, agentId);
     await this.refreshGroup();
+    await this.offerUndo(t('「{p0}」離開了討論', { p0: m.agent.name }), async () => {
+      await repo.restoreMember({ session_id: s.id, agent_id: agentId, position: m.position, joined_by: m.joinedBy, joined_at: m.joinedAt });
+      if (this.state.session?.id === s.id) await this.refreshGroup();
+    });
   }
 
   /** 改目前這段對話的群組設定（發言方式、讓 AI 自己加入、連續上限、全自動） */

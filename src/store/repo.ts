@@ -1129,6 +1129,17 @@ export class Repo {
     );
   }
 
+  /** 放回拿掉的成員（原本的位置、怎麼加入的都照舊） */
+  async restoreMember(row: MemberRow): Promise<void> {
+    await this.db.run('INSERT OR IGNORE INTO session_members (session_id, agent_id, position, joined_by, joined_at) VALUES (?, ?, ?, ?, ?)', [
+      row.session_id,
+      row.agent_id,
+      row.position,
+      row.joined_by,
+      row.joined_at,
+    ]);
+  }
+
   async removeMember(sessionId: string, agentId: string): Promise<void> {
     await this.db.run('DELETE FROM session_members WHERE session_id = ? AND agent_id = ?', [sessionId, agentId]);
   }
