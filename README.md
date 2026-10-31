@@ -6,6 +6,12 @@
 
 > **Local AI** is an iPhone chat app (Expo / React Native) for the AI models running on your own computer (Ollama or LM Studio). Chats are stored on the phone and only sent to your own computer. Highlights: pairing with a desktop helper by QR code, multi-agent discussions with 788 built-in roles, phone actions (calendar events, reminders) with confirmation and undo, and a live context gauge that condenses long chats automatically. The UI is available in Traditional Chinese and English.
 
+<p>
+  <img src="docs/screenshots/chat.jpg" width="240" alt="聊天：回答有排版、程式碼可以複製，右上角是用量">
+  <img src="docs/screenshots/models.jpg" width="240" alt="選模型：深入思考開關、選電腦和模型">
+  <img src="docs/screenshots/agents.jpg" width="240" alt="多 AI 討論：三個角色各給建議">
+</p>
+
 ## 功能
 
 設計原則：第一次打開、不看說明也能上手（不做教學頁，讓介面本身夠直覺）。
