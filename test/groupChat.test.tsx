@@ -21,8 +21,12 @@ const whoSpeaks = (body: any) => /^你是「(.+?)」，正在/.exec(body.message
 function script(net: FakeOllamaNet, bids: Record<string, number[]>, opts: { hold?: Promise<unknown>; conclude?: boolean; replyTo?: Record<string, string> } = {}) {
   const spoke: Record<string, number> = {};
   net.hosts.get(A)!.reply = (body: any) => {
+    if (body.format?.properties?.roles) {
+      return { lines: [{ message: { content: JSON.stringify({ roles: [{ zh: '歷史學家', en: 'Historian', keywords: ['歷史'] }, { zh: '統計學家', en: 'Statistician', keywords: ['統計'] }] }) }, done: false }, done] };
+    }
     if (body.format?.properties?.picks) {
-      return { lines: [{ message: { content: JSON.stringify({ picks: [{ zh: '歷史學家', en: 'Historian', why: '看過去的脈絡' }, { zh: '統計學家', en: 'Statistician', why: '看數字' }] }) }, done: false }, done] };
+      const hist = getEntry('agency:academic/academic-historian')!.n[0];
+      return { lines: [{ message: { content: JSON.stringify({ picks: [{ name: hist, why: '看過去的脈絡' }, { name: '統計學家', why: '看數字' }] }) }, done: false }, done] };
     }
     if (body.format) {
       const name = whoBids(body);

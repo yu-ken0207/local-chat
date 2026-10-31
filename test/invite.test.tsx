@@ -21,12 +21,15 @@ const hist = getEntry('agency:academic/academic-historian')!;
 
 /**
  * 劇本：一般聊天第一次回答叫 invite_agents，之後照常回答「AI 自己回答」；
- * 找人時依序用 picks 裡的每一批；舉手 bids；Agent 講話回「名字說了」
+ * 找人時先想角色（roles 依序用，沒給就是歷史學家），再從名單挑（picks 依序用）；舉手 bids；Agent 講話回「名字說了」
  */
-function script(net: FakeOllamaNet, opts: { picks?: object[][]; bids?: Record<string, number[]>; invite?: boolean } = {}) {
+const HISTORIAN = { zh: '歷史學家', en: 'Historian', keywords: ['歷史'] };
+function script(net: FakeOllamaNet, opts: { roles?: object[][]; picks?: object[][]; bids?: Record<string, number[]>; invite?: boolean } = {}) {
+  const roles = [...(opts.roles ?? [])];
   const batches = [...(opts.picks ?? [])];
   let called = false;
   net.hosts.get(A)!.reply = (body: any) => {
+    if (body.format?.properties?.roles) return say(JSON.stringify({ roles: roles.shift() ?? [HISTORIAN] }));
     if (body.format?.properties?.picks) return say(JSON.stringify({ picks: batches.shift() ?? [] }));
     if (body.format) return say(JSON.stringify({ score: opts.bids?.[whoBids(body)]?.shift() ?? 0, reply_to: '', conclude: false }));
     if (whoSpeaks(body)) return say(`${whoSpeaks(body)}說了`);
@@ -60,13 +63,16 @@ const said = (store: ChatStore) =>
 describe('找 Agent 一起討論', () => {
   test('AI 叫工具：出勾選卡（我的 Agent 優先、每位一句為什麼）；勾了加入，原本的 AI 退場，Agent 接著回你那句', async () => {
     const { net, store, cfo } = await setup();
-    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去的經驗' }]], bids: { 財務長: [8, 0], [hist.n[0]]: [0, 0] } });
+    script(net, { picks: [[{ name: '財務長', why: '管預算' }, { name: hist.n[0], why: '看過去的經驗' }]], bids: { 財務長: [8, 0], [hist.n[0]]: [0, 0] } });
     await store.send('我想討論要不要換伺服器，找懂的人一起討論');
     const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     expect(action).toMatchObject({ tool: 'invite_agents', status: 'pending' });
     expect(action.input).toMatchObject({ keys: [`mine:${cfo.id}`, `catalog:${hist.id}`], names: ['財務長', hist.n[0]], whys: ['管預算', '看過去的經驗'] });
-    // 找人時給模型看「我的 Agent」
-    expect(net.chatBodies().find((b) => b.format?.properties?.picks).messages[0].content).toContain('- 財務長：看預算');
+    // 挑人的名單：「我的 Agent」在前面、標出來；圖鑑照角色撈到的也在裡面；只能挑名單裡的名字
+    const choose = net.chatBodies().find((b) => b.format?.properties?.picks);
+    expect(choose.messages[0].content).toContain('- 財務長（你的 Agent）：看預算');
+    expect(choose.messages[0].content).toContain(`- ${hist.n[0]}：`);
+    expect(choose.format.properties.picks.items.properties.name.enum).toEqual(expect.arrayContaining(['財務長', hist.n[0]]));
     await store.approveAgents(action.id, action.input.keys as string[]);
     expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', hist.n[0]]);
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0]).toMatchObject({ status: 'done', summary: `邀請了 財務長、${hist.n[0]} 一起討論` });
@@ -77,7 +83,7 @@ describe('找 Agent 一起討論', () => {
 
   test('只勾一位：只加那一位', async () => {
     const { net, store, cfo } = await setup();
-    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去' }]], bids: { 財務長: [8, 0] } });
+    script(net, { picks: [[{ name: '財務長', why: '管預算' }, { name: hist.n[0], why: '看過去' }]], bids: { 財務長: [8, 0] } });
     await store.send('找人討論要不要換伺服器');
     const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     await store.approveAgents(action.id, [`mine:${cfo.id}`]);
@@ -86,7 +92,7 @@ describe('找 Agent 一起討論', () => {
 
   test('按「不用了」：AI 照一般聊天自己回答，不會說「沒有做」', async () => {
     const { net, store } = await setup();
-    script(net, { picks: [[{ zh: '歷史學家', en: 'Historian', why: '看過去' }]] });
+    script(net, { picks: [[{ name: hist.n[0], why: '看過去' }]] });
     await store.send('找人討論要不要換伺服器');
     const action = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     await store.declineAction(action.id);
@@ -97,16 +103,17 @@ describe('找 Agent 一起討論', () => {
     expect(JSON.stringify(last.messages)).not.toContain('NOT done');
   });
 
-  test('換一批：看過的不再挑，跟模型說看過誰；找不到別人就說一聲，卡片照舊', async () => {
+  test('換一批：看過的不放進名單；找不到別人就說一聲，卡片照舊', async () => {
     const { net, store } = await setup();
-    script(net, { picks: [[{ zh: '歷史學家', en: 'Historian', why: '看過去' }], [{ zh: '統計學家', en: 'Statistician', why: '看數字' }], []] });
+    const STAT = { zh: '統計學家', en: 'Statistician', keywords: ['統計'] };
+    script(net, { roles: [[HISTORIAN], [HISTORIAN, STAT], [HISTORIAN, STAT]], picks: [[{ name: hist.n[0], why: '看過去' }], [{ name: '統計學家', why: '看數字' }], []] });
     await store.send('找人討論要不要換伺服器');
     const id = store.getState().messages.flatMap((m) => m.actions ?? [])[0].id;
     await store.moreAgents(id);
     const after = store.getState().messages.flatMap((m) => m.actions ?? [])[0];
     expect(after.input.names).not.toContain(hist.n[0]);
     expect((after.input.names as string[]).length).toBe(1);
-    expect(net.chatBodies().filter((b) => b.format?.properties?.picks).at(-1).messages[0].content).toContain(`不要再挑這些：${hist.n[0]}`);
+    expect(net.chatBodies().filter((b) => b.format?.properties?.picks).at(-1).messages[0].content).not.toContain(`- ${hist.n[0]}：`);
     await store.moreAgents(id);
     expect(store.getState().notice).toBe('沒有找到其他人選了。');
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])[0].input.names).toEqual(after.input.names);
@@ -130,7 +137,7 @@ describe('找 Agent 一起討論', () => {
 
   test('「幫我挑」也是我的 Agent 優先', async () => {
     const { net, store } = await setup();
-    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去' }]] });
+    script(net, { picks: [[{ name: '財務長', why: '管預算' }, { name: hist.n[0], why: '看過去' }]] });
     const picks = await store.suggestMembers('要不要換伺服器');
     expect(picks.map((c) => [c.name, c.why])).toEqual([
       ['財務長', '管預算'],
@@ -172,7 +179,7 @@ describe('畫面', () => {
 
   test('勾選卡：預設全勾、每位一句為什麼；取消勾一位再按「加入並開始」，討論用氣泡接著進行', async () => {
     const { net, store } = await setup();
-    script(net, { picks: [[{ mine: '財務長', zh: '財務長', en: 'CFO', why: '管預算' }, { zh: '歷史學家', en: 'Historian', why: '看過去的經驗' }]], bids: { 財務長: [8, 0] } });
+    script(net, { picks: [[{ name: '財務長', why: '管預算' }, { name: hist.n[0], why: '看過去的經驗' }]], bids: { 財務長: [8, 0] } });
     await screenOf(store);
     await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '找人討論要不要換伺服器');
     await fireEvent.press(screen.getByLabelText('送出'));

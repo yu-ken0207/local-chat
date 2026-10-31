@@ -8,12 +8,15 @@ import { OllamaError, splitThink, type ChatMessage, type DownloadJob, type Helpe
 import type { Db } from '../store/db';
 import { ToolPermissionError, declinedPrompt, describeChanges, editedPrompt, unansweredPrompt, undonePrompt, needsConfirmation, parseArguments, toOllamaTools, toolGroupName, toolOffError, toolResultContent, toolSystemPrompt, toolsOffPrompt, validateInput, type PhoneTool, type ToolCall, type ToolGroup, type ToolInput } from '../lib/tools';
 import { DEFAULT_GROUP, RECORD_NOTE, THREAD_ROOT, isRecordNote, isThreadRoot, type Action, type Agent, type Attachment, type GroupSettings, type Host, type Member, type Message, type Repo, type Session, type AgentCard, type AgentNote } from '../store/repo';
-import { PromptStore, avatarId, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar } from '../agents/catalog';
+import { PromptStore, avatarId, entryIntro, entryName, getEntry, searchCatalog, similarEntries, suggestAvatar } from '../agents/catalog';
 import {
   AGENT_DRAFT_SCHEMA,
-  PICK_AGENTS_SCHEMA,
+  ROLES_SCHEMA,
+  chooseMessages,
+  chooseSchema,
+  MAX_MINE_SHOWN,
   agentDraftMessages,
-  pickAgentsMessages,
+  rolesMessages,
   BID_SCHEMA,
   CONCLUSION,
   CONCLUSION_SCHEMA,
@@ -1873,59 +1876,58 @@ export class ChatStore {
   }
 
   /**
-   * 照話題找人：模型先挑（「我的 Agent」有適合的優先，不夠給職稱），職稱再到圖鑑找；已經在這段的、avoid 裡的（換一批時看過的）不再挑。
-   * 同一個圖鑑角色已經在「我的 Agent」裡，就用「我的 Agent」那一份（筆記接得上）
+   * 照話題找人：模型先想 4–5 個觀點互補的角色（職稱、關鍵字），App 照角色到圖鑑撈相近的人，
+   * 跟「我的 Agent」放成一份名單（我的 Agent 在前面），再請模型從名單挑 3–4 位、各附一句為什麼。
+   * 已經在這段的、avoid 裡的（換一批時看過的）不放進名單；圖鑑角色已經在「我的 Agent」裡就用那一份（筆記接得上）
    */
   private async findAgents(sessionId: string, topic: string, avoid: string[] = [], signal?: AbortSignal): Promise<AgentCandidate[]> {
     const { repo } = this.deps;
     const s = await repo.getSession(sessionId);
     const m = s ? this.modelFor(null, s) : null;
     if (!m) throw new Error(t('請先選一個模型'));
+    const json = (text: string): any => {
+      try {
+        return JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}');
+      } catch {
+        return {};
+      }
+    };
+    const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
     const members = (await repo.listMembers(sessionId)).map((x) => x.agent);
     const taken = new Set([...avoid, ...members.flatMap((a) => [`mine:${a.id}`, ...(a.catalogId ? [`catalog:${a.catalogId}`] : [])])]);
-    const mine = (await repo.listMyAgents()).filter((a) => !taken.has(`mine:${a.id}`) && !(a.catalogId && taken.has(`catalog:${a.catalogId}`)));
-    // 換一批：跟模型說看過哪些（名字）
-    const seen: string[] = [];
-    for (const k of avoid) {
-      const e = k.startsWith('catalog:') ? getEntry(k.slice(8)) : undefined;
-      const name = e ? entryName(e) : k.startsWith('mine:') ? (await repo.getAgent(k.slice(5)))?.name : undefined;
-      if (name) seen.push(name);
+    const mine = (await repo.listMyAgents()).filter((a) => !taken.has(`mine:${a.id}`) && !(a.catalogId && taken.has(`catalog:${a.catalogId}`))).slice(0, MAX_MINE_SHOWN);
+    const mineCatalog = new Set(mine.flatMap((a) => (a.catalogId ? [a.catalogId] : [])));
+    // 1. 要哪些角色
+    const r = json(await this.collect(m.url, m.model, rolesMessages(topic), { think: quickThink(m.info), format: ROLES_SCHEMA, options: { temperature: 0.4, num_predict: budget(500, m.info) }, signal }));
+    const roles: { zh: string; en: string; keywords: string[] }[] = (Array.isArray(r.roles) ? r.roles : []).map((x: any) => ({
+      zh: str(x?.zh),
+      en: str(x?.en),
+      keywords: Array.isArray(x?.keywords) ? x.keywords.map(str).filter(Boolean) : [],
+    }));
+    // 2. 名單：我的 Agent 在前面，再加每個角色在圖鑑裡最相近的幾位
+    const list: AgentCandidate[] = mine.map((a) => ({ key: `mine:${a.id}`, name: a.name, intro: a.intro, why: '', emoji: a.emoji, avatar: avatarId(a) }));
+    for (const role of roles) {
+      for (const e of similarEntries([role.zh, ...role.keywords], role.en, 8, (x) => taken.has(`catalog:${x.id}`) || mineCatalog.has(x.id))) {
+        if (!list.some((c) => c.key === `catalog:${e.id}` || c.name === entryName(e))) list.push({ key: `catalog:${e.id}`, name: entryName(e), intro: entryIntro(e), why: '', emoji: e.e, avatar: e.id });
+      }
     }
-    const text = await this.collect(m.url, m.model, pickAgentsMessages(topic, mine, seen), {
-      think: quickThink(m.info),
-      format: PICK_AGENTS_SCHEMA,
-      options: { temperature: 0.5, num_predict: budget(500, m.info) },
-      signal,
-    });
-    let picks: { mine?: unknown; zh?: unknown; en?: unknown; why?: unknown }[] = [];
-    try {
-      picks = JSON.parse((m.info?.think ? (splitThink(text)?.content ?? text) : text).match(/\{[\s\S]*\}/)?.[0] ?? '{}').picks ?? [];
-    } catch {
-      picks = [];
-    }
-    const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-    const people = mentionPeople(mine);
+    if (list.length === 0) return [];
+    // 3. 從名單挑（只能挑名單裡的名字）
+    const names = [...new Set(list.map((c) => c.name))];
+    const c = json(
+      await this.collect(m.url, m.model, chooseMessages(topic, list.map((x) => ({ name: x.name, intro: x.intro, mine: x.key.startsWith('mine:') }))), {
+        think: quickThink(m.info),
+        format: chooseSchema(names),
+        options: { temperature: 0.4, num_predict: budget(400, m.info) },
+        signal,
+      })
+    );
     const out: AgentCandidate[] = [];
-    const used = (key: string) => taken.has(key) || out.some((c) => c.key === key);
-    const fromAgent = (a: Agent, why: string): AgentCandidate => ({ key: `mine:${a.id}`, name: a.name, intro: a.intro, why, emoji: a.emoji, avatar: avatarId(a) });
-    for (const p of Array.isArray(picks) ? picks : []) {
+    for (const p of Array.isArray(c.picks) ? c.picks : []) {
+      const hit = list.find((x) => x.name === str(p?.name));
+      if (!hit || out.some((x) => x.key === hit.key)) continue;
+      out.push({ ...hit, why: str(p?.why).slice(0, 60) });
       if (out.length >= 4) break;
-      const why = str(p.why).slice(0, 60);
-      // 自己的 Agent：模型填的名字、或職稱剛好就是他的名字
-      const own = [str(p.mine), str(p.zh), str(p.en)].map((n) => (n ? idByName(n, people) : null)).find((id) => id && !used(`mine:${id}`));
-      const agent = own ? mine.find((a) => a.id === own) : undefined;
-      if (agent) {
-        out.push(fromAgent(agent, why));
-        continue;
-      }
-      for (const q of [str(p.zh), str(p.en)]) {
-        const e = q ? searchCatalog(q).find((x) => !used(`catalog:${x.id}`)) : undefined;
-        if (!e) continue;
-        const same = mine.find((a) => a.catalogId === e.id);
-        if (same && !used(`mine:${same.id}`)) out.push(fromAgent(same, why));
-        else if (!same) out.push({ key: `catalog:${e.id}`, name: entryName(e), intro: entryIntro(e), why, emoji: e.e, avatar: e.id });
-        break;
-      }
     }
     return out;
   }

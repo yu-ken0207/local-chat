@@ -448,43 +448,50 @@ export function agentDraftMessages(idea: string, avoid?: string): ChatMessage[] 
 
 // ---- 幫我挑 ----
 
-export const PICK_AGENTS_SCHEMA = {
-  type: 'object',
-  properties: {
-    picks: {
-      type: 'array',
-      items: { type: 'object', properties: { mine: { type: 'string' }, zh: { type: 'string' }, en: { type: 'string' }, why: { type: 'string' } }, required: ['zh', 'en', 'why'] },
-    },
-  },
-  required: ['picks'],
-};
+// ---- 找 Agent、幫我挑：先想要哪些角色，再從名單挑人 ----
 
-/** 「找 Agent」「幫我挑」挑人時看得到的使用者自己的 Agent（最多幾個） */
+/** 名單裡最多放幾個「我的 Agent」 */
 export const MAX_MINE_SHOWN = 30;
 
-/**
- * 照話題挑 3–4 個觀點互補的人：使用者自己的 Agent 有適合的優先（mine 填他的名字），不夠再給職稱（中英文，拿去圖鑑搜尋）；
- * 每個附一句「為什麼找他」
- */
-export function pickAgentsMessages(topic: string, mine: { name: string; intro: string }[], avoid: string[] = []): ChatMessage[] {
-  const list = mine.slice(0, MAX_MINE_SHOWN).map((a) => `- ${a.name}${a.intro ? `：${clip(a.intro, 60, '…')}` : ''}`).join('\n'); // i18n-ignore
+export const ROLES_SCHEMA = {
+  type: 'object',
+  properties: {
+    roles: {
+      type: 'array',
+      items: { type: 'object', properties: { zh: { type: 'string' }, en: { type: 'string' }, keywords: { type: 'array', items: { type: 'string' } } }, required: ['zh', 'en', 'keywords'] },
+    },
+  },
+  required: ['roles'],
+};
+
+/** 第一步：照話題想 4–5 個觀點互補的角色（中英文職稱、幾個中文關鍵字），App 拿去圖鑑撈相近的人 */
+export function rolesMessages(topic: string): ChatMessage[] {
   const system = zh()
-    ? [
-        '使用者要找幾個人一起討論一個話題。挑 3–4 個適合參加、觀點互補（有人支持、有人質疑、有人看實務）的角色。', // i18n-ignore
-        list ? `使用者自己的 Agent 有適合的優先用（mine 填他的名字，一字不差）：\n${list}` : '', // i18n-ignore
-        '不夠的再想職稱：zh 是繁體中文職稱（2–6 個字，例如「財務分析師」），en 是英文職稱（例如 Financial Analyst）；用自己的 Agent 時 zh、en 也照他的身分填。', // i18n-ignore
-        avoid.length ? `不要再挑這些：${avoid.join('、')}` : '', // i18n-ignore
-        'why：一句話說為什麼找他（20 個字以內，繁體中文，台灣用語）。只回 JSON。', // i18n-ignore
-      ]
-    : [
-        'The user wants a few people to discuss a topic together. Pick 3–4 roles with complementary views (someone in favor, someone skeptical, someone practical).',
-        list ? `Prefer the user's own agents when they fit (put their exact name in mine):\n${list}` : '',
-        'Otherwise give a job title: zh in Traditional Chinese (2–6 characters) and en in English (e.g. Financial Analyst); fill zh and en for the user\'s own agents too.',
-        avoid.length ? `Do not pick these again: ${avoid.join(', ')}` : '',
-        'why: one short sentence on why this person should join (under 12 words). Reply with JSON only.',
-      ];
+    ? '使用者要找幾個人一起討論一個話題。列出 4–5 個適合參加、觀點互補（有人支持、有人質疑、有人看實務）的角色：zh 是繁體中文職稱，en 是英文職稱，keywords 是 2–4 個繁體中文關鍵字（這個角色的專業領域，例如 招募、職場、資安）。只回 JSON。' // i18n-ignore
+    : 'The user wants a few people to discuss a topic together. List 4–5 roles with complementary views (someone in favor, someone skeptical, someone practical): zh is the job title in Traditional Chinese, en the job title in English, keywords 2–4 short Traditional Chinese words for the role\'s field. Reply with JSON only.';
   return [
-    { role: 'system', content: system.filter(Boolean).join('\n') },
+    { role: 'system', content: system },
+    { role: 'user', content: topic.trim() },
+  ];
+}
+
+/** 第二步的格式：只能挑名單裡的名字 */
+export function chooseSchema(names: string[]) {
+  return {
+    type: 'object',
+    properties: { picks: { type: 'array', items: { type: 'object', properties: { name: { type: 'string', enum: names }, why: { type: 'string' } }, required: ['name', 'why'] } } },
+    required: ['picks'],
+  };
+}
+
+/** 第二步：從名單（使用者自己的 Agent 在前面）挑 3–4 位，每位一句為什麼 */
+export function chooseMessages(topic: string, list: { name: string; intro: string; mine: boolean }[]): ChatMessage[] {
+  const lines = list.map((x) => `- ${x.name}${x.mine ? (zh() ? '（你的 Agent）' : ' (your agent)') : ''}${x.intro ? `：${clip(x.intro, 40, '…')}` : ''}`).join('\n'); // i18n-ignore
+  const system = zh()
+    ? `使用者要找人一起討論下面的話題。從清單挑 3–4 位最適合、觀點互補的人（名字要一字不差）；標「你的 Agent」的合適就優先；沒有適合的就少挑。why：一句話說為什麼找他（20 個字以內，繁體中文，台灣用語）。只回 JSON。\n清單：\n${lines}` // i18n-ignore
+    : `The user wants people to discuss the topic below. Pick the 3–4 best people from the list with complementary views (copy names exactly); prefer the ones marked "your agent" when they fit; pick fewer if few fit. why: one short sentence on why (under 12 words). Reply with JSON only.\nList:\n${lines}`;
+  return [
+    { role: 'system', content: system },
     { role: 'user', content: topic.trim() },
   ];
 }

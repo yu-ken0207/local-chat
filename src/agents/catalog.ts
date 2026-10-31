@@ -111,7 +111,7 @@ const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
 const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'your', 'you', 'who', 'mr', 'mrs', 'dr']);
 
 /** 圖鑑名字裡有沒有這個詞：英文要整個字對到（Data 不會對到 Dad），中文照字串 */
-function inName(name: string, q: string): boolean {
+export function inName(name: string, q: string): boolean {
   const a = name.toLowerCase();
   const b = q.toLowerCase();
   if (CJK.test(b)) return a.includes(b);
@@ -146,6 +146,52 @@ export function suggestAvatar(name: string, terms: string[]): string | null {
     if (hit) return hit.id;
   }
   return null;
+}
+
+// ---- 照角色找相近的人（找 Agent、幫我挑用）----
+
+/** 中文的兩個字一組（「人力資源」拆成 人力、力資、資源） */
+function bigramsOf(text: string): Set<string> {
+  const c = text.replace(/[^\u4e00-\u9fff]/g, '');
+  const out = new Set<string>();
+  for (let i = 0; i + 1 < c.length; i++) out.add(c.slice(i, i + 2));
+  return out;
+}
+/** 中文的名字、標籤、介紹（加個性） */
+const zhFields = (e: CatalogEntry): [string, string, string] => [e.n[0], e.t.join(' '), e.d[0] + (e.v?.[0] ?? '')];
+let docFreq: Map<string, number> | null = null;
+/** 越常見的兩字組越不算數（「工作」「設計」到處都有） */
+function weight(g: string): number {
+  if (!docFreq) {
+    docFreq = new Map();
+    for (const e of data.entries) for (const x of bigramsOf(zhFields(e).join(' '))) docFreq.set(x, (docFreq.get(x) ?? 0) + 1);
+  }
+  return Math.log((data.entries.length + 1) / ((docFreq.get(g) ?? 0) + 1));
+}
+/** 英文職稱裡太常見、對找人沒幫助的字 */
+const ROLE_STOP = new Set(['and', 'the', 'for', 'with', 'of', 'manager', 'specialist', 'expert', 'senior', 'lead', 'director', 'officer', 'head', 'consultant', 'assistant']);
+
+/**
+ * 照一個角色（中文職稱與關鍵字、英文職稱）在圖鑑找相近的人：名字對到最重、標籤次之、介紹最輕；英文要整個字對。
+ * 只是先撈一份名單，最後挑誰由模型決定
+ */
+export function similarEntries(zh: string[], en: string, limit = 8, skip?: (e: CatalogEntry) => boolean): CatalogEntry[] {
+  const grams = new Set(zh.flatMap((x) => [...bigramsOf(x)]));
+  const words = (en.toLowerCase().match(/[a-z]{2,}/g) ?? []).filter((w) => !ROLE_STOP.has(w));
+  const scored: { e: CatalogEntry; s: number }[] = [];
+  for (const e of data.entries) {
+    if (skip?.(e)) continue;
+    const [name, tags, rest] = zhFields(e);
+    let s = 0;
+    for (const g of grams) s += name.includes(g) ? 3 * weight(g) : tags.includes(g) ? 2 * weight(g) : rest.includes(g) ? weight(g) : 0;
+    const [ne, de] = [e.n[1].toLowerCase(), e.d[1].toLowerCase()];
+    for (const w of words) {
+      const re = new RegExp(`\\b${w}\\b`);
+      s += re.test(ne) ? 4 : re.test(de) ? 1 : 0;
+    }
+    if (s > 0) scored.push({ e, s });
+  }
+  return scored.sort((a, b) => b.s - a.s).slice(0, limit).map((x) => x.e);
 }
 
 /** 頭像選「用 emoji」時存的值（從圖鑑來的也不會落回圖鑑的像素頭像） */

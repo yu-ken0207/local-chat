@@ -4,7 +4,7 @@
 /// <reference types="node" />
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { PromptStore, catalogEntries, catalogLicenses, categories, entryIntro, entryName, getEntry, searchCatalog, suggestAvatar } from '../src/agents/catalog';
+import { PromptStore, catalogEntries, catalogLicenses, categories, entryIntro, entryName, getEntry, searchCatalog, similarEntries, suggestAvatar } from '../src/agents/catalog';
 import { PROMPT_SHARDS } from '../src/agents/shards';
 import raw from '../src/agents/catalog.json';
 import { setLanguage } from '../src/i18n';
@@ -309,6 +309,16 @@ describe('審查修正：Agent 資料', () => {
     expect(await db.get('PRAGMA user_version')).toEqual({ user_version: 6 });
     const cols = (await db.all<{ name: string }>('PRAGMA table_info(sessions)')).map((c) => c.name);
     expect(cols).not.toContain('group_settings');
+  });
+});
+
+describe('照角色在圖鑑找相近的人（找 Agent 的名單）', () => {
+  test('圖鑑沒有一樣的名字也撈得到相近的；英文短字不會對到別的字裡面', () => {
+    const names = (zh: string[], en: string) => similarEntries(zh, en, 8).map((e) => e.n[0]);
+    expect(names(['人力資源總監', '人才留任', '職場'], 'HR Director')).toEqual(expect.arrayContaining(['人事入職導引專員', '職場心理學分析專家']));
+    expect(names(['資訊安全主管', '資安風險'], 'IT Security Manager')).toContain('資安架構師');
+    expect(names(['財務分析師'], 'Financial Analyst')[0]).toBe('財務分析師');
+    expect(names(['人力資源總監'], 'HR Director')).not.toContain('LLM 後訓練工程師');
   });
 });
 
