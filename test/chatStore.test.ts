@@ -259,8 +259,7 @@ describe('傳送與串流', () => {
     const { net, store, events } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
     const p = store.send('寫一篇長文');
-    await flush();
-    expect(store.getState().streaming?.content).toBe('寫到一半');
+    await waitFor(() => expect(store.getState().streaming?.content).toBe('寫到一半'));
     store.stop();
     await p;
     expect(store.getState().messages.map((m) => [m.role, m.content])).toEqual([
@@ -275,7 +274,7 @@ describe('傳送與串流', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
     const p = store.send('寫一篇長文');
-    await flush();
+    await waitFor(() => expect(store.getState().streaming?.content).toBe('寫到一半'));
     await store.openSession(store.getState().session!.id);
     await flush();
     expect(store.getState().streaming?.content).toBe('寫到一半');
@@ -451,7 +450,7 @@ describe('標題與匯出', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '寫到一半' }, done: false }], hang: true });
     const p = store.send('寫一篇長文');
-    await flush();
+    await waitFor(() => expect(store.getState().streaming?.content).toBe('寫到一半'));
     store.stop();
     await p;
     expect(net.titleBodies()).toHaveLength(0);
@@ -587,7 +586,7 @@ describe('重試', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '一半' }, done: false }], hang: true });
     const p = store.send('寫長文');
-    await flush();
+    await waitFor(() => expect(store.getState().streaming?.content).toBe('一半'));
     store.stop();
     await p;
     net.hosts.get(A)!.reply = undefined;
@@ -774,8 +773,7 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     const original = store.getState().messages.map((m) => m.id);
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '講到一半' }, done: false }], hang: true });
     await store.editAndResend(original[0], '改過', [], true);
-    await flush();
-    expect(store.getState().streaming).not.toBeNull();
+    await waitFor(() => expect(store.getState().streaming).not.toBeNull());
     await store.undoLast();
     expect(store.getState().messages.map((m) => m.id)).toEqual(original);
     expect(store.getState().running).toEqual({});
@@ -804,8 +802,7 @@ describe('不怕按錯：復原、最近刪除、回答版本', () => {
     const { net, store } = await ready();
     net.hosts.get(A)!.reply = () => ({ lines: [{ message: { content: '講到一半' }, done: false }], hang: true });
     await store.send('a', [], true);
-    await flush();
-    expect(store.getState().streaming).not.toBeNull();
+    await waitFor(() => expect(store.getState().streaming).not.toBeNull());
     await store.deleteAllSessions();
     expect(store.getState().streaming).toBeNull();
     expect(store.getState().running).toEqual({});
