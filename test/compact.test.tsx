@@ -63,6 +63,21 @@ test('回答完到 80% 就在背景整理；之後送給 AI 的是摘要加上�
   await settle(store);
 });
 
+test('改了已經整理過的訊息：摘要作廢，畫面上那條線也不見；按復原就回來', async () => {
+  const { store } = await setup();
+  await store.send(LONG1);
+  await store.send(LONG2);
+  await waitFor(() => expect(store.getState().session!.summarySeq).toBeGreaterThan(0));
+  await settle(store);
+  const before = store.getState().session!;
+  const first = store.getState().messages.find((m) => m.content === LONG1)!;
+  await store.editAndResend(first.id, '改過的問題', []);
+  expect(store.getState().session).toMatchObject({ summary: '', summarySeq: 0 });
+  await settle(store);
+  await store.undoLast();
+  await waitFor(() => expect(store.getState().session).toMatchObject({ summary: before.summary, summarySeq: before.summarySeq }));
+});
+
 test('沒到 80% 不整理；多 AI 討論不用這個（有自己的前情摘要）', async () => {
   const { net, repo, store } = await setup(300);
   await store.send(LONG1);

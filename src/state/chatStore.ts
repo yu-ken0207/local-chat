@@ -1508,8 +1508,14 @@ export class ChatStore {
     const { repo } = this.deps;
     const s = await repo.getSession(sessionId);
     if (!s?.summary || seq > s.summarySeq) return async () => {};
-    await repo.updateSession(sessionId, { summary: '', summarySeq: 0 });
-    return async () => repo.updateSession(sessionId, { summary: s.summary, summarySeq: s.summarySeq });
+    await this.setSummary(sessionId, '', 0);
+    return async () => this.setSummary(sessionId, s.summary, s.summarySeq);
+  }
+
+  /** 改前情摘要：資料庫和畫面上的一起改（一般聊天對話裡「前面的內容已整理成摘要」那條線跟著變） */
+  private async setSummary(sessionId: string, summary: string, summarySeq: number): Promise<void> {
+    await this.deps.repo.updateSession(sessionId, { summary, summarySeq });
+    if (this.state.session?.id === sessionId) this.set({ session: { ...this.state.session, summary, summarySeq } });
   }
 
   /** 某則訊息之後還有幾則（重新產生、編輯前提醒用） */
@@ -2365,12 +2371,8 @@ export class ChatStore {
     // 中間有人編輯、刪掉前面的訊息（摘要作廢了）：這次的不算
     const now = await repo.getSession(sessionId);
     if (!now || now.summarySeq !== s.summarySeq || now.summary !== s.summary) return false;
-    const summarySeq = older.at(-1)!.seq;
-    await repo.updateSession(sessionId, { summary, summarySeq });
-    if (this.state.session?.id === sessionId) {
-      this.set({ session: { ...this.state.session, summary, summarySeq } });
-      void this.loadContext(sessionId);
-    }
+    await this.setSummary(sessionId, summary, older.at(-1)!.seq);
+    if (this.state.session?.id === sessionId) void this.loadContext(sessionId);
     return true;
   }
 
