@@ -93,7 +93,7 @@ export function ChatScreen(p: ChatScreenProps) {
   // 多 AI 討論：成員面板、輸入框裡正在打的字（打 @ 時跳出名單）、每則訊息的位置（點「回覆 某某」跳過去）
   const [membersOpen, setMembersOpen] = useState(false);
   // 點 Agent 頭像看的資料卡（at：頭像的位置）、從資料卡按「編輯」打開的編輯面板
-  const [profile, setProfile] = useState<{ id: string; at: { x: number; y: number } } | null>(null);
+  const [profile, setProfile] = useState<{ id: string; at: { x: number; y: number } | null } | null>(null);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   // 打的字放在 ref（每打一個字不重畫整個畫面）；只有 @ 後面的字變了才更新名單
   const draftRef = useRef('');
@@ -123,8 +123,18 @@ export function ChatScreen(p: ChatScreenProps) {
   }, [store, membersOpen, state.session?.id]);
 
   function showToast(text: string, action?: ToastData['action']) {
+    // 「復原」提示還在時一般提示排不上（要等它消失才跳，可能已經過好幾秒）：改成輕震＋讀螢幕播報
+    if (state.undo) {
+      Haptics.selectionAsync();
+      AccessibilityInfo.announceForAccessibility(text);
+      return;
+    }
     setToast({ id: Date.now(), text, action });
   }
+  // 復原提示出現時，還沒播完的一般提示就不要了（不然復原提示消失後又冒出來）
+  useEffect(() => {
+    if (state.undo) setToast(null);
+  }, [state.undo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 複製並在畫面上提示「已複製」 */
   function copy(text: string) {
@@ -594,7 +604,7 @@ export function ChatScreen(p: ChatScreenProps) {
         onPress={sessionMenu}
         disabled={!hasChat}
         accessibilityRole="button"
-        accessibilityLabel={hasChat ? t('{p0}，點一下可以改名或刪除', { p0: title }) : title}>
+        accessibilityLabel={hasChat ? t('{p0}，點一下可以改名、設定成員或刪除', { p0: title }) : title}>
         <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
           {title}
         </Text>
@@ -883,7 +893,7 @@ export function ChatScreen(p: ChatScreenProps) {
                 style={({ pressed }) => [styles.flex, styles.titleButton, pressed && styles.pressed]}
                 onPress={sessionMenu}
                 accessibilityRole="button"
-                accessibilityLabel={t('討論串，點一下可以刪除')}>
+                accessibilityLabel={t('討論串，點一下可以邀請 Agent 或刪除')}>
                 <Text style={styles.headerTitle} numberOfLines={1} accessibilityRole="header" testID="chat-title" maxFontSizeMultiplier={HEADER_MAX_SCALE}>
                   {t('討論串')}
                 </Text>

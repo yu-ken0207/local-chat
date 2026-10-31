@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SymbolView } from 'expo-symbols';
 import { createContext, useContext, useEffect, useRef, useState, type ComponentRef } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { AccessibilityInfo, Linking, Pressable, StyleSheet, Switch, Text, TextInput, View, type TextInputProps } from 'react-native';
 
 import { fmtEventTime } from '../lib/format';
 import { parseLocal, toLocalText, type PhoneTool, type ToolInput } from '../lib/tools';
@@ -560,6 +560,17 @@ function AgentsCard({ action, onDecline, agents }: { action: Action } & Handlers
   const [busy, setBusy] = useState(false);
   const finding = agents?.finding === action.id;
   const topic = toText(action.input.topic);
+  // 讀螢幕：「換一批」找完唸一聲換了誰，或沒找到（iPhone 不支援 accessibilityLiveRegion）
+  const startKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (finding && startKey.current === null) startKey.current = listKey;
+    if (!finding && startKey.current !== null) {
+      AccessibilityInfo.announceForAccessibility(
+        startKey.current !== listKey ? t('換了 {n} 位：{p0}', { n: list.length, p0: list.map((c) => c.name).join(t('、')) }) : t('沒有找到其他人選了。')
+      );
+      startKey.current = null;
+    }
+  }, [finding, listKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggle = (key: string) => setOff({ list: listKey, keys: unchecked.includes(key) ? unchecked.filter((k) => k !== key) : [...unchecked, key] });
   const run = async (f: () => Promise<void>) => {
     if (busy) return;

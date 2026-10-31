@@ -27,7 +27,7 @@ type BubbleHandlers = {
   onCopyCode: (code: string) => void;
   onLongPress?: (message: Message, pageY?: number) => void;
   /** 點 Agent 的頭像：看他的資料（at：頭像在畫面上的位置，資料卡從這裡長出來） */
-  onOpenAgent?: (agent: Agent, at: { x: number; y: number }) => void;
+  onOpenAgent?: (agent: Agent, at: { x: number; y: number } | null) => void;
   /** 點「回覆 某某」跳到那一則 */
   onJump?: (messageId: string) => void;
   onCopy?: () => void;
@@ -101,7 +101,11 @@ export function BubbleView({
     <Pressable accessible={false} {...press} delayLongPress={350} testID={`message-${m.id}`} style={styles.aiRow}>
       {agent && h.onOpenAgent ? (
         <Pressable
-          onPress={(e) => h.onOpenAgent!(agent, { x: e.nativeEvent.pageX, y: e.nativeEvent.pageY })}
+          onPress={(e) => {
+            // 拿不到手指的位置（例如讀螢幕、鍵盤操作）：資料卡從畫面中間出現
+            const { pageX, pageY } = e?.nativeEvent ?? {};
+            h.onOpenAgent!(agent, Number.isFinite(pageX) && Number.isFinite(pageY) ? { x: pageX, y: pageY } : null);
+          }}
           hitSlop={6}
           accessibilityRole="button"
           accessibilityLabel={t('看 {p0} 的資料', { p0: agent.name })}
@@ -116,7 +120,7 @@ export function BubbleView({
           {name}
         </Text>
         {replyTarget ? (
-          <Pressable onPress={() => h.onJump?.(replyTarget.id)} hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }} accessibilityRole="button" accessibilityLabel={t('回覆 {p0}，點一下看那則', { p0: replyTarget.name })}>
+          <Pressable onPress={() => h.onJump?.(replyTarget.id)} hitSlop={{ top: 14, bottom: 14, left: 6, right: 6 }} accessibilityRole="button" accessibilityLabel={t('回覆 {p0}，點一下看那則', { p0: replyTarget.name })}>
             <Text style={styles.quote} numberOfLines={1}>
               {t('回覆 {p0}：{p1}', { p0: replyTarget.name, p1: replyTarget.content })}
             </Text>
@@ -124,7 +128,7 @@ export function BubbleView({
         ) : null}
         <View style={styles.aiBubble} accessible={false}>
           {thinking ? <Thinking text={thinking} live={live?.phase === 'thinking'} press={press} onCopyCode={copyCode} /> : null}
-          {content ? <Markdown text={content} onCopyCode={copyCode} {...press} /> : null}
+          {content ? <Markdown text={content} onCopyCode={copyCode} onSurface {...press} /> : null}
           {!live && !content ? <Text style={styles.dim}>{t('沒有說話。')}</Text> : null}
           {live ? <Working streaming={live} /> : null}
         </View>
@@ -686,7 +690,7 @@ const styles = StyleSheet.create({
   conclusionTitle: { ...TEXT.body, fontWeight: '700', color: C.label },
   option: { gap: 6, padding: 10, borderRadius: 12, backgroundColor: C.bg },
   optionLead: { borderWidth: 1, borderColor: C.accent },
-  optionHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  optionHead: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 },
   optionText: { ...TEXT.body, color: C.label },
   votes: { ...TEXT.small, color: C.secondary, fontWeight: '600' },
   meter: { height: 4, borderRadius: 2, backgroundColor: C.pressed, overflow: 'hidden' },

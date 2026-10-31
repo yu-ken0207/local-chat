@@ -216,7 +216,7 @@ describe('畫面', () => {
       seen.push(o.options);
       cb(0);
     });
-    await fireEvent.press(await screen.findByLabelText('討論串，點一下可以刪除'));
+    await fireEvent.press(await screen.findByLabelText('討論串，點一下可以邀請 Agent 或刪除'));
     expect(seen[0]).toEqual(['成員與討論設定', '刪除這個討論串', '取消']);
     // 成員面板蓋在卡片上（卡片是讀螢幕範圍，測試預設略過它旁邊的東西）
     expect(await screen.findByText('幫我挑', { includeHiddenElements: true })).toBeTruthy();
@@ -266,4 +266,19 @@ describe('審查修正（完整 code review）：資料卡與找 Agent', () => {
     expect(JSON.parse(tool!.content).ok).toBe(false);
     expect(store.getState().messages.flatMap((m) => m.actions ?? [])).toEqual([]);
   });
+});
+
+test('找 Agent 卡「換一批」：讀螢幕唸換了誰', async () => {
+  const { AccessibilityInfo } = require('react-native');
+  const { net, store } = await setup();
+  const STAT = { zh: '統計學家', en: 'Statistician', keywords: ['統計'] };
+  script(net, { roles: [[HISTORIAN], [STAT]], picks: [[{ name: hist.n[0], why: '看過去' }], [{ name: '統計學家', why: '看數字' }]] });
+  const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+  await render(<ChatScreen store={store} pickPhotos={jest.fn(async () => [])} copyText={jest.fn()} />);
+  await fireEvent.changeText(screen.getByLabelText('訊息輸入框'), '找人討論要不要換伺服器');
+  await fireEvent.press(screen.getByLabelText('送出'));
+  await screen.findByText('找了這幾位一起討論');
+  await fireEvent.press(screen.getByText('換一批'));
+  await waitFor(() => expect(announce).toHaveBeenCalledWith('換了 1 位：統計學家'));
+  announce.mockRestore();
 });

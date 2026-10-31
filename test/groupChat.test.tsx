@@ -471,3 +471,35 @@ describe('審查修正（完整 code review）：資料卡、成員面板', () =
     await waitFor(() => expect(store.getState().members.map((m) => m.agent.name)).toEqual(['財務長', '工程師']));
   });
 });
+
+describe('審查修正（完整 code review）：低', () => {
+  test('點頭像拿不到手指位置（讀螢幕、鍵盤）：資料卡照樣從中間出現', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    await fireEvent.press(screen.getByLabelText('看 財務長 的資料'));
+    expect(await screen.findByTestId('agent-profile')).toBeTruthy();
+  });
+
+  test('「復原」提示還在時按複製：不會等它消失後才冒出「已複製」，改成讀螢幕播報', async () => {
+    const { net, store, agents } = await setup();
+    for (const a of Object.values(agents)) await store.addMember(a.id);
+    script(net, { 財務長: [8, 0], 工程師: [0, 0] });
+    await store.send('預算夠嗎');
+    await screenOf(store);
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+    await act(async () => {
+      await store.deleteMessage(store.getState().messages[0].id);
+    });
+    expect(store.getState().undo).not.toBeNull();
+    await fireEvent.press(screen.getByText('複製'));
+    expect(announce).toHaveBeenCalledWith('已複製');
+    await act(async () => {
+      await store.dismissUndo();
+    });
+    await act(async () => await new Promise((r) => setTimeout(r, 50)));
+    expect(screen.queryByText('已複製')).toBeNull();
+  });
+});

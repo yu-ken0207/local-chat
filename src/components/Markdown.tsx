@@ -19,15 +19,17 @@ type Props = {
   /** 點一下、長按左右捲的區塊（程式碼、表格）時要做的事，跟外面整則訊息一樣；原因見 HScroll */
   onPress?: () => void;
   onLongPress?: () => void;
+  /** 放在有底色的地方（多人討論的氣泡）：程式碼、表格標題改用另一個底色，才看得出是區塊 */
+  onSurface?: boolean;
 };
 
-export const Markdown = memo(function Markdown({ text, onCopyCode, dim, onPress, onLongPress }: Props) {
+export const Markdown = memo(function Markdown({ text, onCopyCode, dim, onPress, onLongPress, onSurface }: Props) {
   const tokens = useMemo(() => Lexer.lex(text), [text]);
   const base: TextStyle = { ...TEXT.body, color: dim ? C.secondary : C.label };
-  return <View style={styles.blocks}>{blocks(tokens, { base, onCopyCode, onPress, onLongPress })}</View>;
+  return <View style={styles.blocks}>{blocks(tokens, { base, onCopyCode, onPress, onLongPress, onSurface })}</View>;
 });
 
-type Ctx = { base: TextStyle; onCopyCode?: (code: string) => void; onPress?: () => void; onLongPress?: () => void };
+type Ctx = { base: TextStyle; onCopyCode?: (code: string) => void; onPress?: () => void; onLongPress?: () => void; onSurface?: boolean };
 
 function blocks(tokens: Token[], ctx: Ctx, keyPrefix = 'b'): ReactNode[] {
   return tokens.map((t, i) => block(t, ctx, `${keyPrefix}${i}`)).filter((n) => n !== null);
@@ -127,7 +129,7 @@ function inline(tokens: Token[], ctx: Ctx): ReactNode[] {
         );
       case 'codespan':
         return (
-          <Text key={i} style={styles.codespan}>
+          <Text key={i} style={[styles.codespan, ctx.onSurface && styles.onSurface]}>
             {decode((token as Tokens.Codespan).text)}
           </Text>
         );
@@ -164,7 +166,7 @@ function CodeBlock({ code, lang, ctx }: { code: string; lang: string; ctx: Ctx }
     return () => clearTimeout(timer);
   }, [copied]);
   return (
-    <View style={styles.code}>
+    <View style={[styles.code, ctx.onSurface && styles.onSurface]}>
       <View style={styles.codeHeader}>
         <Text style={styles.codeLang}>{lang || 'code'}</Text>
         {onCopy && (
@@ -201,7 +203,7 @@ function Table({ table, ctx }: { table: Tokens.Table; ctx: Ctx }) {
     setWidths((s) => (Math.abs((s[col] ?? 0) - width) < 0.5 ? s : Object.assign([...s], { [col]: width })));
   const ready = Array.from({ length: columns }, (_, ci) => widths[ci] > 0).every(Boolean);
   const cell = (c: Tokens.TableCell, header: boolean, key: string, width?: number) => (
-    <View key={key} style={[styles.cell, header && styles.headerCell, width ? { width } : null]}>
+    <View key={key} style={[styles.cell, header && (ctx.onSurface ? styles.onSurface : styles.headerCell), width ? { width } : null]}>
       {/* 不設 selectable（原因同程式碼區塊）；要複製就長按訊息選「複製」 */}
       <Text style={[ctx.base, header && styles.strong, { textAlign: c.align ?? 'left' }]}>
         {inline(c.tokens, ctx)}
@@ -271,6 +273,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row' },
   cell: { minWidth: 80, maxWidth: 220, padding: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: C.separator },
   headerCell: { backgroundColor: C.surface },
+  onSurface: { backgroundColor: C.bg },
   measure: { position: 'absolute', top: 0, left: 0, flexDirection: 'row', alignItems: 'flex-start', opacity: 0 },
   measureColumn: { alignItems: 'flex-start' },
 });

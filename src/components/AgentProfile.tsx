@@ -68,15 +68,20 @@ export function AgentProfile({
   const closeRef = useRef(close);
   closeRef.current = close;
 
-  // 往下拉：1:1 跟手指，往上拉有阻力；放手時看推算的落點，夠遠就縮回去，不然彈回來
+  // 往下拉：1:1 跟手指，往上拉有阻力；放手時看推算的落點，夠遠就縮回去，不然彈回來。
+  // 彈回去的途中再抓住：從現在的位置接手（不會先跳回原位）
+  const grabbedAt = useRef(0);
   const pan = useMemo(
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_e, g) => !closing.current && Math.abs(g.dy) > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-        onPanResponderGrant: () => drag.stopAnimation(),
-        onPanResponderMove: (_e, g) => drag.setValue(g.dy > 0 ? g.dy : rubberband(g.dy, 160)),
+        onPanResponderGrant: () => drag.stopAnimation((v) => (grabbedAt.current = v)),
+        onPanResponderMove: (_e, g) => {
+          const y = grabbedAt.current + g.dy;
+          drag.setValue(y > 0 ? y : rubberband(y, 160));
+        },
         onPanResponderRelease: (_e, g) => {
-          if (g.dy + project(g.vy * 1000) > 120) closeRef.current();
+          if (grabbedAt.current + g.dy + project(g.vy * 1000) > 120) closeRef.current();
           else Animated.spring(drag, { toValue: 0, velocity: g.vy * 1000, ...SPRING }).start();
         },
         onPanResponderTerminate: () => Animated.spring(drag, { toValue: 0, ...SPRING }).start(),
@@ -116,7 +121,7 @@ export function AgentProfile({
   const shown = rows.filter(([, v]) => v.trim());
   // 刪掉的 Agent：只看資料（說過的話還在），不給 @他、編輯、移除
   const deleted = !!agent.deletedAt;
-  const stats = [spoken > 0 ? t('這段說了 {n} 次', { n: spoken }) : t('這段還沒說話'), t('積極度：{p0}', { p0: talkLabel(agent.talk) })].join(t('，'));
+  const stats = [spoken === 1 ? t('這段說了 1 次') : spoken > 1 ? t('這段說了 {n} 次', { n: spoken }) : t('這段還沒說話'), t('積極度：{p0}', { p0: talkLabel(agent.talk) })].join(t('，'));
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={() => close()} statusBarTranslucent>
@@ -132,10 +137,15 @@ export function AgentProfile({
           <View style={styles.hero} {...pan.panHandlers}>
             <View style={styles.grabber} />
             <AgentAvatar id={avatarId(agent)} emoji={agent.emoji} photo={agent.photo} size={64} />
-            <Text ref={titleRef} style={styles.name} accessibilityRole="header">
+            <Text ref={titleRef} style={styles.name} accessibilityRole="header" numberOfLines={2}>
               {agent.name}
             </Text>
-            {agent.intro ? <Text style={styles.intro}>{agent.intro}</Text> : null}
+            {/* 上半部不能捲：介紹最多三行，大字時下面的按鈕才不會被擠掉 */}
+            {agent.intro ? (
+              <Text style={styles.intro} numberOfLines={3}>
+                {agent.intro}
+              </Text>
+            ) : null}
             <Text style={styles.stats}>{stats}</Text>
           </View>
           <ScrollView contentContainerStyle={styles.content} bounces={false}>
@@ -198,9 +208,10 @@ const styles = StyleSheet.create({
   intro: { ...TEXT.small, color: C.secondary, textAlign: 'center' },
   stats: { ...TEXT.meta, color: C.secondary, textAlign: 'center' },
   section: { gap: 8 },
-  row: { flexDirection: 'row', gap: 12 },
-  label: { ...TEXT.small, color: C.secondary, width: 40 },
-  value: { ...TEXT.small, color: C.label, flex: 1 },
+  // 欄位名稱放不下（英文、大字）就排到值的上面，不會從字中間斷開
+  row: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, rowGap: 2 },
+  label: { ...TEXT.small, color: C.secondary, minWidth: 40 },
+  value: { ...TEXT.small, color: C.label, flexGrow: 1, flexShrink: 1, flexBasis: 200 },
   note: { ...TEXT.small, color: C.label },
   buttons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center' },
   deleted: { paddingHorizontal: 8 },

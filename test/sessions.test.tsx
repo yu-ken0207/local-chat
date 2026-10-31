@@ -43,7 +43,7 @@ async function openSettings() {
 
 test('標題列顯示自動取的標題；對話清單列出所有對話，目前這段在最上面', async () => {
   await setup();
-  expect(screen.getByLabelText('午餐，點一下可以改名或刪除')).toBeTruthy();
+  expect(screen.getByLabelText('午餐，點一下可以改名、設定成員或刪除')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('對話清單'));
   const rows = await screen.findAllByLabelText(/^對話 /);
   expect(rows.map((r) => r.props.accessibilityLabel)).toEqual(['對話 午餐', '對話 天氣']);
@@ -164,9 +164,9 @@ test('點標題：可以改名；新對話沒內容時點了沒反應', async ()
   const { store } = await setup();
   pickAction(0);
   jest.spyOn(Alert, 'prompt').mockImplementation((_t, _m, cb: any) => cb('午餐計畫'));
-  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名或刪除'));
+  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名、設定成員或刪除'));
   await waitFor(() => expect(store.getState().session?.title).toBe('午餐計畫'));
-  expect(screen.getByLabelText('午餐計畫，點一下可以改名或刪除')).toBeTruthy();
+  expect(screen.getByLabelText('午餐計畫，點一下可以改名、設定成員或刪除')).toBeTruthy();
 
   await store.newSession();
   const sheet = pickAction(0);
@@ -179,7 +179,7 @@ test('點標題：刪除這段對話，不用先確認，切到另一段，可�
   const { store } = await setup();
   pickAction(2);
   const alert = jest.spyOn(Alert, 'alert');
-  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名或刪除'));
+  await fireEvent.press(screen.getByLabelText('午餐，點一下可以改名、設定成員或刪除'));
   await waitFor(() => expect(store.getState().session?.title).toBe('天氣'));
   expect(alert).not.toHaveBeenCalled();
   await fireEvent.press(await screen.findByText('復原'));
