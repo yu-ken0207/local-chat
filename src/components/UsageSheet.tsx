@@ -9,6 +9,7 @@ import { friendlyModelName } from '../lib/modelName';
 import type { ChatStore, ContextInfo, UsagePartKey, UsageReport } from '../state/chatStore';
 import type { UsageTotals } from '../store/repo';
 import { C, TEXT } from '../ui/theme';
+import { Markdown } from './Markdown';
 import { getLanguage, t } from '../i18n';
 
 // 用量：最上面是上半圓的儀表（這段對話 AI 記住的內容用了幾成），下面是各部分、這台電腦、今天與這 7 天的累計。
@@ -445,10 +446,9 @@ export function SummarySheet({ summary, onClose }: { summary: string; onClose: (
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.card}>
-          <Text style={styles.summaryText} selectable>
-            {summary}
-          </Text>
+        {/* 摘要是模型寫的 Markdown（粗體、條列），照對話一樣排版，不要露出符號 */}
+        <View style={[styles.card, styles.summaryBody]}>
+          <Markdown text={summary} onSurface />
         </View>
         <Text style={styles.footnote}>{t('前面的對話很長，已經整理成這段摘要。之後 AI 看的是摘要加上最近的對話，手機上的訊息都還在。')}</Text>
       </ScrollView>
@@ -517,7 +517,7 @@ const styles = StyleSheet.create({
   miniHub: { position: 'absolute', left: MINI_C - 1.8, top: MINI_C - 1.8, width: 3.6, height: 3.6, borderRadius: 1.8 },
   action: { minHeight: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   actionText: { fontSize: 15, fontWeight: '600', color: C.accent },
-  summaryText: { ...TEXT.small, color: C.label, padding: 16 },
+  summaryBody: { padding: 16 },
   stats: { flexDirection: 'row', paddingVertical: 14, paddingHorizontal: 8 },
   stat: { flex: 1, alignItems: 'center', gap: 2, paddingHorizontal: 4 },
   statLabel: { ...TEXT.meta, color: C.secondary },

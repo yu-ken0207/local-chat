@@ -99,7 +99,8 @@ test('對話裡出現「前面的內容已整理成摘要」，點了看摘要�
     await settle(store);
   });
   await fireEvent.press(await screen.findByTestId('summary-divider'));
-  expect(await screen.findByText(store.getState().session!.summary)).toBeTruthy();
+  expect(await screen.findByText('前情摘要')).toBeTruthy();
+  expect(screen.getAllByText(/第一個問題/).length).toBeGreaterThan(0);
   expect(screen.queryByText(/太長了|開新對話/)).toBeNull();
   await fireEvent.press(screen.getByText('完成'));
 });
@@ -117,4 +118,12 @@ test('用量面板「現在整理」：前面有東西才出現，按了就整�
   expect(r.context!.estimated).toBe(true);
   expect(r.context!.parts.map((p) => p.key)).toContain('summary');
   expect(r.canCompact).toBe(false);
+});
+
+test('前情摘要照 Markdown 排版（不露出 ** 和 *）', async () => {
+  const { SummarySheet } = require('../src/components/UsageSheet');
+  await render(<SummarySheet summary={'**基本條件**\n\n* 日期：12/12 到 12/14\n* 地點：花蓮'} onClose={jest.fn()} />);
+  expect(screen.getByText('基本條件')).toBeTruthy();
+  expect(screen.getByText(/日期：12\/12 到 12\/14/)).toBeTruthy();
+  expect(screen.queryByText(/\*\*/)).toBeNull();
 });
