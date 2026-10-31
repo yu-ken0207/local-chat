@@ -2,6 +2,8 @@
 
 連自己地端 Ollama 主機的 iPhone 聊天 App，App 名稱「Local AI」（Expo / React Native，用 Expo Go 執行）。以聊天為主，模型看得懂圖時也能傳照片。
 
+> **Local AI** is an iPhone chat app (Expo / React Native) for the AI models running on your own computer (Ollama or LM Studio). Chats are stored on the phone and only sent to your own computer. Highlights: pairing with a desktop helper by QR code, multi-agent discussions with 788 built-in roles, phone actions (calendar events, reminders) with confirmation and undo, and a live context gauge that condenses long chats automatically. The UI is available in Traditional Chinese and English.
+
 ## 功能
 
 設計原則：第一次打開、不看說明也能上手（不做教學頁，讓介面本身夠直覺）。
