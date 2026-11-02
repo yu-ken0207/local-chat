@@ -31,6 +31,16 @@ An iPhone app for chatting with the AI models on your own computer (Ollama or LM
 - Preload and unload models; regenerate (old answers are kept), edit and resend, undo deletes, and Recently Deleted for 30 days
 - Backup and restore; Traditional Chinese and English interface (follows the system or set in the app)
 
+## How the agent works
+
+The model runs on your own computer and the phone runs the agent loop, so everything is built to work with small local models.
+
+- **Tool-use loop with confirmation and undo.** The model calls phone tools defined in MCP format (calendar, reminders, `ask_user`). Every call is checked against its input schema and app rules, then goes through four permission steps modeled on Claude Code: deny, always ask, read-only runs directly, other writes ask. A write shows a confirmation card with the fields the AI guessed shown faded; several writes become one checklist card; every action is logged and can be undone. When the user declines or edits, the model is told explicitly what was and wasn't done, because tool results alone didn't stop it from claiming success. [Design](docs/design-phone-actions.md)
+- **Measured with an eval.** 25 requests run the app's real tool definitions and prompt against each local model. The main failure turned out to be date arithmetic, not tool choice: adding a date table to the prompt took Gemma 4 12B from 68% to 88% fully correct and 31B from 92% to 100%. [Eval](eval/tools/README.md)
+- **Multi-agent discussion.** Several agents share one chat. After each message every agent bids 0–10 (and names whom it would reply to) through a JSON-format call; the highest bid speaks, with a penalty for speaking twice in a row and a cap of 12 messages per turn. Moderator, round-robin, and @mention-only modes are also available. Discussions close with options, votes with reasons, and a conclusion card, and each agent keeps notes that carry into later discussions. [Design](docs/design-multi-agent.md)
+- **Context management.** Each agent's prompt is assembled within the host's actual context limit: role text, its notes, a shared summary, and recent messages. In normal chats, at 80% of the context the app condenses earlier messages in the background into a summary plus roughly the most recent 30% verbatim. In a recall test (Gemma 4 31B, 32K context: 12 key facts, filler past 80%, then 15 questions, 3 runs) it scored 41/45, against 45/45 with the full history and 36/45 with a Codex-style compaction keeping the same 30%.
+- **Any engine.** [Local AI Helper](https://github.com/yu-ken0207/local-ai-helper) translates tool calls between Ollama and OpenAI-compatible servers (LM Studio, llama.cpp, vLLM), including assembling streamed tool-call fragments.
+
 ## Quick start
 
 The app is not on the App Store. It runs in [Expo Go](https://apps.apple.com/app/expo-go/id982107779).
@@ -73,7 +83,7 @@ src/components/    screens and components
 test/              tests; test/live/ runs against real servers and is not part of npm test
 ```
 
-The development log and design documents are in Chinese: see the [Chinese README](README.zh-TW.md) and `docs/`.
+Design documents are in `docs/` in English and Chinese. The development log is in the [Chinese README](README.zh-TW.md).
 
 ## License
 
