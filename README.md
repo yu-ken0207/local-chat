@@ -11,9 +11,9 @@ An iPhone app for chatting with the AI models on your own computer (Ollama or LM
 </p>
 
 <p>
-  <img src="docs/screenshots/chat.jpg" width="240" alt="Chat: formatted answers, copyable code, context gauge in the top-right corner">
-  <img src="docs/screenshots/models.jpg" width="240" alt="Choose a model: thinking switch, computer and model list">
-  <img src="docs/screenshots/agents.jpg" width="240" alt="Multi-agent discussion: three roles each give advice">
+  <img src="docs/screenshots/chat-en.jpg" width="240" alt="Chat: formatted answers, copyable code, context gauge in the top-right corner">
+  <img src="docs/screenshots/models-en.jpg" width="240" alt="Choose a model: thinking switch, computer and model list">
+  <img src="docs/screenshots/agents-en.jpg" width="240" alt="Multi-agent discussion: three agents plan a trip and @mention each other">
 </p>
 
 ## Why
