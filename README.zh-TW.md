@@ -7,6 +7,10 @@
 跟自己電腦上的 AI 聊天的 iPhone App，App 名稱「Local AI」。支援 Ollama 和 LM Studio，對話只存在手機，只會送到你自己的電腦。用 Expo / React Native 寫，在 Expo Go 裡執行。
 
 <p>
+  <img src="docs/screenshots/demo.gif" width="300" alt="示範：先問一個問題，再請 AI 把午餐加進行事曆；AI 跳出確認卡片，按下新增才加進去">
+</p>
+
+<p>
   <img src="docs/screenshots/chat.jpg" width="240" alt="聊天：回答有排版、程式碼可以複製，右上角是用量">
   <img src="docs/screenshots/models.jpg" width="240" alt="選模型：深入思考開關、選電腦和模型">
   <img src="docs/screenshots/agents.jpg" width="240" alt="多 AI 討論：三個角色各給建議">

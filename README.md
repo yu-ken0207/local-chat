@@ -7,6 +7,10 @@
 An iPhone app for chatting with the AI models on your own computer (Ollama or LM Studio). No cloud, no account, no subscription: chats stay on your phone and only go to your own computer.
 
 <p>
+  <img src="docs/screenshots/demo.gif" width="300" alt="Demo: ask a question, then ask the AI to add a lunch to the calendar; it shows a card and adds the event after you tap Add">
+</p>
+
+<p>
   <img src="docs/screenshots/chat.jpg" width="240" alt="Chat: formatted answers, copyable code, context gauge in the top-right corner">
   <img src="docs/screenshots/models.jpg" width="240" alt="Choose a model: thinking switch, computer and model list">
   <img src="docs/screenshots/agents.jpg" width="240" alt="Multi-agent discussion: three roles each give advice">
